@@ -2,24 +2,28 @@ namespace DeltaCrafter.Core.L0;
 
 /// <summary>
 /// 物品目录条目。Name 用于界面显示(可手工改成正确写法);
-/// Ocr 存扫描时的识别原文,是运行期匹配键——空则退回用 Name 匹配。
+/// Ocr 仅保留旧版数据兼容，运行期使用目录真实 Name。
 /// </summary>
 public sealed class CatalogItem
 {
+    public long ObjectId { get; set; }
+    public int Grade { get; set; }
+    public int UnlockLevel { get; set; }
     public string Name { get; set; } = "";
     public string Ocr { get; set; } = "";
     public string? Note { get; set; }
 
     /// <summary>运行期在游戏列表里搜索用的名称。</summary>
-    public string MatchKey => Ocr.Length > 0 ? Ocr : Name;
+    public string MatchKey => Name;
 }
 
 /// <summary>
-/// 可制造物品目录(items.json,键为设施 kebab 名)。仅用于制造计划页下拉候选,
-/// 不参与运行判定;允许用户直接填目录之外的名称。
+/// 可制造物品目录(items.json,键为设施 kebab 名)。用于制造计划候选及运行时完整名称校验。
 /// </summary>
 public sealed class ItemCatalog
 {
+    public string Source { get; set; } = "";
+    public DateTimeOffset? UpdatedAt { get; set; }
     /// <summary>默认表修订号。程序启动时若默认表比本地副本新,自动备份并替换本地副本。</summary>
     public int Revision { get; set; }
     public Dictionary<string, List<CatalogItem>> Facilities { get; set; } = [];
@@ -28,50 +32,22 @@ public sealed class ItemCatalog
         Facilities.TryGetValue(FacilityKeys.JsonKey(key), out var list) ? list : [];
 }
 
-/// <summary>
-/// 槽位 OCR 物品名 → 目录规范显示名(纯函数)。判定阶梯:
-/// ① 规范形(TextMatch)完全相等 → 命中;
-/// ② 惟一最近邻:编辑距离 ≤ max(1, 规范长度÷3),且比第二名近至少 2 → 命中。
-///    容差取 1/3 是因为中文 OCR 常把单字拆成偏旁两字(实测「激」读成「氵敫」,距离 2);
-///    「近至少 2」的间隔保证同族名(如 7.62×39mm AP / PS)之间绝不误认——分不清就不认。
-/// ③ 其余返回 null,调用方保留原文——并列、太短、太烂都不猜。
-/// </summary>
+/// <summary>离线 OCR 结果只能完整、唯一命中目录；不补型号、不做子串或编辑距离猜测。</summary>
 public static class CatalogNameResolver
 {
+    // 只归一化排版差异，保留型号数字和字母；不把 I/1、O/0 或中文形近字互换。
+    public static string Canonical(string name) => string.Concat(name.Normalize(System.Text.NormalizationForm.FormKC)
+        .Where(c => !char.IsWhiteSpace(c) && c is not ('.' or '`' or '·'))
+        .Select(c => c switch { '×' => 'X', '‐' or '‑' or '–' or '−' => '-', _ => char.ToUpperInvariant(c) }));
+
     public static string? Resolve(IReadOnlyList<CatalogItem> items, string ocrName)
     {
-        string target = TextMatch.Canonical(ocrName);
-        if (target.Length < 3 || items.Count == 0) return null; // 过短读数做不了可靠判定
-
-        string? bestName = null;
-        int best = int.MaxValue, second = int.MaxValue;
-        foreach (var item in items)
-        {
-            int d = Levenshtein(TextMatch.Canonical(item.Name), target);
-            if (item.Ocr.Length > 0 && item.Ocr != item.Name)
-                d = Math.Min(d, Levenshtein(TextMatch.Canonical(item.Ocr), target));
-            if (d < best) { second = best; best = d; bestName = item.Name; }
-            else if (d < second) { second = d; }
-        }
-        if (best == 0) return bestName;
-        int tolerance = Math.Max(1, target.Length / 3);
-        bool uniqueEnough = second == int.MaxValue || second - best >= 2;
-        return best <= tolerance && uniqueEnough ? bestName : null;
+        string target = Canonical(ocrName);
+        if (target.Length < 3) return null;
+        var matches = items.Where(i => Canonical(i.Name) == target).Take(2).ToArray();
+        return matches.Length == 1 ? matches[0].Name : null;
     }
 
-    private static int Levenshtein(string a, string b)
-    {
-        var prev = new int[b.Length + 1];
-        var cur = new int[b.Length + 1];
-        for (int j = 0; j <= b.Length; j++) prev[j] = j;
-        for (int i = 1; i <= a.Length; i++)
-        {
-            cur[0] = i;
-            for (int j = 1; j <= b.Length; j++)
-                cur[j] = Math.Min(Math.Min(cur[j - 1] + 1, prev[j] + 1),
-                                  prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
-            (prev, cur) = (cur, prev);
-        }
-        return prev[b.Length];
-    }
+    public static bool Matches(IReadOnlyList<CatalogItem> items, string observed, string expected) =>
+        Resolve(items, observed) is { } name && Canonical(name) == Canonical(expected);
 }

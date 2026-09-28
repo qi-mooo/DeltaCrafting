@@ -9,17 +9,23 @@ namespace DeltaCrafter.Core.L1;
 /// <summary>一行 OCR 结果。中心坐标为原始帧内的物理像素(已换算回裁剪/缩放前)。</summary>
 public sealed record OcrLine(string Text, double CenterX, double CenterY)
 {
+    public float Confidence { get; init; } = 1;
     // 原始帧内的词框,仅供 .300 BLK 五级弹定位同一行左侧的品质图标。
     public IReadOnlyList<OcrWordBox> Words { get; init; } = [];
 }
 
 public sealed record OcrWordBox(string Text, double Left, double Top, double Width, double Height);
 
-public sealed record OcrReadout(string FullText, IReadOnlyList<OcrLine> Lines);
+public sealed record OcrReadout(string FullText, IReadOnlyList<OcrLine> Lines)
+{
+    public const float MinimumItemConfidence = .90f;
+    public bool HasUncertainText => Lines.Any(l => !float.IsFinite(l.Confidence)
+        || l.Confidence < MinimumItemConfidence);
+}
 
 /// <summary>
 /// Windows 内置中文 OCR 封装。约束:
-/// 1) 游戏小字号文本直接识别率差,默认放大 2 倍(最近邻)后再识别;
+/// 1) 游戏小字号文本直接识别率差,默认灰阶化、适度增强对比度并平滑放大 2 倍后识别;
 /// 2) OcrEngine 有最大边长限制,超限时自动降低倍率乃至降采样(全屏诊断转储场景);
 /// 3) 缺中文语言包属环境错误,构造时立即抛出并给出安装指引,不降级到其他语言。
 /// </summary>
@@ -54,7 +60,7 @@ public sealed class OcrBrick
         int dw = Math.Max(1, (int)(cw * s));
         int dh = Math.Max(1, (int)(ch * s));
 
-        var resampled = NearestResample(frame, cx, cy, cw, ch, dw, dh);
+        var resampled = OcrImagePreprocessor.Prepare(frame, cx, cy, cw, ch, dw, dh);
         using var bitmap = SoftwareBitmap.CreateCopyFromBuffer(
             resampled.AsBuffer(), BitmapPixelFormat.Bgra8, dw, dh, BitmapAlphaMode.Ignore);
         var result = await _engine.RecognizeAsync(bitmap);
@@ -83,26 +89,4 @@ public sealed class OcrBrick
         return new OcrReadout(string.Join("\n", lines.Select(l => l.Text)), lines);
     }
 
-    /// <summary>最近邻重采样(裁剪+缩放一步完成)。识别用途下质量足够,且零额外依赖。</summary>
-    private static byte[] NearestResample(CapturedFrame f, int cx, int cy, int cw, int ch, int dw, int dh)
-    {
-        var dst = new byte[dw * dh * 4];
-        for (int y = 0; y < dh; y++)
-        {
-            int sy = cy + (int)((long)y * ch / dh);
-            int srcRow = sy * f.Width * 4;
-            int dstRow = y * dw * 4;
-            for (int x = 0; x < dw; x++)
-            {
-                int sx2 = cx + (int)((long)x * cw / dw);
-                int si = srcRow + sx2 * 4;
-                int di = dstRow + x * 4;
-                dst[di] = f.Bgra[si];
-                dst[di + 1] = f.Bgra[si + 1];
-                dst[di + 2] = f.Bgra[si + 2];
-                dst[di + 3] = f.Bgra[si + 3];
-            }
-        }
-        return dst;
-    }
 }

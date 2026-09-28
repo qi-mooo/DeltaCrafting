@@ -55,6 +55,14 @@ try {
         -p:Version=$Version --no-restore -o $publishDir
     if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
 
+    # 原生 OCR 与内嵌 V5 模型必须随完整客户端发布。
+    foreach ($dependency in @('Sdcb.PaddleOCR.Models.LocalV5.dll', 'paddle_inference_c.dll',
+        'OpenCvSharpExtern.dll', 'mkldnn.dll', 'mklml.dll', 'libiomp5md.dll')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $publishDir $dependency))) {
+            throw "Missing offline OCR dependency: $dependency"
+        }
+    }
+
     Copy-Item -LiteralPath README.md, LICENSE, THIRD-PARTY-NOTICES.md -Destination $publishDir
     Copy-Item -LiteralPath licenses -Destination $publishDir -Recurse
     Compress-Archive -Path (Join-Path $publishDir '*') -DestinationPath $zipPath -CompressionLevel Optimal

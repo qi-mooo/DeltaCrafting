@@ -4,9 +4,9 @@ using DeltaCrafter.Core.L0;
 namespace DeltaCrafter.Core.L1;
 
 /// <summary>
-/// 仅处理目录里的 .300BLK五级弹。游戏文字只有 .300 BLK,必须同时确认左侧金色图标。
+/// 处理 .300 BLK 三级、四级、五级弹。名称相同，必须同时确认左侧蓝、紫、金品质图标。
 /// 颜色依据用户提供的 240×111 行截图:暗金底色约 RGB(50,40,31),不是亮黄色。
-/// 不修改全局 OCR 容差,不将此颜色规则推广到其他物品或其他等级。
+/// 不修改全局 OCR 容差,不将此颜色规则推广到其他物品。
 /// </summary>
 internal static class BlkAmmoMatcher
 {
@@ -15,21 +15,20 @@ internal static class BlkAmmoMatcher
     internal sealed record Candidate(double X, double Y, double NameRight, PixelRect Icon);
 
     internal static bool AppliesTo(FacilityKey key, string displayName, string searchName) =>
-        key == FacilityKey.Workbench && (IsLevelFive(displayName) || IsLevelFive(searchName));
+        GradeFor(key, displayName, searchName) is not null;
 
-    private static bool IsLevelFive(string name) =>
-        TextMatch.Canonical(name.ToUpperInvariant()) is "300BLK五级弹" or "300BLK5级弹";
+    internal static int? GradeFor(FacilityKey key, string displayName, string searchName) =>
+        key == FacilityKey.Workbench ? BlkAmmoIdentity.Grade(displayName) ?? BlkAmmoIdentity.Grade(searchName) : null;
 
     internal static Candidate? Find(CapturedFrame frame, IReadOnlyList<OcrLine> lines, NRect listArea,
-        bool requireSelected = false)
+        bool requireSelected = false, int grade = 5)
     {
         Candidate? found = null;
         foreach (var line in lines)
         {
-            if (!TextMatch.LineContains(line.Text, GameName)) continue;
             var name = FindNameBox(line.Words);
             if (name is null) continue; // 缺少词框时不能确定颜色归属,不猜坐标。
-            var icon = FindGoldIcon(frame, name, listArea);
+            var icon = FindGradeIcon(frame, name, listArea, grade);
             if (icon is null) continue;
             var candidate = new Candidate(name.Left + name.Width / 2, name.Top + name.Height / 2,
                 name.Left + name.Width, icon);
@@ -50,7 +49,7 @@ internal static class BlkAmmoMatcher
             for (int end = start; end < words.Count; end++)
             {
                 var word = words[end];
-                text += TextMatch.Canonical(word.Text);
+                text += BlkAmmoIdentity.Canonical(word.Text);
                 if (text.Length > 6) break;
                 left = Math.Min(left, word.Left);
                 top = Math.Min(top, word.Top);
@@ -63,7 +62,7 @@ internal static class BlkAmmoMatcher
         return null;
     }
 
-    private static PixelRect? FindGoldIcon(CapturedFrame frame, OcrWordBox name, NRect listArea)
+    private static PixelRect? FindGradeIcon(CapturedFrame frame, OcrWordBox name, NRect listArea, int grade)
     {
         var (lx, ly, lw, lh) = PixelMapper.ToPixelRect(listArea, frame.Width, frame.Height);
         double cy = name.Top + name.Height / 2;
@@ -80,7 +79,7 @@ internal static class BlkAmmoMatcher
             for (int x = 0; x < width; x++)
             {
                 int p = ((y0 + y) * frame.Width + x0 + x) * 4;
-                gold[y * width + x] = IsGold(frame.Bgra[p + 2], frame.Bgra[p + 1], frame.Bgra[p]);
+                gold[y * width + x] = IsGradeColor(frame.Bgra[p + 2], frame.Bgra[p + 1], frame.Bgra[p], grade);
             }
 
         PixelRect? found = null;
@@ -131,6 +130,40 @@ internal static class BlkAmmoMatcher
         double saturation = (double)(r - b) / r;
         double hue = 60.0 * (g - b) / (r - b); // R 为最大、B 为最小。
         return saturation is >= .18 and <= .85 && hue is >= 18 and <= 52;
+    }
+
+    internal static bool IsGradeColor(byte r, byte g, byte b, int grade)
+    {
+        if (grade == 5) return IsGold(r, g, b);
+        if (b < 26 || b > 217) return false;
+        if (grade == 3)
+            return b - g >= 10 && g - r >= 6 && (double)(b - r) / b is >= .18 and <= .85;
+        if (grade == 4)
+            return b - r >= 5 && r - g >= 8 && (double)(b - g) / b is >= .18 and <= .85;
+        return false;
+    }
+
+    /// <summary>总览槽位采信图标区域占优势的单一品质底色。</summary>
+    internal static int? ReadSlotGrade(CapturedFrame frame, NRect slot)
+    {
+        var (x, y, w, h) = PixelMapper.ToPixelRect(slot, frame.Width, frame.Height);
+        var counts = new int[3];
+        // 忽略下方物品名/倒计时和外圈设施装饰,避免彩色文字投票。
+        int left = x + w / 5, right = x + w * 4 / 5;
+        int top = y + h / 10, bottom = y + h * 3 / 5;
+        for (int py = top; py < bottom; py++)
+            for (int px = left; px < right; px++)
+            {
+                int p = (py * frame.Width + px) * 4;
+                for (int grade = 3; grade <= 5; grade++)
+                    if (IsGradeColor(frame.Bgra[p + 2], frame.Bgra[p + 1], frame.Bgra[p], grade))
+                        counts[grade - 3]++;
+            }
+        int best = counts.Max();
+        if (best < Math.Max(40, (right - left) * (bottom - top) / 20)) return null;
+        int index = Array.IndexOf(counts, best);
+        if (counts.Where((_, i) => i != index).Any(n => n * 4 >= best)) return null;
+        return index + 3;
     }
 
     private static bool HasSelectionBorder(CapturedFrame frame, Candidate candidate)

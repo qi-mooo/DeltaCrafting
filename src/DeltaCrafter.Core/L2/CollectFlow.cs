@@ -20,14 +20,16 @@ public sealed class CollectFlow
     private readonly InputBrick _input;
     private readonly IAppWindowGuard _windowGuard;
     private readonly ILogger _log;
+    private readonly ICatalogLookup _catalog;
 
     public CollectFlow(ScreenProbe probe, StepRunner runner, InputBrick input,
-        IAppWindowGuard windowGuard, ILogger log)
+        IAppWindowGuard windowGuard, ICatalogLookup catalog, ILogger log)
     {
         _probe = probe;
         _runner = runner;
         _input = input;
         _windowGuard = windowGuard;
+        _catalog = catalog;
         _log = log.ForContext<CollectFlow>();
     }
 
@@ -55,19 +57,34 @@ public sealed class CollectFlow
             _windowGuard.MinimizeForRun();
             double upscale = pass % 2 == 1 ? 2.0 : 1.0;
             long capMs = Environment.TickCount64; // 截帧时刻:剩余时间读数对应的基准点
-            string[] texts = await _probe.ReadRoisAsync(hwnd, rois, upscale);
+            var frame = _probe.Capture(hwnd);
+            string[] texts = await _probe.ReadFrameRoisAsync(frame, rois, upscale);
             for (int i = 0; i < FacilityKeys.All.Length; i++)
             {
                 var key = FacilityKeys.All[i];
                 if (agreed.ContainsKey(key)) continue;
                 var obs = Classify(texts[i]);
+                if (obs.ItemName.Length > 0)
+                {
+                    string? resolved;
+                    if (key == FacilityKey.Workbench && BlkAmmoIdentity.IsBareName(obs.ItemName))
+                        resolved = BlkAmmoMatcher.ReadSlotGrade(frame, rois[i]) is { } grade
+                            ? BlkAmmoIdentity.Name(grade) : null;
+                    else
+                        resolved = _catalog.ResolveDisplayName(key, obs.ItemName);
+                    obs = obs with { ItemName = resolved ?? "" };
+                    // 可领取不能仅凭目录外噪声判断;制造中仍可保留可靠倒计时。
+                    if (resolved is null && obs.Phase == FacilityPhase.ReadyToCollect)
+                        obs = obs with { Phase = FacilityPhase.Unknown };
+                }
                 _log.Debug("{Facility} 槽位(第{Pass}遍 {Scale:0.#}x):{Phase} {Raw}",
                     FacilityKeys.DisplayName(key), pass, upscale, obs.Phase, ScreenProbe.Normalize(texts[i]));
                 if (obs.Phase == FacilityPhase.Unknown) continue; // 读空/读数被误读:不投票,已有一票保留
 
                 if (claims.TryGetValue(key, out var prev))
                 {
-                    if (prev.Obs.Phase == obs.Phase && CountdownConsistent(prev.Obs, prev.CapMs, obs, capMs))
+                    if (prev.Obs.Phase == obs.Phase && prev.Obs.ItemName == obs.ItemName &&
+                        CountdownConsistent(prev.Obs, prev.CapMs, obs, capMs))
                     {
                         agreed[key] = (Merge(prev.Obs, obs), capMs);
                     }

@@ -10,6 +10,9 @@ DeltaCrafter 直接使用以下 NuGet 软件包。其版权与许可证归各自
 | Serilog | 4.2.0 | Apache-2.0 | <https://github.com/serilog/serilog> |
 | Serilog.Sinks.File | 6.0.0 | Apache-2.0 | <https://github.com/serilog/serilog-sinks-file> |
 | System.Text.Encoding.CodePages | 8.0.0 | MIT | <https://github.com/dotnet/runtime> |
+| Sdcb.PaddleOCR / local models | 3.3.1 | Apache-2.0 | <https://github.com/sdcb/PaddleSharp> |
+| Sdcb.PaddleInference runtime (MKL) | 3.3.1.70 | Apache-2.0 | <https://github.com/sdcb/PaddleSharp> |
+| OpenCvSharp4 runtime | 4.11.0.20250507 | Apache-2.0 | <https://github.com/shimat/opencvsharp> |
 
 测试工程还使用：
 

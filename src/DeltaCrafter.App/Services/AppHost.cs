@@ -97,8 +97,8 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         var runner = new StepRunner(probe, Log);
         var launch = new LaunchFlow(process, WindowBrick, probe, input, runner, () => Settings, Log);
         var nav = new SpecOpsNavFlow(probe, runner);
-        var collect = new CollectFlow(probe, runner, input, this, Log);
-        var craft = new CraftStartFlow(probe, runner, input, Log);
+        var collect = new CollectFlow(probe, runner, input, this, this, Log);
+        var craft = new CraftStartFlow(probe, runner, input, this, Log);
         var abort = new AbortFlow(probe, runner, input, Log);
         var scan = new CatalogScanFlow(probe, runner, input, Log);
         var shutdown = new ShutdownFlow(process, WindowBrick, probe, runner, Log);
@@ -206,6 +206,11 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     /// <summary>目录读写共用一把锁:合并写入在自动化线程,查询在 UI 线程与自动化线程
     /// 都有(计划页解析、利润推荐应用、槽位名归一化),防止枚举中变更导致崩溃。</summary>
     private readonly object _catalogGate = new();
+
+    public IReadOnlyList<CatalogItem> ItemsFor(FacilityKey key)
+    {
+        lock (_catalogGate) return Catalog.For(key).ToArray();
+    }
 
     /// <summary>
     /// ICatalogSink:扫描结果合并入目录,存盘并刷新计划页下拉。

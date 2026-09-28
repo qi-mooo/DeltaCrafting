@@ -26,6 +26,7 @@ public interface ICatalogSink
 public interface ICatalogLookup
 {
     string? ResolveDisplayName(FacilityKey key, string ocrName);
+    IReadOnlyList<CatalogItem> ItemsFor(FacilityKey key);
 }
 
 /// <summary>

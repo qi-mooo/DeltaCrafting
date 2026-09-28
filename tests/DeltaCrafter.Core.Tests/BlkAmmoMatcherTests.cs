@@ -14,14 +14,37 @@ public sealed class BlkAmmoMatcherTests
     [InlineData(FacilityKey.Workbench, ".300BLK5级弹", "", true)]
     [InlineData(FacilityKey.Workbench, ".300BLK", ".300BLK五级弹", true)]
     [InlineData(FacilityKey.Workbench, ".300BLK", ".300BLK", false)]
-    [InlineData(FacilityKey.Workbench, ".300BLK SUB-3", ".300BLK SUB-3", false)]
-    [InlineData(FacilityKey.Workbench, ".300BLK SUB-4", ".300BLK SUB-4", false)]
+    [InlineData(FacilityKey.Workbench, ".300BLK SUB-3", ".300BLK SUB-3", true)]
+    [InlineData(FacilityKey.Workbench, ".300BLK SUB-4", ".300BLK SUB-4", true)]
     [InlineData(FacilityKey.TechCenter, ".300BLK五级弹", ".300BLK", false)]
     [InlineData(FacilityKey.Workbench, "自定义物品", "自定义物品", false)]
-    public void Gold_background_rule_is_scoped_to_the_workbench_level_five_item(
+    public void Grade_background_rule_is_scoped_to_workbench_blk_ammunition(
         FacilityKey facility, string displayName, string searchName, bool expected)
     {
         Assert.Equal(expected, BlkAmmoMatcher.AppliesTo(facility, displayName, searchName));
+    }
+
+    [Theory]
+    [InlineData(3, 31, 43, 63)]
+    [InlineData(4, 51, 33, 64)]
+    [InlineData(5, 50, 40, 31)]
+    public void Each_grade_requires_its_own_color(int grade, int r, int g, int b)
+    {
+        var frame = Screenshot();
+        Fill(frame, 26, 22, 71, 71, r, g, b);
+        Assert.NotNull(BlkAmmoMatcher.Find(frame, [NameLine()], FullArea, grade: grade));
+        foreach (int other in new[] { 3, 4, 5 }.Where(g => g != grade))
+            Assert.Null(BlkAmmoMatcher.Find(frame, [NameLine()], FullArea, grade: other));
+    }
+
+    [Fact]
+    public void Paddle_split_name_regions_keep_the_color_attached_to_the_correct_row()
+    {
+        var regions = NameLine().Words.Select(w => new OcrLine(w.Text,
+            w.Left + w.Width / 2, w.Top + w.Height / 2) { Words = [w] });
+        var readout = OcrLineAssembler.Assemble(regions);
+        Assert.Single(readout.Lines);
+        Assert.NotNull(BlkAmmoMatcher.Find(Screenshot(), readout.Lines, FullArea));
     }
 
     [Theory]

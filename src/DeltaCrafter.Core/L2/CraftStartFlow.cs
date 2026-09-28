@@ -11,8 +11,7 @@ public sealed record CraftStartResult(bool Started, TimeSpan? Remaining, string?
 /// 「选择配方并开始生产」流程。生产界面右下角为同位置三态按钮,其文字即状态:
 /// 「一键补齐」=缺料 →(可选)自动购买;「生产」=可开工;「中止」=已在生产(异常)。
 /// 开工成功的判据 = 按钮变为「中止」;随后读「剩余时间」作为唯一调度依据。
-/// 配方列表因玩家置顶而顺序各异,按名称 OCR 定位(两级匹配:精确包含 → 子串编辑距离,
-/// 见 PickLine);滚到列表不再变化为止,并设安全页数上限。
+/// 配方列表因玩家置顶而顺序各异,按离线 OCR 完整名称与目录唯一匹配定位;滚到列表不再变化为止,并设安全页数上限。
 /// </summary>
 public sealed class CraftStartFlow
 {
@@ -21,13 +20,15 @@ public sealed class CraftStartFlow
     private readonly StepRunner _runner;
     private readonly InputBrick _input;
     private readonly ILogger _log;
+    private readonly ICatalogLookup _catalog;
 
-    public CraftStartFlow(ScreenProbe probe, StepRunner runner, InputBrick input, ILogger log)
+    public CraftStartFlow(ScreenProbe probe, StepRunner runner, InputBrick input, ICatalogLookup catalog, ILogger log)
     {
         _probe = probe;
         _runner = runner;
         _input = input;
         _log = log.ForContext<CraftStartFlow>();
+        _catalog = catalog;
     }
 
     /// <param name="searchName">运行期匹配名(通常为 OCR 原文),用于列表定位与选中校验。</param>
@@ -38,6 +39,10 @@ public sealed class CraftStartFlow
         string facility = FacilityKeys.DisplayName(key);
         var prodSpec = _probe.Screen(AnchorKeys.Production);
         var kw = _probe.Anchors.Keywords;
+        var items = _catalog.ItemsFor(key);
+        if (!items.Any(i => CatalogNameResolver.Canonical(i.Name) == CatalogNameResolver.Canonical(displayName)))
+            throw new StepFailedException("校验计划物品", "计划物品不在目录中,请先在设置页刷新物品目录并重新选择。");
+        searchName = displayName; // 不再使用旧版本保存的任意 OCR 匹配键。
 
         await _runner.RunAsync(hwnd, new Step(
             $"打开{facility}生产界面",
@@ -45,8 +50,8 @@ public sealed class CraftStartFlow
             () => _probe.IsOnAsync(hwnd, AnchorKeys.Production),
             TimeSpan.FromSeconds(12)), ct);
 
-        bool goldBlk = BlkAmmoMatcher.AppliesTo(key, displayName, searchName);
-        await FindAndSelectItemAsync(hwnd, facility, searchName, displayName, prodSpec, goldBlk, ct);
+        int? blkGrade = BlkAmmoMatcher.GradeFor(key, displayName, searchName);
+        await FindAndSelectItemAsync(hwnd, facility, searchName, displayName, prodSpec, items, blkGrade, ct);
 
         string label = await ReadActionLabelAsync(hwnd, prodSpec, ct);
         if (LabelHits(label, kw.ButtonAbort))
@@ -98,7 +103,7 @@ public sealed class CraftStartFlow
     }
 
     private async Task FindAndSelectItemAsync(nint hwnd, string facility, string searchName,
-        string displayName, ScreenSpec prodSpec, bool goldBlk, CancellationToken ct)
+        string displayName, ScreenSpec prodSpec, IReadOnlyList<CatalogItem> items, int? blkGrade, CancellationToken ct)
     {
         var listArea = prodSpec.Roi(AnchorKeys.RoiListArea);
         OcrLine? line = null;
@@ -109,20 +114,21 @@ public sealed class CraftStartFlow
         {
             ct.ThrowIfCancellationRequested();
             string currentView;
-            if (goldBlk)
+            if (blkGrade is { } grade)
             {
                 var (frame, lines) = await _probe.ReadAreaFrameAsync(hwnd, listArea);
-                var candidate = BlkAmmoMatcher.Find(frame, lines, listArea);
+                var candidate = BlkAmmoMatcher.Find(frame, lines, listArea, grade: grade);
                 if (candidate is not null)
                     line = new OcrLine(BlkAmmoMatcher.GameName, candidate.X, candidate.Y);
                 currentView = BlkAmmoMatcher.ViewSignature(frame, listArea);
-                _log.Debug("查找 .300 BLK 五级弹第{Page}页:名称与金色图标 {Found}",
-                    page + 1, candidate is not null);
+                _log.Debug("查找 .300 BLK {Grade}级弹第{Page}页:名称与品质颜色 {Found}",
+                    grade, page + 1, candidate is not null);
             }
             else
             {
                 var lines = await _probe.ReadAreaLinesAsync(hwnd, listArea);
-                line = PickLine(lines, searchName, page);
+                var matches = lines.Where(l => CatalogNameResolver.Matches(items, l.Text, searchName)).ToArray();
+                line = matches.Length == 1 ? matches[0] : null;
                 currentView = ScreenProbe.Normalize(string.Concat(lines.Select(l => l.Text)));
             }
             if (line is not null) break;
@@ -140,16 +146,16 @@ public sealed class CraftStartFlow
         {
             var (png, dumpText) = await _probe.DumpAsync(hwnd, "fail-查找物品");
             throw new StepFailedException($"查找物品「{displayName}」",
-                (goldBlk
-                    ? $"{facility}未找到能同时确认「.300 BLK」名称与金色图标背景的五级弹。"
+                (blkGrade is not null
+                    ? $"{facility}未找到能同时确认「.300 BLK」名称与 {blkGrade} 级品质颜色的弹药。"
                     : reachedBottom
-                    ? $"{facility}列表已滚到底仍未找到(匹配键「{searchName}」)。可用「扫描配方目录」重建候选。"
+                    ? $"{facility}列表已滚到底仍未找到(匹配键「{searchName}」)。请在画面稳定后重试,或核对目录中的完整名称。"
                     : $"{facility}列表滚动 {MaxScrollPages} 页未找到(或滚轮未生效)。") +
                 $"诊断截图:{png}", png, dumpText);
         }
 
         _probe.ClickFramePoint(hwnd, line.CenterX, line.CenterY);
-        if (goldBlk) _probe.MovePointerToRoi(hwnd, prodSpec.Roi(AnchorKeys.RoiDetailTitle));
+        if (blkGrade is not null) _probe.MovePointerToRoi(hwnd, prodSpec.Roi(AnchorKeys.RoiDetailTitle));
         long deadline = Environment.TickCount64 + 8000;
         // 普通物品保留原有标题强匹配。.300 BLK 五级弹额外确认金色行的白色选中框,
         // 因为同名标题无法区分等级。所有确认必须在补齐材料/生产之前完成。
@@ -157,46 +163,23 @@ public sealed class CraftStartFlow
         {
             ct.ThrowIfCancellationRequested();
             await Task.Delay(800, ct);
-            if (goldBlk)
+            if (blkGrade is { } grade)
             {
                 var (frame, lines) = await _probe.ReadAreaFrameAsync(hwnd, listArea);
-                var selected = BlkAmmoMatcher.Find(frame, lines, listArea, requireSelected: true);
+                var selected = BlkAmmoMatcher.Find(frame, lines, listArea, requireSelected: true, grade: grade);
                 string title = await _probe.ReadFrameRoiAsync(frame, prodSpec.Roi(AnchorKeys.RoiDetailTitle));
-                if (selected is not null && TextMatch.LineContains(title, BlkAmmoMatcher.GameName)) return;
+                if (selected is not null && BlkAmmoIdentity.IsBareName(title)) return;
             }
             else
             {
-                string title = await _probe.ReadRoiAsync(hwnd, prodSpec.Roi(AnchorKeys.RoiDetailTitle));
-                if (TextMatch.LineContains(title, searchName)) return;
+                string title = await _probe.ReadFrameRoiAsync(_probe.Capture(hwnd), prodSpec.Roi(AnchorKeys.RoiDetailTitle));
+                if (CatalogNameResolver.Matches(items, title, searchName)) return;
             }
         }
         var (png2, dump2) = await _probe.DumpAsync(hwnd, "fail-选中物品");
         throw new StepFailedException($"选中物品「{displayName}」",
-            (goldBlk ? "点击后未同时确认 .300 BLK 详情标题、金色图标及该行选中框。"
+            (blkGrade is not null ? "点击后未同时确认 .300 BLK 详情标题、品质颜色及该行选中框。"
                 : "点击后详情标题未出现该物品。") + $"诊断截图:{png2}", png2, dump2);
-    }
-
-    /// <summary>页内选行,两级匹配:① 规范形包含(精确);② 子串编辑距离 ≤1 且严格惟一最优
-    /// (容忍单点误读——实测「7.62」被读成「7毛2」或吞掉行首「7.」,包含匹配直接漏过,
-    /// 导致目标明明在第一屏却一路滚到底)。阈值取 1 保证不会错认同族名(AP/PS 差 2);
-    /// 即便极端情况下选错行,后续详情标题强校验也会大声失败,不会静默错造。</summary>
-    private OcrLine? PickLine(IReadOnlyList<OcrLine> lines, string searchName, int page)
-    {
-        var exact = lines.FirstOrDefault(l => TextMatch.LineContains(l.Text, searchName));
-        if (exact is not null) return exact;
-
-        OcrLine? best = null;
-        int bestD = int.MaxValue, secondD = int.MaxValue;
-        foreach (var l in lines)
-        {
-            int d = TextMatch.SubstringDistance(l.Text, searchName);
-            if (d < bestD) { secondD = bestD; bestD = d; best = l; }
-            else if (d < secondD) { secondD = d; }
-        }
-        _log.Debug("查找第{Page}页:{Count} 行,最优距离 {Best}(次优 {Second}):{Text}",
-            page + 1, lines.Count, bestD, secondD,
-            best is null ? "" : ScreenProbe.Normalize(best.Text));
-        return bestD <= 1 && bestD < secondD ? best : null;
     }
 
     private async Task<string> ReadActionLabelAsync(nint hwnd, ScreenSpec prodSpec, CancellationToken ct)

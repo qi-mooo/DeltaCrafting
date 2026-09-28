@@ -13,6 +13,7 @@ public sealed class ScreenProbe
     private readonly GameWindowBrick _window;
     private readonly ScreenCaptureBrick _capture;
     private readonly OcrBrick _ocr;
+    private readonly PaddleOcrBrick _itemOcr = new();
     private readonly InputBrick _input;
     private readonly Func<AnchorTable> _anchors;
     private readonly string _shotsDir;
@@ -44,9 +45,14 @@ public sealed class ScreenProbe
     public async Task<string[]> ReadRoisAsync(nint hwnd, IReadOnlyList<NRect> rois, double upscale = 2.0)
     {
         var frame = Capture(hwnd);
+        return await ReadFrameRoisAsync(frame, rois, upscale);
+    }
+
+    public async Task<string[]> ReadFrameRoisAsync(CapturedFrame frame, IReadOnlyList<NRect> rois, double upscale = 2.0)
+    {
         var result = new string[rois.Count];
         for (int i = 0; i < rois.Count; i++)
-            result[i] = (await _ocr.ReadAsync(frame, rois[i], upscale)).FullText;
+            result[i] = (await ReadItemAsync(frame, rois[i], upscale)).FullText;
         return result;
     }
 
@@ -138,17 +144,36 @@ public sealed class ScreenProbe
 
     /// <summary>读取区域内全部 OCR 行(配方目录扫描用)。</summary>
     public async Task<IReadOnlyList<OcrLine>> ReadAreaLinesAsync(nint hwnd, NRect area) =>
-        (await _ocr.ReadAsync(Capture(hwnd), area)).Lines;
+        (await ReadItemAsync(Capture(hwnd), area)).Lines;
 
     /// <summary>.300 BLK 专用识别保留 OCR 对应原帧,避免文字与品质颜色来自不同画面。</summary>
     public async Task<(CapturedFrame Frame, IReadOnlyList<OcrLine> Lines)> ReadAreaFrameAsync(nint hwnd, NRect area)
     {
         var frame = Capture(hwnd);
-        return (frame, (await _ocr.ReadAsync(frame, area)).Lines);
+        return (frame, (await ReadItemAsync(frame, area)).Lines);
     }
 
     public async Task<string> ReadFrameRoiAsync(CapturedFrame frame, NRect roi) =>
-        (await _ocr.ReadAsync(frame, roi)).FullText;
+        (await ReadItemAsync(frame, roi)).FullText;
+
+    /// <summary>物品识别使用离线模型，失败即停止，不自动切回识别率较低的路径。</summary>
+    private async Task<OcrReadout> ReadItemAsync(CapturedFrame frame, NRect roi, double upscale = 2.0)
+    {
+        var result = await _itemOcr.ReadAsync(frame, roi, upscale);
+        _log.Debug("PaddleOCR 物品读数：{Text}", result.FullText.Replace('\n', '|'));
+        if (result.HasUncertainText)
+        {
+            string uncertain = string.Join("、", result.Lines.Where(l =>
+                !float.IsFinite(l.Confidence) || l.Confidence < OcrReadout.MinimumItemConfidence)
+                .Select(l => $"{l.Text} ({l.Confidence:P0})"));
+            string png = Path.Combine(_shotsDir, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-fail-PaddleOCR.png");
+            await _capture.SavePngAsync(frame, png);
+            await File.WriteAllTextAsync(Path.ChangeExtension(png, ".txt"), string.Join("\n",
+                result.Lines.Select(l => $"{l.Confidence:F3}\t{l.Text}")));
+            throw new StepFailedException("识别物品", $"PaddleOCR 识别置信度不足：{uncertain}。已停止本轮，请在画面稳定后重试。诊断截图：{png}", png, result.FullText);
+        }
+        return result;
+    }
 
     /// <summary>保存整帧截图与全文 OCR 转储(失败现场/校准诊断)。返回(截图路径, OCR 文本)。</summary>
     public async Task<(string PngPath, string OcrText)> DumpAsync(nint hwnd, string tag)
