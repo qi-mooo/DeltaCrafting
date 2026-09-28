@@ -32,6 +32,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     public AutomationCoordinator Coordinator { get; }
     public UpdateService Updater { get; }
     public ProfitPlanService ProfitPlan { get; }
+    public DeviceApiService DeviceApi { get; }
 
     public ShellViewModel ShellVm { get; }
     public OverviewViewModel OverviewVm { get; }
@@ -113,6 +114,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         LogVm = new LogViewModel(this);
         // 服务在 VM 之后构造(应用推荐时要刷新 PlanVm),循环随调度循环一起启动。
         ProfitPlan = new ProfitPlanService(this, new ProfitPlanCoordinator(), Log);
+        DeviceApi = new DeviceApiService(this);
 
         _ = Task.Run(() => Coordinator.RunSchedulerLoopAsync(_appStop.Token));
         _ = Task.Run(() => ProfitPlan.RunLoopAsync(_appStop.Token));
@@ -253,6 +255,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         _theme = new ThemeService(window);
         _theme.Apply(Settings.Theme);
         SettingsVm = new SettingsViewModel(this, _theme);
+        DeviceApi.Apply();
         _tray = new TrayService(window,
             runNow: () => _ = Task.Run(() => Coordinator.RunOnceAsync("托盘触发", CancellationToken.None)),
             exit: window.RequestExit);
@@ -285,6 +288,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         _isShutdown = true;
         Log.Information("应用退出。");
         _appStop.Cancel();
+        DeviceApi.Dispose();
         _tray?.Dispose();
         SleepGuard.Dispose();
         Notifier.Unregister();

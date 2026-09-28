@@ -149,6 +149,44 @@
                     </controls:SettingCard.Slot>
                 </controls:SettingCard>
 
+                <TextBlock Text="T-Display-S3" Style="{StaticResource BodyStrongTextBlockStyle}"
+                           Margin="0,12,0,0" />
+                <controls:SettingCard Glyph="&#xE968;" Header="局域网设备 API"
+                                      Description="{x:Bind Vm.DeviceApiStatus, Mode=OneWay}">
+                    <controls:SettingCard.Slot>
+                        <ToggleSwitch IsOn="{x:Bind Vm.DeviceApiEnabled, Mode=TwoWay}" />
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+                <controls:SettingCard Glyph="&#xE839;" Header="监听端口"
+                                      Description="与 S3 连接同一局域网,在防火墙中允许此端口。">
+                    <controls:SettingCard.Slot>
+                        <NumberBox Width="140" SpinButtonPlacementMode="Inline"
+                                   Minimum="1024" Maximum="65535" SmallChange="1"
+                                   Value="{x:Bind Vm.DeviceApiPort, Mode=TwoWay}" />
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+                <controls:SettingCard Glyph="&#xE72E;" Header="配对密钥"
+                                      Description="复制到固件配置。重新生成后,旧密钥立即失效。">
+                    <controls:SettingCard.Slot>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Command="{x:Bind Vm.CopyDeviceApiKeyCommand}"
+                                    ToolTipService.ToolTip="复制配对密钥" AutomationProperties.Name="复制配对密钥">
+                                <FontIcon Glyph="&#xE8C8;" />
+                            </Button>
+                            <Button Command="{x:Bind Vm.GenerateDeviceApiKeyCommand}"
+                                    ToolTipService.ToolTip="重新生成密钥" AutomationProperties.Name="重新生成密钥">
+                                <FontIcon Glyph="&#xE72C;" />
+                            </Button>
+                        </StackPanel>
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+                <controls:SettingCard Glyph="&#xE7F4;" Header="允许设备控制"
+                                      Description="允许设备立即执行、停止当前任务及暂停或恢复自动循环。">
+                    <controls:SettingCard.Slot>
+                        <ToggleSwitch IsOn="{x:Bind Vm.DeviceApiAllowControl, Mode=TwoWay}" />
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+
                 <!-- 关于 -->
                 <Border Style="{StaticResource CardBorderStyle}" Margin="0,12,0,0">
                     <StackPanel Spacing="6">

@@ -35,6 +35,7 @@ public sealed partial class AutomationCoordinator : IDisposable
     private readonly ILogger _log;
     private readonly SemaphoreSlim _runLock = new(1, 1);
     private CancellationTokenSource? _runCts;
+    private readonly object _runCtsGate = new();
 
     public event Action<CoordinatorStatus>? StatusChanged;
     public CoordinatorStatus Status { get; private set; } = new(EngineMode.Idle, "空闲", null);
@@ -58,16 +59,13 @@ public sealed partial class AutomationCoordinator : IDisposable
     }
 
     /// <summary>UI 读取的设施状态快照(浅拷贝,避免与执行线程共享可变对象)。</summary>
-    public IReadOnlyList<FacilityRuntime> FacilitySnapshot() =>
-        _engine.State.Facilities.Select(f => new FacilityRuntime
-        {
-            Key = f.Key, Phase = f.Phase, ItemName = f.ItemName,
-            ReadyAt = f.ReadyAt, ManualReason = f.ManualReason, ObservedAt = f.ObservedAt,
-        }).ToList();
+    public IReadOnlyList<FacilityRuntime> FacilitySnapshot() => _engine.Snapshot().Facilities;
+
+    public ScheduleState ScheduleSnapshot() => _engine.Snapshot();
 
     public (DateTimeOffset? LastRunAt, string? Summary, bool Failed) LastRunInfo()
     {
-        var s = _engine.State;
+        var s = _engine.Snapshot();
         return (s.LastRunAt, s.LastRunSummary, s.LastRunFailed);
     }
 
@@ -80,6 +78,7 @@ public sealed partial class AutomationCoordinator : IDisposable
     /// 手动),避免安装程序在半截制造流程中结束游戏进程。可逆:更新失败即解除。
     /// 已在执行的一轮不受影响——调用方应等其自然结束。</summary>
     private volatile bool _runsBlocked;
+    public bool RunsBlocked => _runsBlocked;
     public async Task BlockNewRunsAndWaitAsync(CancellationToken ct)
     {
         _runsBlocked = true;
@@ -161,7 +160,10 @@ public sealed partial class AutomationCoordinator : IDisposable
                 report.Add("游戏已预启动至大厅,等待到点执行");
             });
 
-    public void RequestStop() => _runCts?.Cancel();
+    public void RequestStop()
+    {
+        lock (_runCtsGate) _runCts?.Cancel();
+    }
 
     /// <summary>中止指定设施的当前制造(总览页「取消」)。成功后把该设施置为空闲,
     /// 下一轮会按(修正后的)计划重新开工。不自动关游戏——留给用户核对/改物品。</summary>
@@ -178,13 +180,13 @@ public sealed partial class AutomationCoordinator : IDisposable
             });
 
     public Task<RunReport> RunOnceAsync(string trigger, CancellationToken external) =>
-        ExecuteGuardedAsync(trigger, affectsSchedule: true, requiresCalibration: true, RunRoundAsync);
+        ExecuteGuardedAsync(trigger, affectsSchedule: true, requiresCalibration: true, RunRoundAsync, external);
 
     /// <summary>「识别当前任务」:上号观察四个设施,把画面上的状态/物品/剩余时间原样写入调度,
     /// 不领取、不开工。面向首次接管——特勤处里已有制造中的任务时,先同步进度再进入循环;
     /// 画面即事实:之前的「需人工」标记也会被本次观察结果覆盖。结束后按设置处置游戏。</summary>
     public Task<RunReport> SyncFacilitiesAsync(string trigger, CancellationToken external) =>
-        ExecuteGuardedAsync(trigger, affectsSchedule: true, requiresCalibration: true, SyncRoundAsync);
+        ExecuteGuardedAsync(trigger, affectsSchedule: true, requiresCalibration: true, SyncRoundAsync, external);
 
     private async Task SyncRoundAsync(RunReport report, CancellationToken ct)
     {
@@ -310,8 +312,10 @@ public sealed partial class AutomationCoordinator : IDisposable
     }
 
     private async Task<RunReport> ExecuteGuardedAsync(string trigger, bool affectsSchedule,
-        bool requiresCalibration, Func<RunReport, CancellationToken, Task> body)
+        bool requiresCalibration, Func<RunReport, CancellationToken, Task> body,
+        CancellationToken external = default)
     {
+        external.ThrowIfCancellationRequested();
         var report = new RunReport(trigger);
         if (_runsBlocked)
         {
@@ -332,11 +336,12 @@ public sealed partial class AutomationCoordinator : IDisposable
             report.Add("更新安装进行中,本次触发被忽略");
             return report;
         }
-        _runCts = new CancellationTokenSource();
+        lock (_runCtsGate) _runCts = CancellationTokenSource.CreateLinkedTokenSource(external);
         _sleepGuard.SetActive(true);
         _windowGuard.MinimizeForRun(); // 防止助手窗口盖住游戏,污染屏幕拷贝识别
         try
         {
+            _runCts.Token.ThrowIfCancellationRequested();
             _log.Information("开始执行[{Trigger}]。", trigger);
             if (requiresCalibration && !_probe.Anchors.Calibrated)
                 throw new StepFailedException("前置检查",
@@ -387,8 +392,11 @@ public sealed partial class AutomationCoordinator : IDisposable
         finally
         {
             _windowGuard.RestoreAfterRun();
-            _runCts?.Dispose();
-            _runCts = null;
+            lock (_runCtsGate)
+            {
+                _runCts?.Dispose();
+                _runCts = null;
+            }
             _runLock.Release();
         }
         return report;
@@ -408,5 +416,8 @@ public sealed partial class AutomationCoordinator : IDisposable
     private static string Fmt(TimeSpan t) =>
         $"{(int)t.TotalHours:00}:{t.Minutes:00}:{t.Seconds:00}";
 
-    public void Dispose() => _runCts?.Dispose();
+    public void Dispose()
+    {
+        lock (_runCtsGate) _runCts?.Dispose();
+    }
 }

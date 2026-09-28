@@ -15,6 +15,7 @@ public sealed class ScheduleEngine
     private readonly string _statePath;
     private readonly IClock _clock;
     private readonly ILogger _log;
+    private readonly object _stateGate = new();
 
     public ScheduleState State { get; }
 
@@ -30,13 +31,16 @@ public sealed class ScheduleEngine
     public void RecordObservation(FacilityKey key, FacilityPhase phase, string itemName,
         DateTimeOffset? readyAt, string? manualReason)
     {
-        var rt = State.For(key);
-        rt.Phase = phase;
-        rt.ItemName = itemName;
-        rt.ReadyAt = readyAt;
-        rt.ManualReason = manualReason;
-        rt.ObservedAt = _clock.Now;
-        Save();
+        lock (_stateGate)
+        {
+            var rt = State.For(key);
+            rt.Phase = phase;
+            rt.ItemName = itemName;
+            rt.ReadyAt = readyAt;
+            rt.ManualReason = manualReason;
+            rt.ObservedAt = _clock.Now;
+            Save();
+        }
     }
 
     /// <summary>
@@ -46,43 +50,72 @@ public sealed class ScheduleEngine
     /// </summary>
     public DateTimeOffset? ComputeNextRunAt(CraftPlanConfig plan, AppSettings settings)
     {
-        var now = _clock.Now;
-        DateTimeOffset? next = null;
-        foreach (var fp in plan.Facilities.Where(f => f.Enabled))
+        lock (_stateGate)
         {
-            var rt = State.For(fp.Key);
-            DateTimeOffset? candidate = rt.Phase switch
+            var now = _clock.Now;
+            DateTimeOffset? next = null;
+            foreach (var fp in plan.Facilities.Where(f => f.Enabled))
             {
-                FacilityPhase.Crafting when rt.ReadyAt is { } ready =>
-                    ready + TimeSpan.FromSeconds(settings.RunBufferSeconds),
-                FacilityPhase.Crafting => now, // 制造中但没有读数,重新观察
-                FacilityPhase.ReadyToCollect or FacilityPhase.Idle or FacilityPhase.Unknown => now,
-                FacilityPhase.NeedsManual => null,
-                _ => null,
-            };
-            if (candidate is { } c && (next is null || c < next)) next = c;
-        }
+                var rt = State.For(fp.Key);
+                DateTimeOffset? candidate = rt.Phase switch
+                {
+                    FacilityPhase.Crafting when rt.ReadyAt is { } ready =>
+                        ready + TimeSpan.FromSeconds(settings.RunBufferSeconds),
+                    FacilityPhase.Crafting => now, // 制造中但没有读数,重新观察
+                    FacilityPhase.ReadyToCollect or FacilityPhase.Idle or FacilityPhase.Unknown => now,
+                    FacilityPhase.NeedsManual => null,
+                    _ => null,
+                };
+                if (candidate is { } c && (next is null || c < next)) next = c;
+            }
 
-        if (next is { } n && State.FailureBackoffUntil is { } backoff && backoff > n)
-            next = backoff;
-        return next;
+            if (next is { } n && State.FailureBackoffUntil is { } backoff && backoff > n)
+                next = backoff;
+            return next;
+        }
     }
 
     public void MarkRunStarted()
     {
-        State.LastRunAt = _clock.Now;
-        Save();
+        lock (_stateGate)
+        {
+            State.LastRunAt = _clock.Now;
+            Save();
+        }
     }
 
     public void MarkRunFinished(string summary, bool failed, int failureRetryMinutes)
     {
-        State.LastRunSummary = summary;
-        State.LastRunFailed = failed;
-        State.FailureBackoffUntil = failed ? _clock.Now.AddMinutes(failureRetryMinutes) : null;
-        if (failed)
-            _log.Warning("本轮失败,{Minutes} 分钟后才会再次自动尝试。", failureRetryMinutes);
-        Save();
+        lock (_stateGate)
+        {
+            State.LastRunSummary = summary;
+            State.LastRunFailed = failed;
+            State.FailureBackoffUntil = failed ? _clock.Now.AddMinutes(failureRetryMinutes) : null;
+            if (failed)
+                _log.Warning("本轮失败,{Minutes} 分钟后才会再次自动尝试。", failureRetryMinutes);
+            Save();
+        }
     }
 
-    public void Save() => _store.Save(_statePath, State);
+    public ScheduleState Snapshot()
+    {
+        lock (_stateGate)
+            return new ScheduleState
+            {
+                LastRunAt = State.LastRunAt,
+                LastRunSummary = State.LastRunSummary,
+                LastRunFailed = State.LastRunFailed,
+                FailureBackoffUntil = State.FailureBackoffUntil,
+                Facilities = State.Facilities.Select(f => new FacilityRuntime
+                {
+                    Key = f.Key, Phase = f.Phase, ItemName = f.ItemName,
+                    ReadyAt = f.ReadyAt, ManualReason = f.ManualReason, ObservedAt = f.ObservedAt,
+                }).ToList(),
+            };
+    }
+
+    public void Save()
+    {
+        lock (_stateGate) _store.Save(_statePath, State);
+    }
 }

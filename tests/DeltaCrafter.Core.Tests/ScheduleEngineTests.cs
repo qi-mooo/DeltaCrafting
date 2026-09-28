@@ -84,6 +84,17 @@ public class ScheduleEngineTests : IDisposable
         Assert.Equal(_clock.Now, _engine.ComputeNextRunAt(_plan, _settings));
     }
 
+    [Fact]
+    public void Snapshot_is_detached_from_later_observations_and_external_edits()
+    {
+        _engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "A", _clock.Now.AddHours(1), null);
+        var snapshot = _engine.Snapshot();
+        _engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.ReadyToCollect, "B", null, null);
+        Assert.Equal("A", snapshot.For(FacilityKey.Workbench).ItemName);
+        snapshot.For(FacilityKey.Workbench).ItemName = "changed";
+        Assert.Equal("B", _engine.Snapshot().For(FacilityKey.Workbench).ItemName);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_dir, recursive: true); } catch { /* 临时目录清理失败不影响断言 */ }

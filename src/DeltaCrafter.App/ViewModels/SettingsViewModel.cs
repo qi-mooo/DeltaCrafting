@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DeltaCrafter.App.Services;
@@ -51,10 +52,77 @@ public sealed partial class SettingsViewModel : ObservableObject
         windowRuleText = DescribeRule();
         try { _autostartEnabled = host.Autostart.IsEnabled(); }
         catch (Exception ex) { AutostartError = ex.Message; }
+        host.DeviceApi.Changed += () => OnPropertyChanged(nameof(DeviceApiStatus));
     }
 
     private AppSettings S => _host.Settings;
     private void Save() => _host.SaveSettings();
+
+    public string DeviceApiStatus => _host.DeviceApi.StatusText;
+    public string DeviceApiKey => S.DeviceApi.ApiKey;
+
+    public bool DeviceApiEnabled
+    {
+        get => S.DeviceApi.Enabled;
+        set
+        {
+            if (S.DeviceApi.Enabled == value) return;
+            if (value && string.IsNullOrEmpty(S.DeviceApi.ApiKey)) GenerateDeviceApiKey();
+            S.DeviceApi.Enabled = value;
+            ApplyDeviceApi();
+            OnPropertyChanged();
+        }
+    }
+
+    public double DeviceApiPort
+    {
+        get => S.DeviceApi.Port;
+        set
+        {
+            if (!double.IsFinite(value)) return;
+            int port = (int)Math.Clamp(value, 1024, 65535);
+            if (port == S.DeviceApi.Port) return;
+            S.DeviceApi.Port = port;
+            ApplyDeviceApi();
+            OnPropertyChanged();
+        }
+    }
+
+    public bool DeviceApiAllowControl
+    {
+        get => S.DeviceApi.AllowControl;
+        set
+        {
+            if (S.DeviceApi.AllowControl == value) return;
+            S.DeviceApi.AllowControl = value;
+            ApplyDeviceApi();
+            OnPropertyChanged();
+        }
+    }
+
+    [RelayCommand]
+    private void GenerateDeviceApiKey()
+    {
+        S.DeviceApi.ApiKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        ApplyDeviceApi();
+        OnPropertyChanged(nameof(DeviceApiKey));
+    }
+
+    [RelayCommand]
+    private void CopyDeviceApiKey()
+    {
+        if (string.IsNullOrEmpty(DeviceApiKey)) GenerateDeviceApiKey();
+        var data = new Windows.ApplicationModel.DataTransfer.DataPackage();
+        data.SetText(DeviceApiKey);
+        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data);
+    }
+
+    private void ApplyDeviceApi()
+    {
+        Save();
+        _host.DeviceApi.Apply();
+        OnPropertyChanged(nameof(DeviceApiStatus));
+    }
 
     partial void OnGamePathChanged(string value)
     {
