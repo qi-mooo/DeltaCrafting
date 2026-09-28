@@ -20,6 +20,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly ThemeService _theme;
     private bool _autostartEnabled;
 
+    [ObservableProperty] private string steamActivityStatus = "尚未检查";
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasAutostartError))]
     private string autostartError = "";
@@ -154,6 +156,34 @@ public sealed partial class SettingsViewModel : ObservableObject
     }
 
     public string SteamPathDescription => string.IsNullOrWhiteSpace(S.SteamPath) ? "自动检测本机 Steam 客户端" : S.SteamPath;
+
+    public bool SteamActivityEnabled
+    {
+        get => S.SteamActivity.Enabled;
+        set { S.SteamActivity.Enabled = value; Save(); OnPropertyChanged(); }
+    }
+
+    public string SteamActivityId
+    {
+        get => S.SteamActivity.SteamId;
+        set { S.SteamActivity.SteamId = value?.Trim() ?? ""; Save(); OnPropertyChanged(); SteamActivityStatus = "尚未检查"; }
+    }
+
+    public string SteamActivityApiKey
+    {
+        get => S.SteamActivity.ApiKey;
+        set { S.SteamActivity.ApiKey = value?.Trim() ?? ""; Save(); OnPropertyChanged(); SteamActivityStatus = "尚未检查"; }
+    }
+
+    [RelayCommand]
+    private async Task CheckSteamActivityAsync()
+    {
+        string key = SteamActivityApiKey, id = SteamActivityId;
+        SteamActivityStatus = "正在查询 Steam…";
+        var result = await new SteamActivityClient().CheckAsync(key, id, CancellationToken.None);
+        if (key != SteamActivityApiKey || id != SteamActivityId) return;
+        SteamActivityStatus = result.Detail;
+    }
 
     [RelayCommand]
     private void BrowseSteamPath()

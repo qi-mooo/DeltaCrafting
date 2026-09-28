@@ -33,6 +33,7 @@ public sealed partial class AutomationCoordinator : IDisposable
     private readonly INotifier _notifier;
     private readonly IClock _clock;
     private readonly ILogger _log;
+    private readonly SteamActivityGuard _steamActivity;
     private readonly SemaphoreSlim _runLock = new(1, 1);
     private CancellationTokenSource? _runCts;
     private readonly object _runCtsGate = new();
@@ -47,7 +48,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         ScheduleEngine engine,
         ScreenProbe probe, GameWindowBrick windowBrick, SleepGuardBrick sleepGuard,
         Func<AppSettings> settings, Func<CraftPlanConfig> plan, INotifier notifier,
-        IClock clock, ILogger log)
+        IClock clock, ILogger log, SteamActivityGuard? steamActivity = null)
     {
         _launch = launch; _nav = nav; _collect = collect; _craft = craft; _abort = abort;
         _scan = scan; _catalogSink = catalogSink; _catalog = catalogLookup;
@@ -56,6 +57,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         _engine = engine; _probe = probe; _windowBrick = windowBrick; _sleepGuard = sleepGuard;
         _settings = settings; _plan = plan; _notifier = notifier; _clock = clock;
         _log = log.ForContext<AutomationCoordinator>();
+        _steamActivity = steamActivity ?? new SteamActivityGuard(new SteamActivityClient(), clock);
     }
 
     /// <summary>UI 读取的设施状态快照(浅拷贝,避免与执行线程共享可变对象)。</summary>
@@ -124,17 +126,16 @@ public sealed partial class AutomationCoordinator : IDisposable
             while (await timer.WaitForNextTickAsync(appStop))
             {
                 var s = _settings();
-                var next = _engine.ComputeNextRunAt(_plan(), s);
+                var waiting = WaitingStatus();
+                var next = waiting.NextRunAt;
                 _sleepGuard.SetActive(IsRunning || (s.AutoLoopEnabled && s.PreventSleepWhileWaiting));
                 if (!IsRunning)
-                    Publish(s.AutoLoopEnabled
-                        ? new CoordinatorStatus(EngineMode.WaitingSchedule, "等待下次执行", next)
-                        : new CoordinatorStatus(EngineMode.Idle, "自动循环未开启", null));
+                    Publish(waiting);
                 if (s.AutoLoopEnabled && next is { } n && !IsRunning && !_runsBlocked)
                 {
                     if (_clock.Now >= n)
                         _ = RunOnceAsync("定时触发", CancellationToken.None);
-                    else if (_clock.Now >= n.AddSeconds(-PrewarmLeadSeconds)
+                    else if (!s.SteamActivity.Enabled && _clock.Now >= n.AddSeconds(-PrewarmLeadSeconds)
                              && _prewarmedFor != n
                              && (s.LaunchMode == GameLaunchMode.Steam || _windowBrick.FindGameClient(s.WindowMatch) is null))
                     {
@@ -147,6 +148,21 @@ public sealed partial class AutomationCoordinator : IDisposable
             }
         }
         catch (OperationCanceledException) { /* 应用退出 */ }
+    }
+
+    internal CoordinatorStatus WaitingStatus()
+    {
+        var settings = _settings();
+        var next = settings.AutoLoopEnabled ? _engine.ComputeNextRunAt(_plan(), settings) : null;
+        if (_steamActivity.GetBlock(settings.SteamActivity) is { } block)
+        {
+            if (next is { } n && n < block.RetryAt) next = block.RetryAt;
+            return new(settings.AutoLoopEnabled ? EngineMode.WaitingSchedule : EngineMode.Idle,
+                $"{block.Detail}; {block.RetryAt:HH:mm:ss} 后重试", next);
+        }
+        return settings.AutoLoopEnabled
+            ? new(EngineMode.WaitingSchedule, "等待下次执行", next)
+            : new(EngineMode.Idle, "自动循环未开启", null);
     }
 
     /// <summary>预启动:只把游戏带到大厅就收手,不进特勤处、不动任何设施。
@@ -337,11 +353,22 @@ public sealed partial class AutomationCoordinator : IDisposable
             return report;
         }
         lock (_runCtsGate) _runCts = CancellationTokenSource.CreateLinkedTokenSource(external);
-        _sleepGuard.SetActive(true);
-        _windowGuard.MinimizeForRun(); // 防止助手窗口盖住游戏,污染屏幕拷贝识别
+        bool started = false;
         try
         {
             _runCts.Token.ThrowIfCancellationRequested();
+            if (await _steamActivity.CheckAsync(_settings().SteamActivity, _runCts.Token) is { } block)
+            {
+                report.Add($"{block.Detail}; 本次未执行,5 分钟后重试");
+                _log.Information("[{Trigger}]暂缓: {Reason};下次检查 {RetryAt:HH:mm:ss}。",
+                    trigger, block.Detail, block.RetryAt);
+                Publish(WaitingStatus());
+                return report;
+            }
+            _runCts.Token.ThrowIfCancellationRequested();
+            _sleepGuard.SetActive(true);
+            started = true;
+            _windowGuard.MinimizeForRun(); // 防止助手窗口盖住游戏,污染屏幕拷贝识别
             _log.Information("开始执行[{Trigger}]。", trigger);
             if (requiresCalibration && !_probe.Anchors.Calibrated)
                 throw new StepFailedException("前置检查",
@@ -363,7 +390,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         {
             report.AddFailure("已手动停止");
             _log.Information("[{Trigger}]被手动停止。", trigger);
-            if (affectsSchedule) // 手动停止不进入失败退避,由用户决定何时再跑
+            if (affectsSchedule && started) // 手动停止不进入失败退避,由用户决定何时再跑
                 _engine.MarkRunFinished(report.Summary(), failed: false, _settings().FailureRetryMinutes);
             Publish(new CoordinatorStatus(EngineMode.Idle, "已手动停止", null));
         }
@@ -371,7 +398,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         {
             report.AddFailure(ex.Message);
             _log.Error(ex, "[{Trigger}]因仓库空间不足中止。", trigger);
-            if (affectsSchedule)
+            if (affectsSchedule && started)
                 _engine.MarkRunFinished(report.Summary(), failed: true, _settings().FailureRetryMinutes);
             _notifier.Notify("仓库空间不足",
                 "补齐材料或领取制造物品失败，请及时清理游戏仓库后再运行。");
@@ -382,7 +409,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         {
             report.AddFailure(ex.Message);
             _log.Error(ex, "[{Trigger}]执行失败。", trigger);
-            if (affectsSchedule)
+            if (affectsSchedule && started)
                 _engine.MarkRunFinished(report.Summary(), failed: true, _settings().FailureRetryMinutes);
             _notifier.Notify("特勤处执行失败", ex.Message);
             // 故意不关游戏:保留失败现场供人工检查。
@@ -391,7 +418,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         }
         finally
         {
-            _windowGuard.RestoreAfterRun();
+            if (started) _windowGuard.RestoreAfterRun();
             lock (_runCtsGate)
             {
                 _runCts?.Dispose();

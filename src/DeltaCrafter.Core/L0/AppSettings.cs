@@ -47,6 +47,8 @@ public sealed class AppSettings
     /// <summary>留空时从注册表检测本机 Steam;可手动选择 steam.exe。</summary>
     public string SteamPath { get; set; } = "";
 
+    public SteamActivitySettings SteamActivity { get; set; } = new();
+
     /// <summary>启动后等待游戏窗口出现的上限(秒)。超时即判失败,不做无限等待。</summary>
     public int LaunchTimeoutSeconds { get; set; } = 240;
 

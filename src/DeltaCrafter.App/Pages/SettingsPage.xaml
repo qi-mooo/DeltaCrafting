@@ -86,6 +86,38 @@
                     </controls:SettingCard.Slot>
                 </controls:SettingCard>
 
+                <TextBlock Text="Steam 游戏状态" Style="{StaticResource BodyStrongTextBlockStyle}"
+                           Margin="0,12,0,0" />
+                <controls:SettingCard Glyph="&#xE7FC;" Header="游戏中暂停任务"
+                                      Description="游戏中或查询失败时等待 5 分钟再检查。">
+                    <controls:SettingCard.Slot>
+                        <ToggleSwitch IsOn="{x:Bind Vm.SteamActivityEnabled, Mode=TwoWay}" />
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+                <controls:SettingCard Glyph="&#xE77B;" Header="Steam ID">
+                    <controls:SettingCard.Slot>
+                        <TextBox Width="220" MaxLength="17" InputScope="Number"
+                                 Text="{x:Bind Vm.SteamActivityId, Mode=TwoWay}"
+                                 AutomationProperties.Name="Steam ID" />
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+                <controls:SettingCard Glyph="&#xE72E;" Header="Steam API key">
+                    <controls:SettingCard.Slot>
+                        <PasswordBox Width="280" MaxLength="32"
+                                     Password="{x:Bind Vm.SteamActivityApiKey, Mode=TwoWay}"
+                                     AutomationProperties.Name="Steam API key" />
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+                <controls:SettingCard Glyph="&#xE968;" Header="当前状态"
+                                      Description="{x:Bind Vm.SteamActivityStatus, Mode=OneWay}">
+                    <controls:SettingCard.Slot>
+                        <Button Command="{x:Bind Vm.CheckSteamActivityCommand}"
+                                ToolTipService.ToolTip="检查 Steam 状态" AutomationProperties.Name="检查 Steam 状态">
+                            <FontIcon Glyph="&#xE72C;" />
+                        </Button>
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+
                 <!-- 运行 -->
                 <TextBlock Text="运行" Style="{StaticResource BodyStrongTextBlockStyle}"
                            Margin="0,12,0,0" />
