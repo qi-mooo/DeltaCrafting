@@ -12,6 +12,7 @@ bool overflow = false;
 bool apiOnline = false;
 String apiError;
 int facilities = 0;
+void (*screenCapture)() = nullptr;
 
 bool validKey(const String &value)
 {
@@ -42,9 +43,16 @@ void processLine(const String &line)
         return;
     }
     const char *command = doc["command"] | "";
+    if (strcmp(command, "screen") == 0 && screenCapture) {
+        screenCapture();
+        return;
+    }
     if (strcmp(command, "info") == 0) {
         doc.clear();
         doc["ok"] = true;
+        doc["firmware"] = "axeuh-keys-v2";
+        doc["build"] = __DATE__ " " __TIME__;
+        doc["controls"] = "GPIO0=cycle,GPIO14=confirm";
         doc["configured"] = valid();
         doc["wifiConnected"] = WiFi.status() == WL_CONNECTED;
         doc["ip"] = WiFi.localIP().toString();
@@ -132,6 +140,8 @@ void handleSerial()
 }
 
 // Called and read only from the Arduino loop task.
+void setScreenCapture(void (*capture)()) { screenCapture = capture; }
+
 void setHealth(bool online, const String &error, int facilityCount)
 {
     apiOnline = online;

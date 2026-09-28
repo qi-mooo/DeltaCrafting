@@ -317,6 +317,8 @@ public sealed partial class AutomationCoordinator : IDisposable
             autoReplenishMaterials, ct);
         if (result.Started)
         {
+            _engine.RecordObservation(fp.Key, FacilityPhase.Crafting, fp.ItemName,
+                _clock.Now + result.Remaining!.Value, null, startedNow: true);
             report.Add($"{name}已开始「{fp.ItemName}」(剩余 {Fmt(result.Remaining!.Value)})");
         }
         else

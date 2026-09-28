@@ -22,7 +22,7 @@ public sealed class DeviceApiService : IDisposable
         _host = host;
         _api = new DeviceApiCoordinator(
             ct => OnUiAsync(Snapshot, ct),
-            (action, ct) => OnUiAsync(() => Execute(action), ct), host.Log);
+            (action, ct) => OnUiAsync(() => Execute(action), ct), host.Log, UpdateSettingsAsync);
         _api.Changed += () => _dispatcher.TryEnqueue(() => Changed?.Invoke());
     }
 
@@ -31,7 +31,35 @@ public sealed class DeviceApiService : IDisposable
     private DeviceStatus Snapshot() => DeviceApiCoordinator.CreateStatus(
         typeof(AppHost).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
         DateTimeOffset.Now, _host.Coordinator.Status, _host.Coordinator.IsRunning,
-        _host.Settings, _host.Plan, _host.Coordinator.ScheduleSnapshot());
+        _host.Settings, _host.Plan, _host.Coordinator.ScheduleSnapshot(),
+        _host.SteamStatus.Snapshot(_host.Settings.SteamActivity));
+
+    private async Task<DeviceActionResult> UpdateSettingsAsync(DeviceSettingsRequest update, CancellationToken ct)
+    {
+        DeviceActionResult result = new(409, "busy");
+        await _host.Coordinator.RunBetweenRoundsAsync(async () =>
+        {
+            result = await OnUiAsync(() =>
+            {
+                if (!_host.Settings.DeviceApi.Enabled || !_host.Settings.DeviceApi.AllowControl)
+                    return new DeviceActionResult(403, "control_disabled");
+                if (_host.Coordinator.RunsBlocked) return new DeviceActionResult(409, "update_in_progress");
+                if (!update.IsValid()) return new DeviceActionResult(400, "invalid_settings");
+                if (update.Facility is { } facility)
+                {
+                    var key = FacilityKeys.All.Single(k => FacilityKeys.JsonKey(k) == facility);
+                    _host.PlanVm.UpdateDeviceFacility(key, update.Enabled,
+                        update.CraftMode is { } mode ? Enum.Parse<CraftMode>(mode) : null);
+                }
+                if (update.AutoLoopEnabled is { } loop) _host.PlanVm.AutoLoopEnabled = loop;
+                if (update.SteamDetectionEnabled is { } steam) _host.SettingsVm.SteamActivityEnabled = steam;
+                if (update.AfterRun is { } after) _host.SettingsVm.AfterRunIndex = (int)Enum.Parse<AfterRunAction>(after);
+                _host.Log.Information("设备 API 设置已保存。");
+                return new DeviceActionResult(200, "saved");
+            }, ct);
+        }, ct);
+        return result;
+    }
 
     private DeviceActionResult Execute(string action)
     {

@@ -24,7 +24,11 @@ def main():
     wire = json.dumps(payload, ensure_ascii=False).encode("utf-8") + b"\n"
     if len(wire) > 2048:
         raise SystemExit("Configuration is too long.")
-    with serial.Serial(args.port, 115200, timeout=0.5, write_timeout=5) as device:
+    device = serial.Serial(port=None, baudrate=115200, timeout=0.5, write_timeout=5)
+    device.dtr = False
+    device.rts = False
+    device.port = args.port
+    with device:
         time.sleep(2)
         device.reset_input_buffer()
         device.write(wire)

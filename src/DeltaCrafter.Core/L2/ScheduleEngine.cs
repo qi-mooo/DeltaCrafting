@@ -29,11 +29,16 @@ public sealed class ScheduleEngine
     }
 
     public void RecordObservation(FacilityKey key, FacilityPhase phase, string itemName,
-        DateTimeOffset? readyAt, string? manualReason)
+        DateTimeOffset? readyAt, string? manualReason, bool startedNow = false)
     {
         lock (_stateGate)
         {
             var rt = State.For(key);
+            bool sameCraft = phase == FacilityPhase.Crafting && rt.Phase == phase
+                && rt.ItemName == itemName && rt.ReadyAt is { } previousReady && readyAt is { } nextReady
+                && Math.Abs((nextReady - previousReady).TotalSeconds) <= 120;
+            rt.StartedAt = startedNow && phase == FacilityPhase.Crafting ? _clock.Now
+                : sameCraft ? rt.StartedAt : null;
             rt.Phase = phase;
             rt.ItemName = itemName;
             rt.ReadyAt = readyAt;
@@ -109,7 +114,8 @@ public sealed class ScheduleEngine
                 Facilities = State.Facilities.Select(f => new FacilityRuntime
                 {
                     Key = f.Key, Phase = f.Phase, ItemName = f.ItemName,
-                    ReadyAt = f.ReadyAt, ManualReason = f.ManualReason, ObservedAt = f.ObservedAt,
+                    ReadyAt = f.ReadyAt, StartedAt = f.StartedAt,
+                    ManualReason = f.ManualReason, ObservedAt = f.ObservedAt,
                 }).ToList(),
             };
     }

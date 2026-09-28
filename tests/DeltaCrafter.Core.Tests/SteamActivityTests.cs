@@ -133,6 +133,29 @@ public sealed class SteamActivityTests
 
     private static SteamActivitySettings Settings() => new() { Enabled = true, ApiKey = Key, SteamId = Id };
 
+    [Fact]
+    public async Task Display_polling_is_independent_of_task_guard_and_expires_old_state()
+    {
+        var clock = new Clock();
+        var source = new Source();
+        var monitor = new SteamStatusMonitor(source, clock);
+        var settings = Settings();
+        settings.Enabled = false; // Display can still query when the task guard is disabled.
+        Assert.Equal("Unknown", monitor.Snapshot(settings).State);
+        await monitor.RefreshAsync(settings, default);
+        Assert.Equal("Playing", monitor.Snapshot(settings).State);
+        Assert.Equal(clock.Now, monitor.Snapshot(settings).CheckedAt);
+        clock.Now = clock.Now.AddSeconds(91);
+        Assert.Equal("Unavailable", monitor.Snapshot(settings).State);
+        source.State = SteamActivityState.NotPlaying;
+        await monitor.RefreshAsync(settings, default);
+        Assert.Equal("NotPlaying", monitor.Snapshot(settings).State);
+        settings.SteamId = "76561198000000002";
+        Assert.Equal("Unknown", monitor.Snapshot(settings).State);
+        settings.ApiKey = "";
+        Assert.Equal("Unavailable", monitor.Snapshot(settings).State);
+    }
+
     [Theory]
     [InlineData(SteamActivityState.Playing)]
     [InlineData(SteamActivityState.Unavailable)]

@@ -95,6 +95,24 @@ public class ScheduleEngineTests : IDisposable
         Assert.Equal("B", _engine.Snapshot().For(FacilityKey.Workbench).ItemName);
     }
 
+    [Fact]
+    public void Craft_start_survives_polling_and_reload_but_resets_for_new_or_unknown_tasks()
+    {
+        var start = _clock.Now;
+        var end = start.AddHours(2);
+        _engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "A", end, null, startedNow: true);
+        _clock.Now = start.AddMinutes(20);
+        _engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "A", end.AddSeconds(3), null);
+        Assert.Equal(start, _engine.Snapshot().For(FacilityKey.Workbench).StartedAt);
+        var loaded = new JsonStoreBrick().Load<ScheduleState>(Path.Combine(_dir, "state.json"));
+        Assert.Equal(start, loaded.For(FacilityKey.Workbench).StartedAt);
+        _engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "A", end.AddHours(1), null);
+        Assert.Null(_engine.Snapshot().For(FacilityKey.Workbench).StartedAt);
+        _engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "A", end, null, startedNow: true);
+        _engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Idle, "", null, null);
+        Assert.Null(_engine.Snapshot().For(FacilityKey.Workbench).StartedAt);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_dir, recursive: true); } catch { /* 临时目录清理失败不影响断言 */ }

@@ -33,6 +33,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     public UpdateService Updater { get; }
     public ProfitPlanService ProfitPlan { get; }
     public DeviceApiService DeviceApi { get; }
+    public SteamStatusMonitor SteamStatus { get; }
 
     public ShellViewModel ShellVm { get; }
     public OverviewViewModel OverviewVm { get; }
@@ -82,6 +83,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         Catalog = Store.Load<ItemCatalog>(Paths.ItemsPath);
 
         var clock = new SystemClock();
+        SteamStatus = new SteamStatusMonitor(new SteamActivityClient(), clock);
         var ocr = OcrBrick.CreateSimplifiedChinese(); // 缺中文包在此抛出,由 App 弹窗给指引
         WindowBrick = new GameWindowBrick();
         var capture = new ScreenCaptureBrick();
@@ -118,6 +120,25 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
 
         _ = Task.Run(() => Coordinator.RunSchedulerLoopAsync(_appStop.Token));
         _ = Task.Run(() => ProfitPlan.RunLoopAsync(_appStop.Token));
+        _ = Task.Run(() => RunSteamStatusLoopAsync(_appStop.Token));
+    }
+
+    private async Task RunSteamStatusLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (true)
+            {
+                if (Settings.DeviceApi.Enabled || Settings.SteamActivity.Enabled)
+                    await SteamStatus.RefreshAsync(Settings.SteamActivity, ct);
+                await Task.Delay(TimeSpan.FromSeconds(30), ct);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            Log.Error("Steam 状态显示更新已停止,请重启客户端。");
+        }
     }
 
     private void UpgradeDataFileIfNewer<T>(string fileName, string localPath, Func<T, int> revision)

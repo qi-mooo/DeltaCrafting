@@ -1,0 +1,34 @@
+"""Test navigation, button debounce and the real U8g2 display/transition bridge."""
+from concurrent.futures import ThreadPoolExecutor
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+project = Path(__file__).resolve().parents[1]
+u8g2 = project / ".pio/libdeps/deltacrafter-monitor/U8g2/src"
+cc, cxx = os.environ.get("CC", "cc"), os.environ.get("CXX", "c++")
+
+def run(args):
+    subprocess.run([str(arg) for arg in args], check=True)
+
+with tempfile.TemporaryDirectory(prefix="s3-ui-test-") as temporary:
+    build = Path(temporary)
+    run([cxx, "-std=c++17", "-I" + str(project / "include"),
+         project / "tests/ui_state_test.cpp", "-o", build / "navigation"])
+    run([build / "navigation"])
+
+    sources = sorted((u8g2 / "clib").glob("*.c"))
+    sources = [s for s in sources if s.name not in ("u8g2_fonts.c", "u8x8_fonts.c")]
+    def compile_source(source):
+        target = build / (source.stem + ".o")
+        run([cc, "-w", "-c", source, "-o", target])
+        return target
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        objects = list(pool.map(compile_source, sources))
+    run(["ar", "rcs", build / "u8g2.a", *objects])
+    run([cxx, "-std=c++17", "-I" + str(u8g2),
+         "-I" + str(project / "tests/stubs"), "-I" + str(project / "include"),
+         project / "tests/mono_display_test.cpp", build / "u8g2.a", "-o", build / "display"])
+    run([build / "display"])
+print("Navigation, buttons, display bounds and both transition directions passed.")

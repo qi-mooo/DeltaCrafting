@@ -213,7 +213,7 @@
                     </controls:SettingCard.Slot>
                 </controls:SettingCard>
                 <controls:SettingCard Glyph="&#xE7F4;" Header="允许设备控制"
-                                      Description="允许设备立即执行、停止当前任务及暂停或恢复自动循环。">
+                                      Description="允许设备执行任务,以及保存设施和全局设置。">
                     <controls:SettingCard.Slot>
                         <ToggleSwitch IsOn="{x:Bind Vm.DeviceApiAllowControl, Mode=TwoWay}" />
                     </controls:SettingCard.Slot>

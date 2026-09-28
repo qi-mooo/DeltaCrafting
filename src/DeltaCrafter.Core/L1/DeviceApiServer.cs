@@ -16,6 +16,7 @@ public sealed class DeviceApiServer : IDisposable
     private readonly SemaphoreSlim _slots = new(8);
     private readonly Func<CancellationToken, Task<DeviceStatus>> _status;
     private readonly Func<string, CancellationToken, Task<DeviceActionResult>> _action;
+    private readonly Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? _settings;
     private readonly ILogger _log;
     private readonly byte[] _keyHash;
     private readonly bool _allowControl;
@@ -25,11 +26,13 @@ public sealed class DeviceApiServer : IDisposable
 
     public DeviceApiServer(DeviceApiSettings settings,
         Func<CancellationToken, Task<DeviceStatus>> status,
-        Func<string, CancellationToken, Task<DeviceActionResult>> action, ILogger log)
+        Func<string, CancellationToken, Task<DeviceActionResult>> action, ILogger log,
+        Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? updateSettings = null)
     {
         settings.Validate();
         _status = status;
         _action = action;
+        _settings = updateSettings;
         _log = log;
         _allowControl = settings.AllowControl;
         _keyHash = SHA256.HashData(Encoding.UTF8.GetBytes(settings.ApiKey));
@@ -98,6 +101,7 @@ public sealed class DeviceApiServer : IDisposable
             {
                 "/api/v1/status" => "GET",
                 "/api/v1/action" => "POST",
+                "/api/v1/settings" => "POST",
                 _ => null,
             };
             if (method is null)
@@ -128,6 +132,19 @@ public sealed class DeviceApiServer : IDisposable
                 if (count > 1024)
                 {
                     await ReplyAsync(context, 413, new { error = "body_too_large" }, ct);
+                    return;
+                }
+                if (path == "/api/v1/settings")
+                {
+                    var update = JsonSerializer.Deserialize<DeviceSettingsRequest>(body.AsSpan(0, count), Json);
+                    if (update is null || !update.IsValid())
+                    {
+                        await ReplyAsync(context, 400, new { error = "invalid_settings" }, ct);
+                        return;
+                    }
+                    var saved = _settings is null ? new DeviceActionResult(501, "settings_not_supported")
+                        : await _settings(update, ct).WaitAsync(ct);
+                    await ReplyAsync(context, saved.StatusCode, new { message = saved.Message }, ct);
                     return;
                 }
                 var command = JsonSerializer.Deserialize<DeviceActionRequest>(body.AsSpan(0, count), Json);

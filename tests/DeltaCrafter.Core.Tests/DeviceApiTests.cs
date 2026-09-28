@@ -23,6 +23,7 @@ public sealed class DeviceApiTests
         workbench.Phase = FacilityPhase.Crafting;
         workbench.ItemName = "测试物品";
         workbench.ReadyAt = Now.AddMilliseconds(1500);
+        workbench.StartedAt = Now.AddMilliseconds(-8500);
         state.For(FacilityKey.PharmacyLab).Phase = FacilityPhase.Crafting;
         state.For(FacilityKey.PharmacyLab).ReadyAt = Now.AddSeconds(-10);
         state.For(FacilityKey.ArmorStation).Phase = FacilityPhase.NeedsManual;
@@ -44,6 +45,8 @@ public sealed class DeviceApiTests
         Assert.Equal("测试物品", status.Facilities[0].ItemName);
         Assert.Equal("计划物品", status.Facilities[0].PlannedItemName);
         Assert.Equal(2, status.Facilities[0].RemainingSeconds);
+        Assert.Equal(10, status.Facilities[0].TotalSeconds);
+        Assert.Null(status.Facilities[1].TotalSeconds);
         Assert.Equal(0, status.Facilities[1].RemainingSeconds);
         Assert.Equal("Crafting", status.Facilities[1].Phase); // 倒计时归零不能假称已领取就绪。
         Assert.Null(status.Facilities[2].RemainingSeconds);
@@ -67,6 +70,7 @@ public sealed class DeviceApiTests
         public DeviceApiServer Api { get; }
         public HttpClient Client { get; }
         public List<string> Actions { get; } = [];
+        public List<DeviceSettingsRequest> Updates { get; } = [];
 
         public Server(bool control = false,
             Func<CancellationToken, Task<DeviceStatus>>? getStatus = null)
@@ -80,7 +84,11 @@ public sealed class DeviceApiTests
                 {
                     Actions.Add(action);
                     return Task.FromResult(new DeviceActionResult(202, "accepted"));
-                }, new LoggerConfiguration().CreateLogger());
+                }, new LoggerConfiguration().CreateLogger(), (update, _) =>
+                {
+                    Updates.Add(update);
+                    return Task.FromResult(new DeviceActionResult(200, "saved"));
+                });
             Api.Start();
             Client = new HttpClient(new HttpClientHandler { UseProxy = false })
             {
@@ -230,5 +238,59 @@ public sealed class DeviceApiTests
         // Close may abort the socket or produce a non-success HTTP response, platform dependent.
         try { using var result = await response; }
         catch (HttpRequestException) { }
+    }
+
+    [Theory]
+    [InlineData("{\"facility\":\"tech-center\",\"enabled\":false}")]
+    [InlineData("{\"facility\":\"pharmacy-lab\",\"craftMode\":\"HourlyProfit\"}")]
+    [InlineData("{\"autoLoopEnabled\":false}")]
+    [InlineData("{\"steamDetectionEnabled\":true}")]
+    [InlineData("{\"afterRun\":\"KeepAtLobby\"}")]
+    public async Task Settings_require_control_and_dispatch_one_valid_update(string body)
+    {
+        using var readOnly = new Server();
+        using var denied = await readOnly.Client.PostAsync("/api/v1/settings", new StringContent(body, Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.Empty(readOnly.Updates);
+        using var writable = new Server(control: true);
+        using var saved = await writable.Client.PostAsync("/api/v1/settings", new StringContent(body, Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        Assert.Single(writable.Updates);
+        Assert.Empty(writable.Actions);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"facility\":\"unknown\",\"enabled\":true}")]
+    [InlineData("{\"facility\":\"workbench\",\"craftMode\":\"invalid\"}")]
+    [InlineData("{\"facility\":\"workbench\",\"enabled\":true,\"craftMode\":\"Custom\"}")]
+    [InlineData("{\"facility\":\"workbench\",\"enabled\":true,\"autoLoopEnabled\":true}")]
+    [InlineData("{\"facility\":\"workbench\",\"plannedItemName\":\"not remotely editable\"}")]
+    [InlineData("{\"afterRun\":\"Delete\"}")]
+    [InlineData("{\"autoLoopEnabled\":true,\"steamDetectionEnabled\":false}")]
+    [InlineData("{\"enabled\":true}")]
+    public async Task Invalid_or_mixed_settings_never_mutate_state(string body)
+    {
+        using var server = new Server(control: true);
+        using var response = await server.Client.PostAsync("/api/v1/settings", new StringContent(body, Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(server.Updates);
+    }
+
+    [Fact]
+    public async Task Settings_are_authenticated_and_game_status_is_distinct_from_task_state()
+    {
+        var game = new DeviceGameStatus("Playing", "Steam 游戏中: Delta Force", Now);
+        using var server = new Server(control: true, getStatus: _ => Task.FromResult(Status() with { Game = game }));
+        using var status = await server.Client.GetAsync("/api/v1/status");
+        using var json = JsonDocument.Parse(await status.Content.ReadAsStringAsync());
+        Assert.Equal("Playing", json.RootElement.GetProperty("game").GetProperty("state").GetString());
+        Assert.False(json.RootElement.GetProperty("isRunning").GetBoolean());
+        Assert.True(json.RootElement.GetProperty("settingsSupported").GetBoolean());
+        server.Client.DefaultRequestHeaders.Authorization = null;
+        using var response = await server.Client.PostAsync("/api/v1/settings",
+            new StringContent("{\"autoLoopEnabled\":true}", Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Empty(server.Updates);
     }
 }

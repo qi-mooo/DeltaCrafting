@@ -27,10 +27,11 @@ def main():
         return
     subprocess.run([
         sys.executable, "-m", "esptool", "--chip", manifest["chip"], "--port", args.port,
-        "--baud", str(args.baud), "--before", "default_reset", "--after", "hard_reset",
+        "--baud", str(args.baud), "--before", "no_reset", "--after", "no_reset",
         "write_flash", "--flash_mode", manifest["flashMode"], "--flash_freq", manifest["flashFreq"],
         "--flash_size", manifest["flashSize"], *segments,
     ], check=True)
+    print("Flash complete. Press RESET on the device to start the firmware.")
 
 
 if __name__ == "__main__":

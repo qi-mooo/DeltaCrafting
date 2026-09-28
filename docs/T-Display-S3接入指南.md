@@ -44,8 +44,8 @@ Windows 串口填写实际的 `COM5` 等端口,macOS 填 `/dev/cu.usbmodemXXXX`�
 固件与公开构建产物不包含凭据。以后更改凭据只需重新运行 `configure.py`。
 地址只包含电脑局域网地址和端口,不要填 `localhost` 或 `/api/v1/status`。
 
-烧录前确认选择的是目标 S3;自动下载失败时按住 BOOT,按一下 RESET,然后松开 BOOT。
-烧录后若仍处于下载模式,按一下 RESET。工具验证校验和并按清单写入镜像,保留其他扇区;
+烧录前确认选择的是目标 S3;手动按住 BOOT,按一下 RESET,然后松开 BOOT。
+烧录完成后按一下 RESET 运行;工具不自动切换模式。工具验证校验和并按清单写入镜像,保留其他扇区;
 `firmware.bin` 只是应用镜像,不能单独写到地址 0。
 
 从源码构建时,通过 `TDISPLAY_S3_DIR` 指向固定版本的 T-Display-S3 板级仓库,
@@ -56,19 +56,28 @@ Windows 串口填写实际的 `COM5` 等端口,macOS 填 `/dev/cu.usbmodemXXXX`�
 
 | 操作 | 行为 |
 | --- | --- |
-| GPIO 0 短按 | 总览/工作台/制药台/防具台/技术中心之间切换 |
-| GPIO 14 短按 | 立即刷新 |
-| GPIO 0 长按 1.5 秒 | 暂停/恢复自动循环 |
-| GPIO 14 长按 1.5 秒 | 空闲时立即执行一轮,执行中停止任务并关闭自动循环 |
+| GPIO 0 单击 | 循环选择下一项 |
+| GPIO 14 单击 | 进入菜单或确认选中设置 |
 
-长按控制仅在数据新鲜、网络在线且桌面允许控制时生效。控制请求不会自动重试;
-请求超时时显示结果未知并刷新状态,避免重复操作。
+按住只触发一次,无长按功能。
 
-默认每 3 秒获取一次状态,屏幕每 250 ms 绘制,倒计时按设备本地单调时钟推算,无需 NTP。
+主页为四分格:左上技术中心、右上工作台、左下制药台、右下防具台,底部状态栏显示游戏状态。
+所有页面黑底白字,选中项使用粗双框和角标。Axeuh_UI 提供焦点缓动,页面切换使用滑动过渡。主页焦点循环经过四格和状态栏。
+选择设施后按确认进入启用/停用、制造模式设置;计划物品保留在 App 本体修改。
+选择状态栏后按确认进入自动循环、Steam 游戏检测、收取后行为设置。每个菜单均提供返回项。
+菜单可离线浏览;保存仅在数据新鲜、网络在线且桌面允许控制时生效,成功后刷新状态。
+请求超时时显示结果未知,不自动重试。
+
+默认每 3 秒获取一次状态,屏幕目标 60 FPS 绘制,倒计时按设备本地单调时钟推算,无需 NTP。
 API 返回的完成时刻来自游戏 OCR。即使倒计时归零,仍保留服务器观测的阶段,
 不会凭计时将「制造中」改成「可领取」。禁用计划的设施仍显示已观测的任务。
-网络错误时保留旧数据并标记 `STALE`,停止显示旧倒计时且禁用控制;从未成功连接显示 `OFFLINE`。
+网络错误时保留四格旧数据,状态栏显示连接中断、游戏状态未知,停止倒计时且禁用保存。
 网络任务独立运行,重连不阻塞按键。
+
+每格底部显示制造进度条。客户端确认开工后保存起点,按实际 OCR 完成时刻计算总时长。
+首次接管已有制造时总时长未知,显示活动条;离线冻结,确认可领取后填满。
+状态栏右侧显示四格电池图标,不显示百分比。GPIO 4 电压估算电量,无效读数显示叉号;
+USB 充电电压可能偏高,无电池情况不一定能可靠识别。
 
 ## API v1
 
@@ -90,6 +99,8 @@ Authorization: Bearer <配对密钥>
 | `nextRunAt`, `nextRunInSeconds` | 下次调度时间/剩余秒数;关闭自动循环或无计划时为 null |
 | `lastRunAt`, `lastRunSummary`, `lastRunFailed` | 上次执行结果;未执行时前两项可为 null |
 | `facilities` | 四个设施的数组,见下表 |
+| `game.state`, `game.detail`, `game.checkedAt` | Steam 游戏状态 Playing/NotPlaying/Unavailable/Unknown、说明和观测时间;与自动化任务状态独立 |
+| `steamDetectionEnabled`, `afterRun`, `settingsSupported` | 游戏检测开关、收取后行为、是否支持设备保存设置 |
 
 | 设施字段 | 含义 |
 | --- | --- |
@@ -99,6 +110,7 @@ Authorization: Bearer <配对密钥>
 | `phase` | Unknown/Idle/Crafting/ReadyToCollect/NeedsManual |
 | `itemName` | 游戏中最近观测的当前物品,与计划物品分开 |
 | `readyAt`, `remainingSeconds` | OCR 完成时间和非负剩余秒数;无有效制造倒计时为 null |
+| `totalSeconds` | 本客户端确认开工后的总时长秒数;首次接管已有任务时为 null |
 | `manualReason`, `observedAt` | 人工处理原因和最近观测时间,可为 null |
 
 轮询建议间隔不小于 1 秒。四个设施快照在状态锁内复制,不会将单次观察的字段读成新旧混合。
@@ -137,9 +149,28 @@ Invoke-RestMethod 'http://127.0.0.1:17890/api/v1/status' -Headers @{ Authorizati
 `415` 非 JSON,`500` 内部错误,`503` 超时/退出/并发超限。
 最多同时处理 8 个请求,请求处理超时 5 秒。并发超限可返回无响应体的 `503`。
 
+### POST /api/v1/settings
+
+与动作接口共用配对鉴权、允许设备控制开关、JSON 格式和 1024 字节上限。
+一次只保存一个设置,成功返回 `200 {"message":"saved"}`。请求示例:
+
+```json
+{"facility":"tech-center","enabled":true}
+```
+
+```json
+{"facility":"workbench","craftMode":"HourlyProfit"}
+```
+
+全局请求分别使用 `autoLoopEnabled` (bool)、`steamDetectionEnabled` (bool) 或
+`afterRun` (CloseGame / KeepRunning / KeepAtLobby)。设施模式为 Custom / HourlyProfit / TotalProfit。
+不提供计划物品编辑。设置在任务之间保存,与 App 计划页共用保存和利润推荐逻辑。
+非法字段组合返回 400,只读返回 403,更新进行中返回 409,等待任务结束超时返回 503。
+Steam 显示状态每 30 秒独立查询,过期或失败显示不可用,不会改变任务的 5 分钟重试等待。
+
 ## 验证范围
 
-Windows GitHub CI 已完成完整客户端编译、156 项 Core/API 测试及 ZIP 打包,覆盖
+CI 构建完整客户端和固件,执行 Core/API 及固件导航/显示桥接测试并上传 ZIP,覆盖
 HTTP 鉴权、只读模式、动作分发、请求校验、状态契约、端口释放与在途请求取消。
 Windows 实机 API 已通过局域网鉴权验证并返回四设施状态。
 T-Display-S3 实机已完成烧录和 USB 配置,重启后成功连接 Wi-Fi 并持续获取四设施状态。
