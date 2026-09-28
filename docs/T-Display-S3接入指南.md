@@ -7,7 +7,7 @@ DeltaCrafter 内置 HTTP API,供同一局域网的 LILYGO T-Display-S3 显示四
 ## 桌面端配对
 
 1. 打开 **设置 → T-Display-S3**,开启「局域网设备 API」。默认端口为 `17890`。
-2. 点击配对密钥的复制按钮,保存到下方固件配置。首次启用自动生成 64 位随机密钥。
+2. 点击配对密钥的复制按钮,用于下方 USB 配置。首次启用自动生成 64 位随机密钥。
 3. 用 `ipconfig` 查看电脑的局域网 IPv4 地址,例如 `192.168.1.100`。
 4. 在 Windows 防火墙中允许专用网络的对应入站端口。管理员 PowerShell 示例:
 
@@ -23,50 +23,34 @@ API 监听所有网络接口;它使用明文 HTTP,仅在可信局域网使用,�
 
 配对密钥保存在 `%LocalAppData%\DeltaCrafter\settings.json` 的 `deviceApi` 中,
 只通过 `Authorization` 请求头传递,不在 API 响应或正常日志中输出。
-重新生成密钥会重新启动监听,旧密钥立即失效,需同步更新并烧录固件。
+重新生成密钥会重新启动监听,旧密钥立即失效,需通过 USB 更新设备配置,无需重新烧录。
 
 ## 固件配置与烧录
 
-配套工程位于同级 `T-Display-S3` 仓库的 `examples/DeltaCrafterMonitor/`,
-使用该仓库的板级定义、TFT_eSPI 驱动和中文字库。它有独立的 `platformio.ini`,
-不修改或依赖根工程的默认固件选择。
+配套工程位于本仓库 [`firmware/t-display-s3/`](../firmware/t-display-s3/README.md)。
+CI 在同一次工作流中分别构建 Windows 客户端和 ESP32-S3 固件。下载
+`DeltaCrafter-esp32s3-<提交哈希>` artifact,再解压里面的 `DeltaCrafter-esp32s3.zip`。
+
+在解压目录执行:
 
 ```bash
-cd /Users/qimo/Documents/code/T-Display-S3
-cp examples/DeltaCrafterMonitor/include/config.local.example.h examples/DeltaCrafterMonitor/include/config.local.h
+python -m pip install esptool==4.5.1 pyserial==3.5
+python flash.py --port COM5
+python configure.py --port COM5 --wifi-ssid Your-WiFi --base-url http://192.168.1.100:17890
 ```
 
-编辑 `config.local.h`:
+Windows 串口填写实际的 `COM5` 等端口,macOS 填 `/dev/cu.usbmodemXXXX`。
+配置工具会隐藏输入 Wi-Fi 密码和配对密钥,保存到板上 NVS 后自动重启。
+固件与公开构建产物不包含凭据。以后更改凭据只需重新运行 `configure.py`。
+地址只包含电脑局域网地址和端口,不要填 `localhost` 或 `/api/v1/status`。
 
-```cpp
-#pragma once
-#define DELTA_WIFI_SSID "Your-WiFi"
-#define DELTA_WIFI_PASSWORD "Your-WiFi-Password"
-#define DELTA_BASE_URL "http://192.168.1.100:17890"
-#define DELTA_API_KEY "从桌面设置复制的64位密钥"
-#define DELTA_POLL_MS 3000
-#define DELTA_LCD_NEW_PANEL 1
-```
+烧录前确认选择的是目标 S3;自动下载失败时按住 BOOT,按一下 RESET,然后松开 BOOT。
+烧录后若仍处于下载模式,按一下 RESET。工具验证校验和并按清单写入镜像,保留其他扇区;
+`firmware.bin` 只是应用镜像,不能单独写到地址 0。
 
-`DELTA_BASE_URL` 只包含电脑地址和端口;不要填 `localhost` 或 `/api/v1/status`。
-SSID 留空可复用设备 NVS 中已有的 Wi-Fi 配置。配置文件已被 `.gitignore` 排除,
-但生成的固件包含 Wi-Fi 密码和配对密钥,不要公开分享个性化固件。
-
-安装 PlatformIO 后,从 T-Display-S3 仓库根目录执行:
-
-```bash
-pio run -d examples/DeltaCrafterMonitor
-pio run -d examples/DeltaCrafterMonitor -t upload --upload-port /dev/cu.usbmodemXXXX
-pio device monitor -b 115200 --port /dev/cu.usbmodemXXXX
-```
-
-本机也可用 `.venv/bin/pio` 或 `~/.platformio/penv/bin/pio`。Windows 串口填写 `COM5`
-等实际端口。烧录前确认选择的是目标 S3 设备;自动下载失败时按住 BOOT,按一下 RESET,
-然后松开 BOOT 再试。只编译不会覆盖现有固件。
-
-固件文件为 `examples/DeltaCrafterMonitor/.pio/build/deltacrafter-monitor/firmware.bin`。
-这是应用分区镜像,不是可直接写到地址 0 的合并镜像;推荐使用上述 PlatformIO 上传命令。
-默认使用新版 LCD 初始化;早期屏幕显示异常时可将 `DELTA_LCD_NEW_PANEL` 设为 `0` 后重编译。
+从源码构建时,通过 `TDISPLAY_S3_DIR` 指向固定版本的 T-Display-S3 板级仓库,
+完整命令见固件 README。默认使用新版 LCD 初始化;早期面板可用
+`-DDELTA_LCD_NEW_PANEL=0` 重编译。发布构建拒绝包含本地凭据配置文件。
 
 ## 屏幕与按键
 
@@ -155,8 +139,9 @@ Invoke-RestMethod 'http://127.0.0.1:17890/api/v1/status' -Headers @{ Authorizati
 
 ## 验证范围
 
-2026-09-28 在 macOS 上通过 156 项 Core/API 测试,覆盖真实 HTTP 请求的鉴权、只读模式、
-动作分发、请求校验、状态契约、端口释放与在途请求取消。PlatformIO 成功生成 ESP32-S3
-固件,约 1.1 MB。完整桌面构建因 Windows 专用 `XamlCompiler.exe` 无法在 macOS 运行而
-未完成;XAML 已通过 XML 语法检查。尚未烧录实体设备,Windows 界面、局域网防火墙、
-屏幕显示及按键操作仍需实机联调。
+Windows GitHub CI 已完成完整客户端编译、156 项 Core/API 测试及 ZIP 打包,覆盖
+HTTP 鉴权、只读模式、动作分发、请求校验、状态契约、端口释放与在途请求取消。
+Windows 实机 API 已通过局域网鉴权验证并返回四设施状态。
+T-Display-S3 实机已完成烧录和 USB 配置,重启后成功连接 Wi-Fi 并持续获取四设施状态。
+串口发送一行 `{"command":"info"}` 可检查固件的 Wi-Fi 与 API 在线状态,不返回凭据。
+屏幕显示和实体按键仍需在设备上目视及实际操作确认。

@@ -150,6 +150,8 @@ Steam 模式会读取本机 Steam 库和游戏安装清单，通过本机 `steam
 
 开发构建可从 GitHub Actions 的 `CI` 运行页面下载 `DeltaCrafter-win-x64-<提交哈希>` artifact，内含自包含 ZIP 和 SHA-256 校验文件；完整解压 ZIP 后运行 `DeltaCrafter.exe`。CI 在 Windows 上完成编译、单元测试与打包，支持手动运行。
 
+同一次 CI 还提供 `DeltaCrafter-esp32s3-<提交哈希>` 固件 artifact，包含分区镜像、校验清单、烧录和 USB 配置工具。Wi-Fi 与配对密钥通过 USB 写入设备，不包含在公开固件中。参见 [固件说明](firmware/t-display-s3/README.md)。CI 只由 `main` / `codex/**` 推送或手动触发，避免同一次推送因已开 PR 再运行一遍。
+
 ## 自动更新
 
 程序每次启动时自动检查一次更新，也可以在“设置 → 关于”中手动检查。
