@@ -16,6 +16,9 @@ public enum AfterRunAction
 /// <summary>UI 主题选择。System = 跟随系统。</summary>
 public enum ThemeChoice { System, Light, Dark }
 
+/// <summary>默认保留原有启动器方式;Steam 模式要求游戏安装在本机。</summary>
+public enum GameLaunchMode { Launcher, Steam }
+
 /// <summary>
 /// 游戏窗口匹配规则。ExactTitle 优先于 TitleContains;ClassName 为可选附加条件。
 /// 由设置页"定位游戏窗口"工具一次性写入,避免猜测窗口类名。
@@ -35,6 +38,14 @@ public sealed class AppSettings
 {
     /// <summary>游戏或启动器可执行文件完整路径。为空视为未配置,拒绝执行并明确报错。</summary>
     public string GamePath { get; set; } = "";
+
+    public GameLaunchMode LaunchMode { get; set; } = GameLaunchMode.Launcher;
+
+    /// <summary>Steam 三角洲行动 App ID;其他发行版本可在设置页修改。</summary>
+    public string SteamAppId { get; set; } = "2507950";
+
+    /// <summary>留空时从注册表检测本机 Steam;可手动选择 steam.exe。</summary>
+    public string SteamPath { get; set; } = "";
 
     /// <summary>启动后等待游戏窗口出现的上限(秒)。超时即判失败,不做无限等待。</summary>
     public int LaunchTimeoutSeconds { get; set; } = 240;

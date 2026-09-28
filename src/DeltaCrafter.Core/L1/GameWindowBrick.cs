@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using DeltaCrafter.Core.L0;
 using DeltaCrafter.Core.L1.Win32;
 
@@ -31,11 +32,11 @@ public sealed class GameWindowBrick
     /// 但启动器是固定比例小窗(约 1.94:1),用比例即可区分,不猜窗口类名。
     /// 找不到返回 null(交由流程层决定走启动器或超时),不抛异常。
     /// </summary>
-    public GameWindowInfo? FindGameClient(WindowMatchRule rule)
+    public GameWindowInfo? FindGameClient(WindowMatchRule rule, string? installDirectory = null)
     {
         foreach (var w in ListCandidates())
         {
-            if (!MatchesRule(w, rule)) continue;
+            if (!MatchesRule(w, rule, installDirectory is not null) || !HasLocalProcess(w, installDirectory)) continue;
             if (TryGetClient(w.Hwnd, out var rect) && rect.Width >= 960 && IsAspect16By9(rect))
                 return w;
         }
@@ -43,11 +44,12 @@ public sealed class GameWindowBrick
     }
 
     /// <summary>找启动器窗口:仅按标题包含匹配,并跳过 16:9 大窗(那是游戏客户端)。</summary>
-    public GameWindowInfo? FindLauncher(string titleContains)
+    public GameWindowInfo? FindLauncher(string titleContains, string? installDirectory = null)
     {
         foreach (var w in ListCandidates())
         {
-            if (!w.Title.Contains(titleContains, StringComparison.Ordinal)) continue;
+            if (!MatchesRule(w, new WindowMatchRule { TitleContains = titleContains }, installDirectory is not null)
+                || !HasLocalProcess(w, installDirectory)) continue;
             if (TryGetClient(w.Hwnd, out var rect) && rect.Width >= 960 && IsAspect16By9(rect))
                 continue;
             return w;
@@ -58,12 +60,13 @@ public sealed class GameWindowBrick
     /// <summary>把规则匹配且处于最小化的候选窗口还原。最小化窗口取不到客户区几何,
     /// FindGameClient 的 16:9 判定必然漏过它——「保持运行(最小化)」收尾后再次执行前
     /// 必须先还原。误还原了同名启动器也无碍:比例判定仍会把它排除。</summary>
-    public bool TryRestoreMinimizedCandidate(WindowMatchRule rule)
+    public bool TryRestoreMinimizedCandidate(WindowMatchRule rule, string? installDirectory = null)
     {
         bool restored = false;
         foreach (var w in ListCandidates())
         {
-            if (!MatchesRule(w, rule) || !NativeWindowApi.IsIconic(w.Hwnd)) continue;
+            if (!MatchesRule(w, rule, installDirectory is not null) || !HasLocalProcess(w, installDirectory)
+                || !NativeWindowApi.IsIconic(w.Hwnd)) continue;
             NativeWindowApi.ShowWindow(w.Hwnd, NativeWindowApi.SW_RESTORE);
             restored = true;
         }
@@ -84,15 +87,38 @@ public sealed class GameWindowBrick
         }
     }
 
-    private static bool MatchesRule(GameWindowInfo w, WindowMatchRule rule)
+    internal static bool MatchesRule(GameWindowInfo w, WindowMatchRule rule, bool steam = false)
     {
         bool titleOk = !string.IsNullOrEmpty(rule.ExactTitle)
             ? string.Equals(w.Title, rule.ExactTitle, StringComparison.Ordinal)
-            : w.Title.Contains(rule.TitleContains, StringComparison.Ordinal);
+            : w.Title.Contains(rule.TitleContains, StringComparison.Ordinal)
+                || (steam && rule.TitleContains == "三角洲行动"
+                    && w.Title.Contains("Delta Force", StringComparison.OrdinalIgnoreCase));
         bool classOk = string.IsNullOrEmpty(rule.ClassName)
             || string.Equals(w.ClassName, rule.ClassName, StringComparison.Ordinal);
         return titleOk && classOk;
     }
+
+    private static bool HasLocalProcess(GameWindowInfo window, string? installDirectory)
+    {
+        if (installDirectory is null) return true;
+        try
+        {
+            using var process = Process.GetProcessById(window.ProcessId);
+            return process.MainModule?.FileName is { } path && IsLocalGameExecutable(path, installDirectory);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
+            or ArgumentException or NotSupportedException)
+        {
+            // 无法确认进程来源就拒绝该窗口,不能降级为仅凭标题点击串流画面。
+            return false;
+        }
+    }
+
+    internal static bool IsLocalGameExecutable(string path, string installDirectory) =>
+        SteamInstallBrick.IsInsideDirectory(path, installDirectory)
+        && !Path.GetFileName(path).Equals("steam.exe", StringComparison.OrdinalIgnoreCase)
+        && !Path.GetFileName(path).Equals("streaming_client.exe", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>客户区的屏幕矩形。窗口失效或尺寸为零时抛错——继续截图/点击毫无意义。</summary>
     public PixelRect ClientRectOnScreen(nint hwnd)

@@ -4,7 +4,9 @@ on:
   push:
     branches:
       - main
+      - 'codex/**'
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,11 +24,16 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Restore
-        run: dotnet restore DeltaCrafter.sln --configfile nuget.config
+      - name: Build, test and package Windows app
+        shell: pwsh
+        run: .\scripts\build-release.ps1
 
-      - name: Build
-        run: dotnet build DeltaCrafter.sln -c Release -p:Platform=x64 --no-restore
-
-      - name: Test
-        run: dotnet test tests\DeltaCrafter.Core.Tests\DeltaCrafter.Core.Tests.csproj -c Release -p:Platform=x64 --no-build --no-restore
+      - name: Upload Windows app
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeltaCrafter-win-x64-${{ github.sha }}
+          path: |
+            artifacts/*.zip
+            artifacts/*.sha256
+          if-no-files-found: error
+          retention-days: 14

@@ -20,10 +20,41 @@
                 <!-- 游戏 -->
                 <TextBlock Text="游戏" Style="{StaticResource BodyStrongTextBlockStyle}"
                            Margin="0,8,0,0" />
+                <controls:SettingCard Glyph="&#xE7FC;" Header="启动方式"
+                                      Description="Steam 模式仅接管本机已安装的游戏,不支持远程串流。">
+                    <controls:SettingCard.Slot>
+                        <ComboBox SelectedIndex="{x:Bind Vm.LaunchModeIndex, Mode=TwoWay}" MinWidth="180">
+                            <ComboBoxItem Content="游戏启动器 / 可执行文件" />
+                            <ComboBoxItem Content="Steam (本机游戏)" />
+                        </ComboBox>
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+
                 <controls:SettingCard Glyph="&#xE7FC;" Header="游戏路径"
+                                      Visibility="{x:Bind Vm.LauncherSettingsVisibility, Mode=OneWay}"
                                       Description="{x:Bind Vm.GamePath, Mode=OneWay}">
                     <controls:SettingCard.Slot>
                         <Button Content="浏览…" Command="{x:Bind Vm.BrowseGamePathCommand}" />
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+
+                <controls:SettingCard Glyph="&#xE7FC;" Header="Steam 客户端"
+                                      Visibility="{x:Bind Vm.SteamSettingsVisibility, Mode=OneWay}"
+                                      Description="{x:Bind Vm.SteamPathDescription, Mode=OneWay}">
+                    <controls:SettingCard.Slot>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="选择 steam.exe…" Command="{x:Bind Vm.BrowseSteamPathCommand}" />
+                            <Button Content="自动检测" Command="{x:Bind Vm.ResetSteamPathCommand}" />
+                        </StackPanel>
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+
+                <controls:SettingCard Glyph="&#xE943;" Header="Steam App ID"
+                                      Visibility="{x:Bind Vm.SteamSettingsVisibility, Mode=OneWay}"
+                                      Description="默认 2507950。不同发行版本请填写 Steam 商店网址 /app/ 后的数字,并将游戏语言设为简体中文。">
+                    <controls:SettingCard.Slot>
+                        <TextBox Width="160" Text="{x:Bind Vm.SteamAppId, Mode=TwoWay}"
+                                 InputScope="Number" AutomationProperties.Name="Steam App ID" />
                     </controls:SettingCard.Slot>
                 </controls:SettingCard>
 

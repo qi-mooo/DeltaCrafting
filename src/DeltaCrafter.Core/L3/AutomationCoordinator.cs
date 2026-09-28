@@ -137,9 +137,10 @@ public sealed partial class AutomationCoordinator : IDisposable
                         _ = RunOnceAsync("定时触发", CancellationToken.None);
                     else if (_clock.Now >= n.AddSeconds(-PrewarmLeadSeconds)
                              && _prewarmedFor != n
-                             && _windowBrick.FindGameClient(s.WindowMatch) is null)
+                             && (s.LaunchMode == GameLaunchMode.Steam || _windowBrick.FindGameClient(s.WindowMatch) is null))
                     {
                         // 每个目标时刻只尝试一次预启动;失败会通知,正式轮到点仍会自行启动。
+                        // Steam 本机安装检查交给受保护的 LaunchFlow,避免配置错误终止调度循环。
                         _prewarmedFor = n;
                         _ = PrewarmAsync();
                     }

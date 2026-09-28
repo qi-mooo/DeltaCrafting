@@ -62,6 +62,50 @@ public sealed partial class SettingsViewModel : ObservableObject
         Save();
     }
 
+    public int LaunchModeIndex
+    {
+        get => (int)S.LaunchMode;
+        set
+        {
+            if (value is < 0 or > 1 || value == (int)S.LaunchMode) return;
+            S.LaunchMode = (GameLaunchMode)value;
+            Save();
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(LauncherSettingsVisibility));
+            OnPropertyChanged(nameof(SteamSettingsVisibility));
+        }
+    }
+
+    public Visibility LauncherSettingsVisibility => S.LaunchMode == GameLaunchMode.Launcher ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility SteamSettingsVisibility => S.LaunchMode == GameLaunchMode.Steam ? Visibility.Visible : Visibility.Collapsed;
+
+    public string SteamAppId
+    {
+        get => S.SteamAppId;
+        set { S.SteamAppId = value?.Trim() ?? ""; Save(); OnPropertyChanged(); }
+    }
+
+    public string SteamPathDescription => string.IsNullOrWhiteSpace(S.SteamPath) ? "自动检测本机 Steam 客户端" : S.SteamPath;
+
+    [RelayCommand]
+    private void BrowseSteamPath()
+    {
+        nint hwnd = App.MainWindowRef is { } w ? WinRT.Interop.WindowNative.GetWindowHandle(w) : 0;
+        var picked = Win32Dialogs.PickExeFile(hwnd);
+        if (picked is null) return;
+        S.SteamPath = picked;
+        Save();
+        OnPropertyChanged(nameof(SteamPathDescription));
+    }
+
+    [RelayCommand]
+    private void ResetSteamPath()
+    {
+        S.SteamPath = "";
+        Save();
+        OnPropertyChanged(nameof(SteamPathDescription));
+    }
+
     public double LaunchTimeoutSeconds
     {
         get => S.LaunchTimeoutSeconds;

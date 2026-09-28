@@ -25,6 +25,37 @@ public class JsonStoreBrickTests : IDisposable
     }
 
     [Fact]
+    public void Old_settings_keep_launcher_mode_and_original_window_binding()
+    {
+        string path = Path.Combine(_dir, "old-settings.json");
+        File.WriteAllText(path, """
+            { "gamePath": "D:\\Game\\delta.exe", "windowMatch": { "exactTitle": "old-title", "className": "old-class" } }
+            """);
+        var loaded = _store.Load<AppSettings>(path);
+        Assert.Equal(GameLaunchMode.Launcher, loaded.LaunchMode);
+        Assert.Equal(@"D:\Game\delta.exe", loaded.GamePath);
+        Assert.Equal("old-title", loaded.WindowMatch.ExactTitle);
+        Assert.Equal("old-class", loaded.WindowMatch.ClassName);
+    }
+
+    [Fact]
+    public void Steam_settings_roundtrip_without_losing_launcher_path()
+    {
+        string path = Path.Combine(_dir, "steam-settings.json");
+        var original = new AppSettings
+        {
+            LaunchMode = GameLaunchMode.Steam, SteamAppId = "2507950",
+            SteamPath = @"D:\Steam\steam.exe", GamePath = @"D:\Game\launcher.exe",
+        };
+        _store.Save(path, original);
+        var loaded = _store.Load<AppSettings>(path);
+        Assert.Equal(original.LaunchMode, loaded.LaunchMode);
+        Assert.Equal(original.SteamAppId, loaded.SteamAppId);
+        Assert.Equal(original.SteamPath, loaded.SteamPath);
+        Assert.Equal(original.GamePath, loaded.GamePath);
+    }
+
+    [Fact]
     public void LoadOrCreate_writes_default_only_when_missing()
     {
         string path = Path.Combine(_dir, "plan.json");

@@ -7,8 +7,8 @@ namespace DeltaCrafter.Core.L2;
 public sealed record LaunchOutcome(nint Hwnd, bool LaunchedByUs);
 
 /// <summary>
-/// 「确保游戏就绪并到达大厅」流程。游戏必须经启动器启动,完整链:
-/// 启动器(OCR 找「开始游戏」点击)→ 游戏客户端(16:9 大窗,与启动器同名以比例区分)→
+/// 「确保游戏就绪并到达大厅」流程。通过原有启动器或本机 Steam 启动:
+/// 可选启动器(OCR 找「开始游戏」点击)→ 游戏客户端(16:9 大窗,Steam 模式还校验进程路径)→
 /// 模式选择(点烽火地带)→ 3D 基地(Tab)→ 大厅。活动公告页即时 ESC 跳过(≤8 页);未知画面有界 ESC(≤3 次)关弹窗。
 /// </summary>
 public sealed class LaunchFlow
@@ -37,22 +37,24 @@ public sealed class LaunchFlow
 
     public async Task<LaunchOutcome> EnsureLobbyAsync(CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         var s = _settings();
-        var game = _window.FindGameClient(s.WindowMatch);
+        var steam = ResolveSteam(s);
+        var game = _window.FindGameClient(s.WindowMatch, steam?.InstallDirectory);
         bool launched = false;
 
         // 「保持运行(最小化)」收尾后客户端处于最小化:客户区几何取不到,16:9 判定
         // 必然失败,若直接走启动器会对着已在运行的游戏白点 240 秒。先还原再找一次。
-        if (game is null && _window.TryRestoreMinimizedCandidate(s.WindowMatch))
+        if (game is null && _window.TryRestoreMinimizedCandidate(s.WindowMatch, steam?.InstallDirectory))
         {
             await Task.Delay(1200, ct);
-            game = _window.FindGameClient(s.WindowMatch);
+            game = _window.FindGameClient(s.WindowMatch, steam?.InstallDirectory);
             if (game is not null) _log.Information("游戏窗口处于最小化,已还原。");
         }
 
         if (game is null)
         {
-            game = await StartViaLauncherAsync(s, ct);
+            game = await StartGameAsync(s, steam, ct);
             launched = true;
         }
 
@@ -64,25 +66,28 @@ public sealed class LaunchFlow
         return new LaunchOutcome(game.Hwnd, launched);
     }
 
-    /// <summary>经启动器把游戏客户端拉起来。「开始游戏」允许一次显式重试点击(30s 后仍无客户端)。</summary>
-    private async Task<GameWindowInfo> StartViaLauncherAsync(AppSettings s, CancellationToken ct)
+    public GameWindowInfo? FindRunningClient()
     {
-        var launcher = _window.FindLauncher(s.WindowMatch.TitleContains);
+        var s = _settings();
+        return _window.FindGameClient(s.WindowMatch, ResolveSteam(s)?.InstallDirectory);
+    }
+
+    private static SteamGameInstallation? ResolveSteam(AppSettings settings) => settings.LaunchMode switch
+    {
+        GameLaunchMode.Launcher => null,
+        GameLaunchMode.Steam => SteamInstallBrick.Resolve(settings.SteamPath, settings.SteamAppId),
+        _ => throw new InvalidOperationException("未知的游戏启动方式,请在设置页重新选择。"),
+    };
+
+    /// <summary>允许直接出现客户端,也允许先出现游戏启动器;始终只接受本地游戏进程。</summary>
+    private async Task<GameWindowInfo> StartGameAsync(AppSettings s, SteamGameInstallation? steam, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var launcher = _window.FindLauncher(s.WindowMatch.TitleContains, steam?.InstallDirectory);
         if (launcher is null)
         {
-            _process.Launch(s.GamePath);
-            long waitLauncher = Environment.TickCount64 + s.LaunchTimeoutSeconds * 1000L;
-            while (launcher is null && Environment.TickCount64 < waitLauncher)
-            {
-                ct.ThrowIfCancellationRequested();
-                await Task.Delay(2000, ct);
-                launcher = _window.FindLauncher(s.WindowMatch.TitleContains);
-            }
-            if (launcher is null)
-                throw new StepFailedException("等待启动器窗口",
-                    $"启动后 {s.LaunchTimeoutSeconds}s 内未发现标题含「{s.WindowMatch.TitleContains}」的启动器窗口。" +
-                    "请确认游戏路径指向启动器/游戏可执行文件。");
-            _log.Information("启动器已打开:{Title}", launcher.Title);
+            if (steam is not null) _process.LaunchSteam(steam);
+            else _process.Launch(s.GamePath);
         }
         else
         {
@@ -97,22 +102,21 @@ public sealed class LaunchFlow
         {
             ct.ThrowIfCancellationRequested();
 
-            var game = _window.FindGameClient(s.WindowMatch);
-            if (game is not null && game.Hwnd != launcher.Hwnd)
+            var game = _window.FindGameClient(s.WindowMatch, steam?.InstallDirectory);
+            if (game is not null)
             {
                 _log.Information("游戏客户端窗口已出现:{Title}", game.Title);
                 await Task.Delay(2000, ct); // 等渲染器就绪,后续交给画面判定
                 return game;
             }
 
-            bool launcherAlive = _window.IsAlive(launcher.Hwnd);
-            if (!launcherAlive && clicks == 0)
-                throw new StepFailedException("启动游戏客户端", "启动器窗口已消失且游戏客户端未出现。");
+            if (launcher is null || !_window.IsAlive(launcher.Hwnd))
+                launcher = _window.FindLauncher(s.WindowMatch.TitleContains, steam?.InstallDirectory);
 
             // 点击「开始游戏」:最多 2 次(首点 + 30s 后一次显式重试),不盲目连点。
-            if (launcherAlive && clicks < 2 && Environment.TickCount64 - lastClickAt > 30_000)
+            if (launcher is not null && clicks < 2 && (clicks == 0 || Environment.TickCount64 - lastClickAt > 30_000)
+                && _window.TryEnsureForeground(launcher.Hwnd, TimeSpan.FromSeconds(1)))
             {
-                _window.TryEnsureForeground(launcher.Hwnd, TimeSpan.FromSeconds(1));
                 foreach (var word in startWords)
                 {
                     var line = await _probe.FindLineAsync(launcher.Hwnd, FullFrame, word);
@@ -129,11 +133,14 @@ public sealed class LaunchFlow
         }
 
         string shot = "";
-        if (_window.IsAlive(launcher.Hwnd))
+        if (launcher is not null && _window.IsAlive(launcher.Hwnd))
             try { (shot, _) = await _probe.DumpAsync(launcher.Hwnd, "fail-启动器"); }
             catch (Exception ex) { _log.Error(ex, "保存启动器现场失败。"); }
         throw new StepFailedException("启动游戏客户端",
-            $"{s.LaunchTimeoutSeconds}s 内游戏客户端窗口未出现(启动器可能在更新或等待登录)。" +
+            $"{s.LaunchTimeoutSeconds}s 内本机游戏客户端窗口未出现。" +
+            (steam is not null
+                ? "请确认 Steam 已登录、游戏在本机完成更新并运行,并检查窗口绑定;串流窗口不会被接管。"
+                : "请确认游戏路径正确,启动器已完成更新和登录,并检查窗口绑定。") +
             (shot.Length > 0 ? $"诊断截图:{shot}" : ""), shot.Length > 0 ? shot : null);
     }
 
