@@ -58,10 +58,7 @@ public sealed class ScreenProbe
         foreach (var name in screenNames)
         {
             var spec = Screen(name);
-            string text = (await _ocr.ReadAsync(
-                frame, spec.Probe.Roi, spec.Probe.Upscale)).FullText;
-            if (Normalize(text).Contains(Normalize(spec.Probe.MustContain), StringComparison.Ordinal))
-                return name;
+            if (MatchesScreenTexts(spec, await ReadScreenTextsAsync(frame, spec))) return name;
         }
         return null;
     }
@@ -70,11 +67,31 @@ public sealed class ScreenProbe
     public async Task<bool> IsOnAsync(nint hwnd, string screenName)
     {
         var spec = Screen(screenName);
-        string text = (await _ocr.ReadAsync(
-            Capture(hwnd), spec.Probe.Roi, spec.Probe.Upscale)).FullText;
-        bool on = Normalize(text).Contains(Normalize(spec.Probe.MustContain), StringComparison.Ordinal);
-        _log.Debug("界面判定 {Screen}:{Result}(读到:{Text})", screenName, on, Compact(text));
+        var texts = await ReadScreenTextsAsync(Capture(hwnd), spec);
+        bool on = MatchesScreenTexts(spec, texts);
+        _log.Debug("界面判定 {Screen}:{Result}(读到:{Text})", screenName, on, Compact(string.Join(" | ", texts)));
         return on;
+    }
+
+    private async Task<IReadOnlyList<string>> ReadScreenTextsAsync(CapturedFrame frame, ScreenSpec spec)
+    {
+        var probes = new[] { spec.Probe }.Concat(spec.AdditionalProbes);
+        var texts = new List<string>();
+        foreach (var probe in probes)
+            texts.Add((await _ocr.ReadAsync(frame, probe.Roi, probe.Upscale)).FullText);
+        return texts;
+    }
+
+    internal static bool MatchesScreenTexts(ScreenSpec spec, IReadOnlyList<string> texts)
+    {
+        var probes = new[] { spec.Probe }.Concat(spec.AdditionalProbes).ToArray();
+        if (texts.Count != probes.Length) return false;
+        for (int i = 0; i < probes.Length; i++)
+        {
+            string expected = Normalize(probes[i].MustContain);
+            if (expected.Length == 0 || !Normalize(texts[i]).Contains(expected, StringComparison.Ordinal)) return false;
+        }
+        return true;
     }
 
     public void ClickPoint(nint hwnd, string screenName, string pointName)

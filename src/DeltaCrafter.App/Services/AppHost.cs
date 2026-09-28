@@ -92,7 +92,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
 
         var probe = new ScreenProbe(WindowBrick, capture, ocr, input, LoadAnchors, Paths.ShotsDir, Log);
         var runner = new StepRunner(probe, Log);
-        var launch = new LaunchFlow(process, WindowBrick, probe, input, () => Settings, Log);
+        var launch = new LaunchFlow(process, WindowBrick, probe, input, runner, () => Settings, Log);
         var nav = new SpecOpsNavFlow(probe, runner);
         var collect = new CollectFlow(probe, runner, input, this, Log);
         var craft = new CraftStartFlow(probe, runner, input, Log);

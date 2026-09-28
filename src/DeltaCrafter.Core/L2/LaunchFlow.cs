@@ -14,23 +14,30 @@ public sealed record LaunchOutcome(nint Hwnd, bool LaunchedByUs);
 public sealed class LaunchFlow
 {
     private static readonly string[] KnownScreens =
-        [AnchorKeys.Lobby, AnchorKeys.SpecOpsHome, AnchorKeys.ModeSelect, AnchorKeys.Safehouse, AnchorKeys.PromoAnnounce];
+        [AnchorKeys.Lobby, AnchorKeys.SpecOpsHome, AnchorKeys.ModeSelectPlay, AnchorKeys.ModeSelect,
+            AnchorKeys.Safehouse, AnchorKeys.ModeExitMenu, AnchorKeys.PromoAnnounce];
+    private static readonly string[] ModeDestinations =
+        [AnchorKeys.Lobby, AnchorKeys.SpecOpsHome, AnchorKeys.Safehouse, AnchorKeys.PromoAnnounce];
+    private static readonly string[] ExitMenuDestinations =
+        [AnchorKeys.ModeSelectPlay, AnchorKeys.ModeSelect, .. ModeDestinations];
     private static readonly NRect FullFrame = new() { X = 0, Y = 0, W = 1, H = 1 };
 
     private readonly GameProcessBrick _process;
     private readonly GameWindowBrick _window;
     private readonly ScreenProbe _probe;
     private readonly InputBrick _input;
+    private readonly StepRunner _runner;
     private readonly Func<AppSettings> _settings;
     private readonly ILogger _log;
 
     public LaunchFlow(GameProcessBrick process, GameWindowBrick window, ScreenProbe probe,
-        InputBrick input, Func<AppSettings> settings, ILogger log)
+        InputBrick input, StepRunner runner, Func<AppSettings> settings, ILogger log)
     {
         _process = process;
         _window = window;
         _probe = probe;
         _input = input;
+        _runner = runner;
         _settings = settings;
         _log = log.ForContext<LaunchFlow>();
     }
@@ -167,6 +174,26 @@ public sealed class LaunchFlow
                     _probe.ClickPoint(hwnd, AnchorKeys.ModeSelect, AnchorKeys.PointModeEntry);
                     unknownStreak = 0;
                     await Task.Delay(2500, ct);
+                    break;
+                case AnchorKeys.ModeSelectPlay:
+                    _log.Information("新版模式选择界面,点击第一张「烽火地带」卡片的「前往游玩」。");
+                    await _runner.RunAsync(hwnd, new Step(
+                        "前往游玩-烽火地带",
+                        () => _probe.ClickPoint(hwnd, AnchorKeys.ModeSelectPlay, AnchorKeys.PointModeEntry),
+                        async () => await _probe.WhichScreenAsync(hwnd, ModeDestinations) is not null,
+                        TimeSpan.FromMilliseconds(Math.Max(1, deadline - Environment.TickCount64)),
+                        RetryOnce: false), ct);
+                    unknownStreak = 0;
+                    break;
+                case AnchorKeys.ModeExitMenu:
+                    _log.Information("检测到退出游戏菜单,按 ESC 返回模式选择。");
+                    await _runner.RunAsync(hwnd, new Step(
+                        "返回模式选择",
+                        () => _input.PressEscape(),
+                        async () => await _probe.WhichScreenAsync(hwnd, ExitMenuDestinations) is not null,
+                        TimeSpan.FromMilliseconds(Math.Min(10_000, Math.Max(1, deadline - Environment.TickCount64))),
+                        RetryOnce: false), ct);
+                    unknownStreak = 0;
                     break;
                 case AnchorKeys.Safehouse:
                     _log.Information("特勤基地界面,按 Tab 进入大厅。");
