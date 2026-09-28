@@ -32,13 +32,21 @@ public sealed class GameWindowBrick
     /// 但启动器是固定比例小窗(约 1.94:1),用比例即可区分,不猜窗口类名。
     /// 找不到返回 null(交由流程层决定走启动器或超时),不抛异常。
     /// </summary>
-    public GameWindowInfo? FindGameClient(WindowMatchRule rule, string? installDirectory = null)
+    public GameWindowInfo? FindGameClient(WindowMatchRule rule, string? installDirectory = null, bool includeMinimized = false)
     {
         foreach (var w in ListCandidates())
         {
             if (!MatchesRule(w, rule, installDirectory is not null) || !HasLocalProcess(w, installDirectory)) continue;
             if (TryGetClient(w.Hwnd, out var rect) && rect.Width >= 960 && IsAspect16By9(rect))
                 return w;
+            if (includeMinimized && NativeWindowApi.IsIconic(w.Hwnd))
+            {
+                var placement = new WINDOWPLACEMENT { Length = (uint)System.Runtime.InteropServices.Marshal.SizeOf<WINDOWPLACEMENT>() };
+                if (!NativeWindowApi.GetWindowPlacement(w.Hwnd, ref placement)) continue;
+                var r = placement.NormalPosition;
+                if (r.Right - r.Left >= 960 && IsAspect16By9(new(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top)))
+                    return w;
+            }
         }
         return null;
     }

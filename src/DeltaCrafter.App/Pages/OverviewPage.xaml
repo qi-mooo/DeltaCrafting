@@ -50,6 +50,10 @@
                             <Button Content="停止"
                                     Command="{x:Bind Vm.StopCommand}"
                                     IsEnabled="{x:Bind Vm.IsRunning, Mode=OneWay}" />
+                            <Button Content="关闭游戏"
+                                    Command="{x:Bind Vm.CloseGameCommand}"
+                                    IsEnabled="{x:Bind Vm.IsRunning, Mode=OneWay, Converter={StaticResource InvertBool}}"
+                                    ToolTipService.ToolTip="关闭本机三角洲行动，Steam 暂缓期间也可使用；任务执行中请先停止。" />
                             <Button Content="单步调试"
                                     Visibility="{x:Bind Vm.DebugVisibility, Mode=OneWay}">
                                 <Button.Flyout>

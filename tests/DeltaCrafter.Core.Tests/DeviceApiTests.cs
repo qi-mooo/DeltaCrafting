@@ -132,6 +132,7 @@ public sealed class DeviceApiTests
     [Theory]
     [InlineData("start")]
     [InlineData("sync")]
+    [InlineData("close-game")]
     public async Task Read_only_mode_never_dispatches_actions(string action)
     {
         using var server = new Server();
@@ -143,6 +144,7 @@ public sealed class DeviceApiTests
     [Theory]
     [InlineData("start")]
     [InlineData("sync")]
+    [InlineData("close-game")]
     [InlineData("stop")]
     [InlineData("pause")]
     [InlineData("resume")]

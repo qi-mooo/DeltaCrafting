@@ -21,9 +21,9 @@ int main()
     assert(ui.home == 4);
     ui.open(UiPage::Global);
     ui.move(-1);
-    assert(ui.row == 5); // Return option, after start and sync actions.
+    assert(ui.row == 6); // Return option, after start, sync and close-game actions.
     ui.move(1);
-    assert(ui.row == 0 && ui.count() == 6);
+    assert(ui.row == 0 && ui.count() == 7);
     ui.open(UiPage::Home);
     assert(ui.home == 4);
     ui.move(-1);

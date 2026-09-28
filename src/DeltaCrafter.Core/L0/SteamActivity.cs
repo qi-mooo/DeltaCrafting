@@ -1,5 +1,7 @@
 namespace DeltaCrafter.Core.L0;
 
+public sealed record GameProcessIdentity(int ProcessId, DateTime StartedUtc, string ExecutablePath);
+
 public sealed class SteamActivitySettings
 {
     public bool Enabled { get; set; }

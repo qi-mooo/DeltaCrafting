@@ -35,12 +35,12 @@ struct Snapshot {
     bool valid = false, running = false, autoLoop = false, control = false;
     bool lastRunFailed = false;
     bool steamDetection = false, settingsSupported = false, syncSupported = false;
-    bool itemSelectionSupported = false;
+    bool itemSelectionSupported = false, closeGameSupported = false;
     int32_t nextRun = -1;
     uint32_t fetchedAt = 0, noticeAt = 0;
 };
 
-enum class Command : uint8_t { Refresh, Start, Sync, Stop, Pause, Resume, Items };
+enum class Command : uint8_t { Refresh, Start, Sync, Stop, Pause, Resume, Items, CloseGame };
 enum class Setting : uint8_t { None, FacilityEnabled, CraftMode, AutoLoop, SteamDetection, AfterRun, PlannedItem };
 struct Request {
     Command command = Command::Refresh;
@@ -157,6 +157,7 @@ bool parseStatus(JsonDocument &doc, Snapshot &next)
     next.settingsSupported = doc["settingsSupported"] | false;
     next.syncSupported = doc["syncSupported"] | false;
     next.itemSelectionSupported = doc["itemSelectionSupported"] | false;
+    next.closeGameSupported = doc["closeGameSupported"] | false;
     String nextAt = doc["nextRunAt"] | "";
     if (nextAt.length() >= 19 && nextAt[10] == 'T' && nextAt[13] == ':')
         next.nextRunClock = nextAt.substring(11, 16);
@@ -226,7 +227,7 @@ void sendAction(Command command)
         setNotice(!fresh(s) ? "设备离线" : !s.control ? "电脑未允许设备控制" : "任务正在执行");
         return;
     }
-    const char *action = command == Command::Start ? "start" : command == Command::Stop ? "stop"
+    const char *action = command == Command::CloseGame ? "close-game" : command == Command::Start ? "start" : command == Command::Stop ? "stop"
         : command == Command::Sync ? "sync" : command == Command::Pause ? "pause" : "resume";
     WiFiClient client;
     HTTPClient http;
@@ -240,7 +241,7 @@ void sendAction(Command command)
     http.end();
     // Never retry a control request: a lost reply does not mean the action was rejected.
     setNotice(code == 200 || code == 202
-        ? (command == Command::Sync ? "已提交识别当前任务" : "已提交开始制造")
+        ? (command == Command::CloseGame ? "已提交关闭游戏" : command == Command::Sync ? "已提交识别当前任务" : "已提交开始制造")
         : code <= 0 ? "结果未知,正在刷新" : code == 409 ? "任务执行中或正在更新" : httpError(code));
 }
 
@@ -555,7 +556,8 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             menuRow(2, String("收取后: ") + afterRunName(s.afterRun));
             menuRow(3, s.running ? "开始制造 (执行中)" : "开始制造");
             menuRow(4, s.running ? "识别当前任务 (执行中)" : "识别当前任务");
-            menuRow(5, "返回主界面");
+            menuRow(5, s.running ? "关闭游戏 (请先停止任务)" : "关闭游戏");
+            menuRow(6, "返回主界面");
         } else if (ui.page == UiPage::CraftMode) {
             for (uint8_t i = 0; i < 3; ++i)
                 menuRow(i, String(f.craftMode == CRAFT_MODES[i] ? "* " : "  ") + craftModeName(CRAFT_MODES[i]));
@@ -697,7 +699,8 @@ bool submit(Setting setting, uint8_t value)
 void submitAction(Command command)
 {
     Snapshot s = readSnapshot();
-    if (!fresh(s) || !s.control || s.running || (command == Command::Sync && !s.syncSupported)) {
+    if (!fresh(s) || !s.control || s.running || (command == Command::Sync && !s.syncSupported)
+        || (command == Command::CloseGame && !s.closeGameSupported)) {
         setNotice(!fresh(s) ? "设备离线,请求未发送" : !s.control ? "电脑未允许设备控制"
             : s.running ? "任务正在执行" : "请更新电脑客户端");
         return;
@@ -761,6 +764,7 @@ void activateSelection(bool held)
             ui.open(UiPage::AfterRun, selected);
         } else if (ui.row == 3) submitAction(Command::Start);
         else if (ui.row == 4) submitAction(Command::Sync);
+        else if (ui.row == 5) submitAction(Command::CloseGame);
         else ui.open(UiPage::Home);
     } else if (ui.page == UiPage::CraftMode) {
         if (ui.row == 3 || submit(Setting::CraftMode, ui.row)) ui.open(UiPage::Facility, 1);

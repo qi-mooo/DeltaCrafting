@@ -29,6 +29,9 @@ public sealed class LaunchFlow
     private readonly StepRunner _runner;
     private readonly Func<AppSettings> _settings;
     private readonly ILogger _log;
+    private readonly AssistantGameSession _assistantGame = new();
+
+    public bool HasAssistantStartedGame() => _assistantGame.IsRunning(GameProcessBrick.ReadIdentity);
 
     public LaunchFlow(GameProcessBrick process, GameWindowBrick window, ScreenProbe probe,
         InputBrick input, StepRunner runner, Func<AppSettings> settings, ILogger log)
@@ -73,10 +76,10 @@ public sealed class LaunchFlow
         return new LaunchOutcome(game.Hwnd, launched);
     }
 
-    public GameWindowInfo? FindRunningClient()
+    public GameWindowInfo? FindRunningClient(bool includeMinimized = false)
     {
         var s = _settings();
-        return _window.FindGameClient(s.WindowMatch, ResolveSteam(s)?.InstallDirectory);
+        return _window.FindGameClient(s.WindowMatch, ResolveSteam(s)?.InstallDirectory, includeMinimized);
     }
 
     private static SteamGameInstallation? ResolveSteam(AppSettings settings) => settings.LaunchMode switch
@@ -91,8 +94,10 @@ public sealed class LaunchFlow
     {
         ct.ThrowIfCancellationRequested();
         var launcher = _window.FindLauncher(s.WindowMatch.TitleContains, steam?.InstallDirectory);
+        DateTime? launchRequestedUtc = null;
         if (launcher is null)
         {
+            launchRequestedUtc = DateTime.UtcNow;
             if (steam is not null) _process.LaunchSteam(steam);
             else _process.Launch(s.GamePath);
         }
@@ -113,6 +118,8 @@ public sealed class LaunchFlow
             if (game is not null)
             {
                 _log.Information("游戏客户端窗口已出现:{Title}", game.Title);
+                if (_assistantGame.Record(GameProcessBrick.ReadIdentity(game.ProcessId), launchRequestedUtc))
+                    _log.Information("已记录助手启动的游戏进程 {Pid},后续任务不受该进程的 Steam 游戏状态阻拦。", game.ProcessId);
                 await Task.Delay(2000, ct); // 等渲染器就绪,后续交给画面判定
                 return game;
             }
@@ -128,6 +135,7 @@ public sealed class LaunchFlow
                 {
                     var line = await _probe.FindLineAsync(launcher.Hwnd, FullFrame, word);
                     if (line is null) continue;
+                    launchRequestedUtc ??= DateTime.UtcNow;
                     clicks++;
                     lastClickAt = Environment.TickCount64;
                     if (clicks > 1) _log.Warning("客户端仍未出现,重试点击启动器「{Word}」。", word);

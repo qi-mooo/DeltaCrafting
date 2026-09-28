@@ -3,14 +3,24 @@ using DeltaCrafter.Core.L0;
 namespace DeltaCrafter.Core.L2;
 
 /// <summary>Only blocked checks are cached; every allowed task requires a fresh Steam response.</summary>
-public sealed class SteamActivityGuard(ISteamActivitySource source, IClock clock)
+public sealed class SteamActivityGuard(ISteamActivitySource source, IClock clock, Func<bool>? assistantGameRunning = null)
 {
     public static readonly TimeSpan RetryDelay = TimeSpan.FromMinutes(5);
     private sealed record CachedBlock(string ApiKey, string SteamId, SteamActivityBlock Block);
     private CachedBlock? _cached;
 
+    public void ClearBlock() => Volatile.Write(ref _cached, null);
+
+    private bool OwnGameRunning()
+    {
+        if (assistantGameRunning?.Invoke() != true) return false;
+        ClearBlock();
+        return true;
+    }
+
     public SteamActivityBlock? GetBlock(SteamActivitySettings settings)
     {
+        if (OwnGameRunning()) return null;
         var cached = Volatile.Read(ref _cached);
         return settings.Enabled && cached is not null && cached.ApiKey == settings.ApiKey
             && cached.SteamId == settings.SteamId && clock.Now < cached.Block.RetryAt
@@ -21,7 +31,7 @@ public sealed class SteamActivityGuard(ISteamActivitySource source, IClock clock
     public async Task<SteamActivityBlock?> CheckAsync(SteamActivitySettings settings, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (!settings.Enabled)
+        if (!settings.Enabled || OwnGameRunning())
         {
             Volatile.Write(ref _cached, null);
             return null;

@@ -103,6 +103,9 @@ public sealed partial class OverviewViewModel : ObservableObject
     [RelayCommand]
     private void Stop() => _coordinator.RequestStop();
 
+    [RelayCommand]
+    private Task CloseGameAsync() => Task.Run(() => _coordinator.CloseGameAsync());
+
     /// <summary>取消某设施的制造:先二次确认,再后台执行中止(执行中不重复触发)。</summary>
     private async Task HandleCancelAsync(FacilityCardModel model)
     {

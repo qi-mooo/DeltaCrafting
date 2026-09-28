@@ -30,7 +30,7 @@ public sealed record DeviceStatus(
     IReadOnlyList<DeviceFacilityStatus> Facilities,
     DeviceGameStatus? Game = null, bool SteamDetectionEnabled = false,
     string AfterRun = "CloseGame", bool SettingsSupported = true, bool SyncSupported = true,
-    bool ItemSelectionSupported = false);
+    bool ItemSelectionSupported = false, bool CloseGameSupported = false);
 
 public sealed record DeviceItemList(string Facility, string SelectedItemName, IReadOnlyList<string> Items)
 {

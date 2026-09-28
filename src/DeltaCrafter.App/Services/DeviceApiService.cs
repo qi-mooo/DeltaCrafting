@@ -33,7 +33,7 @@ public sealed class DeviceApiService : IDisposable
         typeof(AppHost).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
         DateTimeOffset.Now, _host.Coordinator.Status, _host.Coordinator.IsRunning,
         _host.Settings, _host.Plan, _host.Coordinator.ScheduleSnapshot(),
-        _host.SteamStatus.Snapshot(_host.Settings.SteamActivity)) with { ItemSelectionSupported = true };
+        _host.SteamStatus.Snapshot(_host.Settings.SteamActivity)) with { ItemSelectionSupported = true, CloseGameSupported = true };
 
     private async Task<DeviceActionResult> UpdateSettingsAsync(DeviceSettingsRequest update, CancellationToken ct)
     {
@@ -75,6 +75,7 @@ public sealed class DeviceApiService : IDisposable
         {
             case "start":
             case "sync":
+            case "close-game":
                 if (_host.Coordinator.RunsBlocked)
                     return new(409, "update_in_progress");
                 if (_host.Coordinator.IsRunning || _remoteRun is { IsCompleted: false })
@@ -88,6 +89,7 @@ public sealed class DeviceApiService : IDisposable
                     {
                         if (action == "sync")
                             await _host.Coordinator.SyncFacilitiesAsync("设备 API 识别当前任务", token);
+                        else if (action == "close-game") await _host.Coordinator.CloseGameAsync(token);
                         else await _host.Coordinator.RunOnceAsync("设备 API 开始制造", token);
                     }
                     catch (OperationCanceledException) when (token.IsCancellationRequested) { }
@@ -108,7 +110,7 @@ public sealed class DeviceApiService : IDisposable
                 return new(400, "invalid_action");
         }
         _host.Log.Information("设备 API 控制:{Action}", action);
-        return new(action is "start" or "sync" or "stop" ? 202 : 200, "accepted");
+        return new(action is "start" or "sync" or "close-game" or "stop" ? 202 : 200, "accepted");
     }
 
     private Task<T> OnUiAsync<T>(Func<T> action, CancellationToken ct)

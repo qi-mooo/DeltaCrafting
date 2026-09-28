@@ -12,7 +12,7 @@ struct UiState {
     uint8_t count() const
     {
         return page == UiPage::Home ? 5 : page == UiPage::Items ? itemCount + 1
-            : page == UiPage::Facility ? (customMode ? 4 : 3) : page == UiPage::Global ? 6 : 4;
+            : page == UiPage::Facility ? (customMode ? 4 : 3) : page == UiPage::Global ? 7 : 4;
     }
 
     void move(int direction)

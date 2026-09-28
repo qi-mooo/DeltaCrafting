@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using DeltaCrafter.Core.L1.Win32;
+using DeltaCrafter.Core.L0;
 using Serilog;
 
 namespace DeltaCrafter.Core.L1;
@@ -13,6 +14,18 @@ public sealed class GameProcessBrick
     private readonly ILogger _log;
 
     public GameProcessBrick(ILogger log) => _log = log.ForContext<GameProcessBrick>();
+
+    public static GameProcessIdentity? ReadIdentity(int pid)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return !process.HasExited && process.MainModule?.FileName is { } path
+                ? new(pid, process.StartTime.ToUniversalTime(), path) : null;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
+            or ArgumentException or NotSupportedException) { return null; }
+    }
 
     /// <summary>通过本机 Steam 启动已校验的本地安装;窗口仍须通过进程路径校验。</summary>
     public void LaunchSteam(SteamGameInstallation installation)

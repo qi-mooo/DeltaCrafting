@@ -57,7 +57,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         _engine = engine; _probe = probe; _windowBrick = windowBrick; _sleepGuard = sleepGuard;
         _settings = settings; _plan = plan; _notifier = notifier; _clock = clock;
         _log = log.ForContext<AutomationCoordinator>();
-        _steamActivity = steamActivity ?? new SteamActivityGuard(new SteamActivityClient(), clock);
+        _steamActivity = steamActivity ?? new SteamActivityGuard(new SteamActivityClient(), clock, launch.HasAssistantStartedGame);
     }
 
     /// <summary>UI 读取的设施状态快照(浅拷贝,避免与执行线程共享可变对象)。</summary>
@@ -204,6 +204,16 @@ public sealed partial class AutomationCoordinator : IDisposable
     public Task<RunReport> SyncFacilitiesAsync(string trigger, CancellationToken external) =>
         ExecuteGuardedAsync(trigger, affectsSchedule: true, requiresCalibration: true, SyncRoundAsync, external);
 
+    public Task<RunReport> CloseGameAsync(CancellationToken external = default) =>
+        ExecuteGuardedAsync("关闭本机游戏", affectsSchedule: false, requiresCalibration: false, async (report, ct) =>
+        {
+            Publish(new(EngineMode.Running, "正在关闭本机游戏…", null));
+            var game = _launch.FindRunningClient(includeMinimized: true);
+            if (game is not null) await _shutdown.ApplyAsync(AfterRunAction.CloseGame, game.Hwnd, ct);
+            _steamActivity.ClearBlock();
+            report.Add(game is null ? "本机游戏未运行" : "本机游戏已关闭");
+        }, external, bypassSteam: true, manageWindow: false);
+
     private async Task SyncRoundAsync(RunReport report, CancellationToken ct)
     {
         _engine.MarkRunStarted();
@@ -331,7 +341,7 @@ public sealed partial class AutomationCoordinator : IDisposable
 
     private async Task<RunReport> ExecuteGuardedAsync(string trigger, bool affectsSchedule,
         bool requiresCalibration, Func<RunReport, CancellationToken, Task> body,
-        CancellationToken external = default)
+        CancellationToken external = default, bool bypassSteam = false, bool manageWindow = true)
     {
         external.ThrowIfCancellationRequested();
         var report = new RunReport(trigger);
@@ -359,7 +369,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         try
         {
             _runCts.Token.ThrowIfCancellationRequested();
-            if (await _steamActivity.CheckAsync(_settings().SteamActivity, _runCts.Token) is { } block)
+            if (!bypassSteam && await _steamActivity.CheckAsync(_settings().SteamActivity, _runCts.Token) is { } block)
             {
                 report.Add($"{block.Detail}; 本次未执行,5 分钟后重试");
                 _log.Information("[{Trigger}]暂缓: {Reason};下次检查 {RetryAt:HH:mm:ss}。",
@@ -370,7 +380,7 @@ public sealed partial class AutomationCoordinator : IDisposable
             _runCts.Token.ThrowIfCancellationRequested();
             _sleepGuard.SetActive(true);
             started = true;
-            _windowGuard.MinimizeForRun(); // 防止助手窗口盖住游戏,污染屏幕拷贝识别
+            if (manageWindow) _windowGuard.MinimizeForRun(); // 防止助手窗口盖住游戏,污染屏幕拷贝识别
             _log.Information("开始执行[{Trigger}]。", trigger);
             if (requiresCalibration && !_probe.Anchors.Calibrated)
                 throw new StepFailedException("前置检查",
@@ -420,7 +430,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         }
         finally
         {
-            if (started) _windowGuard.RestoreAfterRun();
+            if (started && manageWindow) _windowGuard.RestoreAfterRun();
             lock (_runCtsGate)
             {
                 _runCts?.Dispose();

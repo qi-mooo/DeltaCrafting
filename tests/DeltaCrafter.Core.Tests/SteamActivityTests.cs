@@ -209,6 +209,26 @@ public sealed class SteamActivityTests
     }
 
     [Fact]
+    public async Task Assistant_owned_game_clears_old_block_and_stops_bypassing_after_exit()
+    {
+        var source = new Source();
+        bool owned = false;
+        var guard = new SteamActivityGuard(source, new Clock(), () => owned);
+        var settings = Settings();
+        Assert.NotNull(await guard.CheckAsync(settings, default)); // Manually started game remains blocked.
+        owned = true;
+        Assert.Null(guard.GetBlock(settings));
+        Assert.Null(await guard.CheckAsync(settings, default));
+        Assert.Equal(1, source.Calls);
+        owned = false;
+        Assert.Null(guard.GetBlock(settings)); // Does not resurrect the old five-minute wait.
+        Assert.NotNull(await guard.CheckAsync(settings, default));
+        Assert.Equal(2, source.Calls);
+        guard.ClearBlock(); // Explicit close clears the cached wait and the next task rechecks Steam.
+        Assert.Null(guard.GetBlock(settings));
+    }
+
+    [Fact]
     public async Task Coordinator_blocks_all_entry_points_without_touching_windows_or_schedule()
     {
         string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".json");
