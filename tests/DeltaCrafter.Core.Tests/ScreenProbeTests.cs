@@ -10,6 +10,21 @@ public sealed class ScreenProbeTests
     private static AnchorTable Anchors => new JsonStoreBrick().Load<AnchorTable>(
         Path.Combine(AppContext.BaseDirectory, "Data", "anchors.json"));
 
+    [Theory]
+    [InlineData(1920, 1080)]
+    [InlineData(2560, 1440)]
+    public void Item_title_excludes_quality_icon_toolbar_and_price_row(int width, int height)
+    {
+        var (x, y, w, h) = PixelMapper.ToPixelRect(
+            Anchors.Screen(AnchorKeys.Production).Roi(AnchorKeys.RoiDetailTitle), width, height);
+        double scale = width / 1920.0;
+        Assert.InRange(x / scale, 665, 667);
+        Assert.InRange((x + w) / scale, 907, 909);
+        Assert.True(y / scale <= 168 && (y + h) / scale >= 195); // 覆盖完整标题。
+        Assert.True((y + h) / scale < 212); // 价格行从 y=212 开始。
+        Assert.True(Anchors.Revision > 10);
+    }
+
     [Fact]
     public void Current_mode_accepts_observed_windows_ocr_for_first_play_card()
     {

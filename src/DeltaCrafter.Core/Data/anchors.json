@@ -6,8 +6,8 @@
   // safehouse →Tab→ lobby →点顶栏特勤处→ specops-home;
   // 点设施槽位 → production(空闲)或 collect-result(完成)。
   "calibrated": true,
-  "revision": 10,
-  "calibratedOn": "2560×1440 实机标定；2026-09-28 1920×1080 新版首卡前往游玩与退出菜单 OCR 验证(rev10)",
+  "revision": 11,
+  "calibratedOn": "2560×1440 实机标定；2026-09-28 1920×1080 新版首卡前往游玩与退出菜单 OCR 验证；物品标题排除图标和价格(rev11)",
 
   "keywords": {
     "idle": ["空闲中", "空闲"],
@@ -97,7 +97,8 @@
       "points": { "action-button": { "x": 0.90, "y": 0.881 } },
       "rois": {
         "list-area": { "x": 0.046, "y": 0.178, "w": 0.254, "h": 0.742 },
-        "detail-title": { "x": 0.325, "y": 0.148, "w": 0.165, "h": 0.056 },
+        // 物品标题避开左侧品质菱形、右侧清单按钮和下方价格行（1080p x≈666..908,y≈159..205）。
+        "detail-title": { "x": 0.347, "y": 0.1472, "w": 0.126, "h": 0.0426 },
         "action-button": { "x": 0.82, "y": 0.85, "w": 0.15, "h": 0.062 },
         "remaining-time": { "x": 0.795, "y": 0.788, "w": 0.175, "h": 0.062 }
       }
