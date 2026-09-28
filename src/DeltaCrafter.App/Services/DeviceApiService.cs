@@ -68,6 +68,7 @@ public sealed class DeviceApiService : IDisposable
         switch (action)
         {
             case "start":
+            case "sync":
                 if (_host.Coordinator.RunsBlocked)
                     return new(409, "update_in_progress");
                 if (_host.Coordinator.IsRunning || _remoteRun is { IsCompleted: false })
@@ -77,7 +78,12 @@ public sealed class DeviceApiService : IDisposable
                 var token = _remoteStop.Token;
                 _remoteRun = Task.Run(async () =>
                 {
-                    try { await _host.Coordinator.RunOnceAsync("设备 API", token); }
+                    try
+                    {
+                        if (action == "sync")
+                            await _host.Coordinator.SyncFacilitiesAsync("设备 API 识别当前任务", token);
+                        else await _host.Coordinator.RunOnceAsync("设备 API 开始制造", token);
+                    }
                     catch (OperationCanceledException) when (token.IsCancellationRequested) { }
                     catch (Exception ex) { _host.Log.Error(ex, "设备 API 执行请求失败。"); }
                 });
@@ -96,7 +102,7 @@ public sealed class DeviceApiService : IDisposable
                 return new(400, "invalid_action");
         }
         _host.Log.Information("设备 API 控制:{Action}", action);
-        return new(action is "start" or "stop" ? 202 : 200, "accepted");
+        return new(action is "start" or "sync" or "stop" ? 202 : 200, "accepted");
     }
 
     private Task<T> OnUiAsync<T>(Func<T> action, CancellationToken ct)

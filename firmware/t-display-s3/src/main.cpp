@@ -33,12 +33,12 @@ struct Snapshot {
     String gameState, gameDetail, afterRun;
     bool valid = false, running = false, autoLoop = false, control = false;
     bool lastRunFailed = false;
-    bool steamDetection = false, settingsSupported = false;
+    bool steamDetection = false, settingsSupported = false, syncSupported = false;
     int32_t nextRun = -1;
     uint32_t fetchedAt = 0, noticeAt = 0;
 };
 
-enum class Command : uint8_t { Refresh, Start, Stop, Pause, Resume };
+enum class Command : uint8_t { Refresh, Start, Sync, Stop, Pause, Resume };
 enum class Setting : uint8_t { None, FacilityEnabled, CraftMode, AutoLoop, SteamDetection, AfterRun };
 struct Request {
     Command command = Command::Refresh;
@@ -50,8 +50,8 @@ MonoDisplay canvas;
 Axeuh_UI uiEngine(&canvas);
 Axeuh_UI_Panel mainPanel;
 Axeuh_UI_StatusBar statusBar;
-MenuOption menuOptions[4];
-Axeuh_UI_TextMenu settingsMenu(menuOptions, 4);
+MenuOption menuOptions[6];
+Axeuh_UI_TextMenu settingsMenu(menuOptions, 6);
 Axeuh_UI_Panel settingsPanel;
 float focusX = 1, focusY = 1, focusW = 158, focusH = 70;
 IN_PUT_Mode pendingInput = STOP;
@@ -142,6 +142,7 @@ bool parseStatus(JsonDocument &doc, Snapshot &next)
     next.afterRun = doc["afterRun"] | "CloseGame";
     next.steamDetection = doc["steamDetectionEnabled"] | false;
     next.settingsSupported = doc["settingsSupported"] | false;
+    next.syncSupported = doc["syncSupported"] | false;
     uint8_t seen = 0;
     for (JsonObject row : doc["facilities"].as<JsonArray>()) {
         int index = -1;
@@ -204,12 +205,12 @@ void pollStatus()
 void sendAction(Command command)
 {
     Snapshot s = readSnapshot();
-    if (!fresh(s) || !s.control) {
-        setNotice(s.control ? "Device offline" : "Control disabled");
+    if (!fresh(s) || !s.control || s.running) {
+        setNotice(!fresh(s) ? "设备离线" : !s.control ? "电脑未允许设备控制" : "任务正在执行");
         return;
     }
     const char *action = command == Command::Start ? "start" : command == Command::Stop ? "stop"
-        : command == Command::Pause ? "pause" : "resume";
+        : command == Command::Sync ? "sync" : command == Command::Pause ? "pause" : "resume";
     WiFiClient client;
     HTTPClient http;
     beginHttp(http, client, "/api/v1/action");
@@ -221,8 +222,9 @@ void sendAction(Command command)
     int code = http.POST(body);
     http.end();
     // Never retry a control request: a lost reply does not mean the action was rejected.
-    setNotice(code == 200 || code == 202 ? String(action) + " accepted"
-        : code <= 0 ? "Result unknown; refreshing" : httpError(code));
+    setNotice(code == 200 || code == 202
+        ? (command == Command::Sync ? "已提交识别当前任务" : "已提交开始制造")
+        : code <= 0 ? "结果未知,正在刷新" : code == 409 ? "任务执行中或正在更新" : httpError(code));
 }
 
 const char *const CRAFT_MODES[] = {"Custom", "HourlyProfit", "TotalProfit"};
@@ -278,6 +280,7 @@ void networkTask(void *)
             setError("Setup via USB serial");
         } else if (!connected) {
             setError("Wi-Fi disconnected");
+            if (hasCommand) setNotice("设备离线,请求未发送");
             if (millis() - lastWifiAttempt >= 10000) {
                 WiFi.reconnect();
                 lastWifiAttempt = millis();
@@ -414,12 +417,6 @@ void drawProgress(int x, int y, const Facility &facility, const Snapshot &s)
             remaining = max(int32_t(0), remaining - int32_t((millis() - s.fetchedAt) / 1000));
         int pixels = progressPixels(remaining, facility.total, 138);
         if (pixels > 0) canvas.drawBox(x + 1, y + 1, pixels, 2);
-        else if (pixels < 0) {
-            // Unknown start time is an activity indicator, not a made-up ratio.
-            int offset = fresh(s) ? (millis() / 80) % 8 : 0;
-            for (int i = offset; i < 138; i += 8)
-                canvas.drawHLine(x + 1 + i, y + 1, min(3, 138 - i));
-        }
     }
 }
 
@@ -484,7 +481,9 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             menuRow(0, String("自动循环: ") + (s.autoLoop ? "开启" : "关闭"));
             menuRow(1, String("Steam 检测: ") + (s.steamDetection ? "开启" : "关闭"));
             menuRow(2, String("收取后: ") + afterRunName(s.afterRun));
-            menuRow(3, "返回主界面");
+            menuRow(3, s.running ? "开始制造 (执行中)" : "开始制造");
+            menuRow(4, s.running ? "识别当前任务 (执行中)" : "识别当前任务");
+            menuRow(5, "返回主界面");
         } else if (ui.page == UiPage::CraftMode) {
             for (uint8_t i = 0; i < 3; ++i)
                 menuRow(i, String(f.craftMode == CRAFT_MODES[i] ? "* " : "  ") + craftModeName(CRAFT_MODES[i]));
@@ -510,7 +509,8 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         canvas.setMaxClipWindow();
         String hint = !s.notice.isEmpty() && millis() - s.noticeAt < 5000 ? s.notice
             : !fresh(s) ? "离线 / 可浏览,暂不能保存"
-            : !s.control ? "只读 / 电脑未允许设备控制" : gameStatus(s);
+            : !s.control ? "只读 / 电脑未允许设备控制"
+            : s.running || s.mode == "WaitingSchedule" || s.mode == "Faulted" ? s.detail : gameStatus(s);
         textAt(8, 165, 304, hint);
     }
 }
@@ -558,22 +558,13 @@ void draw()
     canvas.present(display);
 }
 
-bool submit(Setting setting, uint8_t value)
+bool enqueueRequest(const Request &request)
 {
-    Snapshot s = readSnapshot();
-    if (!fresh(s) || !s.control || !s.settingsSupported) {
-        setNotice(!fresh(s) ? "设备离线,暂不能保存" : !s.control ? "电脑未允许设备控制" : "请更新电脑客户端");
-        return false;
-    }
     xSemaphoreTake(stateMutex, portMAX_DELAY);
     bool pending = requestPending;
     if (!pending) requestPending = true;
     xSemaphoreGive(stateMutex);
-    if (pending) { setNotice("正在保存,请稍候"); return false; }
-    Request request;
-    request.setting = setting;
-    request.facility = ui.facility();
-    request.value = value;
+    if (pending) { setNotice("请求处理中,请稍候"); return false; }
     if (xQueueSend(commands, &request, 0) != pdTRUE) {
         xSemaphoreTake(stateMutex, portMAX_DELAY);
         requestPending = false;
@@ -581,8 +572,35 @@ bool submit(Setting setting, uint8_t value)
         setNotice("请求排队中");
         return false;
     }
-    setNotice("正在保存...");
+    setNotice(request.setting != Setting::None ? "正在保存..." : "正在提交...");
     return true;
+}
+
+bool submit(Setting setting, uint8_t value)
+{
+    Snapshot s = readSnapshot();
+    if (!fresh(s) || !s.control || !s.settingsSupported) {
+        setNotice(!fresh(s) ? "设备离线,暂不能保存" : !s.control ? "电脑未允许设备控制" : "请更新电脑客户端");
+        return false;
+    }
+    Request request;
+    request.setting = setting;
+    request.facility = ui.facility();
+    request.value = value;
+    return enqueueRequest(request);
+}
+
+void submitAction(Command command)
+{
+    Snapshot s = readSnapshot();
+    if (!fresh(s) || !s.control || s.running || (command == Command::Sync && !s.syncSupported)) {
+        setNotice(!fresh(s) ? "设备离线,请求未发送" : !s.control ? "电脑未允许设备控制"
+            : s.running ? "任务正在执行" : "请更新电脑客户端");
+        return;
+    }
+    Request request;
+    request.command = command;
+    enqueueRequest(request);
 }
 
 void activateSelection()
@@ -605,7 +623,9 @@ void activateSelection()
             uint8_t selected = 0;
             for (uint8_t i = 0; i < 3; ++i) if (s.afterRun == AFTER_RUN[i]) selected = i;
             ui.open(UiPage::AfterRun, selected);
-        } else ui.open(UiPage::Home);
+        } else if (ui.row == 3) submitAction(Command::Start);
+        else if (ui.row == 4) submitAction(Command::Sync);
+        else ui.open(UiPage::Home);
     } else if (ui.page == UiPage::CraftMode) {
         if (ui.row == 3 || submit(Setting::CraftMode, ui.row)) ui.open(UiPage::Facility, 1);
     } else if (ui.row == 3 || submit(Setting::AfterRun, ui.row)) {
@@ -616,8 +636,8 @@ void activateSelection()
 void handleButtons()
 {
     uint32_t now = millis();
-    bool cycle = cycleButton.update(digitalRead(0), now);
-    bool confirm = confirmButton.update(digitalRead(14), now);
+    bool cycle = cycleButton.update(digitalRead(UI_CYCLE_PIN), now);
+    bool confirm = confirmButton.update(digitalRead(UI_CONFIRM_PIN), now);
     if (cycle && confirmButton.stable) pendingInput = DOWN;
     else if (confirm && cycleButton.stable) pendingInput = SELECT;
 }
@@ -640,8 +660,8 @@ void setup()
     DeviceConfig::load();
     pinMode(15, OUTPUT);
     digitalWrite(15, HIGH);
-    pinMode(0, INPUT_PULLUP);
-    pinMode(14, INPUT_PULLUP);
+    pinMode(UI_CONFIRM_PIN, INPUT_PULLUP);
+    pinMode(UI_CYCLE_PIN, INPUT_PULLUP);
     analogReadResolution(12);
     analogSetPinAttenuation(4, ADC_11db);
     updateBattery();

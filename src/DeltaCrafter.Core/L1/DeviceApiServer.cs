@@ -148,7 +148,7 @@ public sealed class DeviceApiServer : IDisposable
                     return;
                 }
                 var command = JsonSerializer.Deserialize<DeviceActionRequest>(body.AsSpan(0, count), Json);
-                if (command?.Action is not ("start" or "stop" or "pause" or "resume"))
+                if (command?.Action is not ("start" or "sync" or "stop" or "pause" or "resume"))
                 {
                     await ReplyAsync(context, 400, new { error = "invalid_action" }, ct);
                     return;

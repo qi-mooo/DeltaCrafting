@@ -102,7 +102,7 @@ public class ScheduleEngineTests : IDisposable
         var end = start.AddHours(2);
         _engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "A", end, null, startedNow: true);
         _clock.Now = start.AddMinutes(20);
-        _engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "A", end.AddSeconds(3), null);
+        _engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "A (OCR variant)", end.AddSeconds(3), null);
         Assert.Equal(start, _engine.Snapshot().For(FacilityKey.Workbench).StartedAt);
         var loaded = new JsonStoreBrick().Load<ScheduleState>(Path.Combine(_dir, "state.json"));
         Assert.Equal(start, loaded.For(FacilityKey.Workbench).StartedAt);

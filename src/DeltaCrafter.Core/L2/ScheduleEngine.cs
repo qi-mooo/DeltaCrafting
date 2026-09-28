@@ -35,8 +35,10 @@ public sealed class ScheduleEngine
         {
             var rt = State.For(key);
             bool sameCraft = phase == FacilityPhase.Crafting && rt.Phase == phase
-                && rt.ItemName == itemName && rt.ReadyAt is { } previousReady && readyAt is { } nextReady
+                && rt.ReadyAt is { } previousReady && readyAt is { } nextReady
                 && Math.Abs((nextReady - previousReady).TotalSeconds) <= 120;
+            // OCR can spell the same item differently; a continuous crafting
+            // observation with the same completion time retains its known start.
             rt.StartedAt = startedNow && phase == FacilityPhase.Crafting ? _clock.Now
                 : sameCraft ? rt.StartedAt : null;
             rt.Phase = phase;

@@ -45,7 +45,8 @@ public sealed class CraftStartFlow
             () => _probe.IsOnAsync(hwnd, AnchorKeys.Production),
             TimeSpan.FromSeconds(12)), ct);
 
-        await FindAndSelectItemAsync(hwnd, facility, searchName, displayName, prodSpec, ct);
+        bool goldBlk = BlkAmmoMatcher.AppliesTo(key, displayName, searchName);
+        await FindAndSelectItemAsync(hwnd, facility, searchName, displayName, prodSpec, goldBlk, ct);
 
         string label = await ReadActionLabelAsync(hwnd, prodSpec, ct);
         if (LabelHits(label, kw.ButtonAbort))
@@ -97,7 +98,7 @@ public sealed class CraftStartFlow
     }
 
     private async Task FindAndSelectItemAsync(nint hwnd, string facility, string searchName,
-        string displayName, ScreenSpec prodSpec, CancellationToken ct)
+        string displayName, ScreenSpec prodSpec, bool goldBlk, CancellationToken ct)
     {
         var listArea = prodSpec.Roi(AnchorKeys.RoiListArea);
         OcrLine? line = null;
@@ -107,11 +108,25 @@ public sealed class CraftStartFlow
         for (int page = 0; page < MaxScrollPages; page++)
         {
             ct.ThrowIfCancellationRequested();
-            var lines = await _probe.ReadAreaLinesAsync(hwnd, listArea);
-            line = PickLine(lines, searchName, page);
+            string currentView;
+            if (goldBlk)
+            {
+                var (frame, lines) = await _probe.ReadAreaFrameAsync(hwnd, listArea);
+                var candidate = BlkAmmoMatcher.Find(frame, lines, listArea);
+                if (candidate is not null)
+                    line = new OcrLine(BlkAmmoMatcher.GameName, candidate.X, candidate.Y);
+                currentView = BlkAmmoMatcher.ViewSignature(frame, listArea);
+                _log.Debug("查找 .300 BLK 五级弹第{Page}页:名称与金色图标 {Found}",
+                    page + 1, candidate is not null);
+            }
+            else
+            {
+                var lines = await _probe.ReadAreaLinesAsync(hwnd, listArea);
+                line = PickLine(lines, searchName, page);
+                currentView = ScreenProbe.Normalize(string.Concat(lines.Select(l => l.Text)));
+            }
             if (line is not null) break;
 
-            string currentView = ScreenProbe.Normalize(string.Concat(lines.Select(l => l.Text)));
             if (currentView.Length > 0 && currentView == previousView)
             {
                 reachedBottom = true;
@@ -125,26 +140,40 @@ public sealed class CraftStartFlow
         {
             var (png, dumpText) = await _probe.DumpAsync(hwnd, "fail-查找物品");
             throw new StepFailedException($"查找物品「{displayName}」",
-                (reachedBottom
+                (goldBlk
+                    ? $"{facility}未找到能同时确认「.300 BLK」名称与金色图标背景的五级弹。"
+                    : reachedBottom
                     ? $"{facility}列表已滚到底仍未找到(匹配键「{searchName}」)。可用「扫描配方目录」重建候选。"
                     : $"{facility}列表滚动 {MaxScrollPages} 页未找到(或滚轮未生效)。") +
                 $"诊断截图:{png}", png, dumpText);
         }
 
         _probe.ClickFramePoint(hwnd, line.CenterX, line.CenterY);
+        if (goldBlk) _probe.MovePointerToRoi(hwnd, prodSpec.Roi(AnchorKeys.RoiDetailTitle));
         long deadline = Environment.TickCount64 + 8000;
-        // 注意:下方详情标题校验保持「规范形包含」强匹配——列表模糊选错行时,
-        // 校验必然不过并大声失败,绝不会静默生产错误物品。
+        // 普通物品保留原有标题强匹配。.300 BLK 五级弹额外确认金色行的白色选中框,
+        // 因为同名标题无法区分等级。所有确认必须在补齐材料/生产之前完成。
         while (Environment.TickCount64 < deadline)
         {
             ct.ThrowIfCancellationRequested();
             await Task.Delay(800, ct);
-            string title = await _probe.ReadRoiAsync(hwnd, prodSpec.Roi(AnchorKeys.RoiDetailTitle));
-            if (TextMatch.LineContains(title, searchName)) return;
+            if (goldBlk)
+            {
+                var (frame, lines) = await _probe.ReadAreaFrameAsync(hwnd, listArea);
+                var selected = BlkAmmoMatcher.Find(frame, lines, listArea, requireSelected: true);
+                string title = await _probe.ReadFrameRoiAsync(frame, prodSpec.Roi(AnchorKeys.RoiDetailTitle));
+                if (selected is not null && TextMatch.LineContains(title, BlkAmmoMatcher.GameName)) return;
+            }
+            else
+            {
+                string title = await _probe.ReadRoiAsync(hwnd, prodSpec.Roi(AnchorKeys.RoiDetailTitle));
+                if (TextMatch.LineContains(title, searchName)) return;
+            }
         }
         var (png2, dump2) = await _probe.DumpAsync(hwnd, "fail-选中物品");
         throw new StepFailedException($"选中物品「{displayName}」",
-            $"点击后详情标题未出现该物品。诊断截图:{png2}", png2, dump2);
+            (goldBlk ? "点击后未同时确认 .300 BLK 详情标题、金色图标及该行选中框。"
+                : "点击后详情标题未出现该物品。") + $"诊断截图:{png2}", png2, dump2);
     }
 
     /// <summary>页内选行,两级匹配:① 规范形包含(精确);② 子串编辑距离 ≤1 且严格惟一最优

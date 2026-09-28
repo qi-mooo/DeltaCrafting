@@ -7,7 +7,13 @@ using Windows.Media.Ocr;
 namespace DeltaCrafter.Core.L1;
 
 /// <summary>一行 OCR 结果。中心坐标为原始帧内的物理像素(已换算回裁剪/缩放前)。</summary>
-public sealed record OcrLine(string Text, double CenterX, double CenterY);
+public sealed record OcrLine(string Text, double CenterX, double CenterY)
+{
+    // 原始帧内的词框,仅供 .300 BLK 五级弹定位同一行左侧的品质图标。
+    public IReadOnlyList<OcrWordBox> Words { get; init; } = [];
+}
+
+public sealed record OcrWordBox(string Text, double Left, double Top, double Width, double Height);
 
 public sealed record OcrReadout(string FullText, IReadOnlyList<OcrLine> Lines);
 
@@ -58,9 +64,12 @@ public sealed class OcrBrick
         foreach (var line in result.Lines)
         {
             double minX = double.MaxValue, minY = double.MaxValue, maxX = 0, maxY = 0;
+            var words = new List<OcrWordBox>();
             foreach (var word in line.Words)
             {
                 var r = word.BoundingRect;
+                words.Add(new OcrWordBox(word.Text, cx + r.X / sx, cy + r.Y / sy,
+                    r.Width / sx, r.Height / sy));
                 minX = Math.Min(minX, r.X);
                 minY = Math.Min(minY, r.Y);
                 maxX = Math.Max(maxX, r.X + r.Width);
@@ -69,7 +78,7 @@ public sealed class OcrBrick
             if (minX > maxX) continue; // 无词的空行,丢弃
             lines.Add(new OcrLine(line.Text,
                 cx + (minX + maxX) / 2 / sx,
-                cy + (minY + maxY) / 2 / sy));
+                cy + (minY + maxY) / 2 / sy) { Words = words });
         }
         return new OcrReadout(string.Join("\n", lines.Select(l => l.Text)), lines);
     }

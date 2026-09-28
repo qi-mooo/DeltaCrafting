@@ -129,17 +129,20 @@ public sealed class DeviceApiTests
         Assert.DoesNotContain("gamePath", json);
     }
 
-    [Fact]
-    public async Task Read_only_mode_never_dispatches_actions()
+    [Theory]
+    [InlineData("start")]
+    [InlineData("sync")]
+    public async Task Read_only_mode_never_dispatches_actions(string action)
     {
         using var server = new Server();
-        using var response = await server.Post("{\"action\":\"start\"}");
+        using var response = await server.Post(JsonSerializer.Serialize(new { action }));
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Empty(server.Actions);
     }
 
     [Theory]
     [InlineData("start")]
+    [InlineData("sync")]
     [InlineData("stop")]
     [InlineData("pause")]
     [InlineData("resume")]

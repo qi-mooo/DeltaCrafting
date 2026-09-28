@@ -5,6 +5,7 @@
 
 int main()
 {
+    static_assert(UI_CONFIRM_PIN == 0 && UI_CYCLE_PIN == 14, "Button roles must match the device labels");
     UiState ui;
     const uint8_t expected[] = {3, 0, 1, 2};
     for (uint8_t i = 0; i < 4; ++i) {
@@ -18,7 +19,9 @@ int main()
     assert(ui.home == 4);
     ui.open(UiPage::Global);
     ui.move(-1);
-    assert(ui.row == 3); // Return option.
+    assert(ui.row == 5); // Return option, after start and sync actions.
+    ui.move(1);
+    assert(ui.row == 0 && ui.count() == 6);
     ui.open(UiPage::Home);
     assert(ui.home == 4);
     ui.move(-1);
@@ -55,6 +58,9 @@ int main()
     assert(batteryBars(4200) == 4 && batteryBars(3400) == 0);
     assert(progressPixels(1800, 3600, 138) == 69);
     assert(progressPixels(4000, 3600, 138) == 0);
-    assert(progressPixels(0, 3600, 138) == 137);
+    assert(progressPixels(0, 3600, 138) == 138);
+    assert(progressPixels(2700, 3600, 100) == 25);
+    assert(progressPixels(900, 3600, 100) == 75);
+    assert(progressPixels(-1, 3600, 138) == -1);
     assert(progressPixels(1800, -1, 138) == -1);
 }

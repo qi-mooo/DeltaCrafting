@@ -15,7 +15,5 @@ inline int progressPixels(int32_t remaining, int32_t total, int width)
 {
     if (total <= 0 || remaining < 0) return -1;
     if (remaining >= total) return 0;
-    int pixels = int(int64_t(total - remaining) * width / total);
-    // Only a confirmed ReadyToCollect observation should fill the entire bar.
-    return pixels >= width ? width - 1 : pixels;
+    return int(int64_t(total - remaining) * width / total);
 }

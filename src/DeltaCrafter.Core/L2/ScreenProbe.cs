@@ -110,6 +110,15 @@ public sealed class ScreenProbe
         _input.ClickAt(rect.Left + (int)Math.Round(frameX), rect.Top + (int)Math.Round(frameY));
     }
 
+    /// <summary>将鼠标移离列表,避免把悬停边框误当成 .300 BLK 行的选中状态。</summary>
+    public void MovePointerToRoi(nint hwnd, NRect roi)
+    {
+        var rect = _window.ClientRectOnScreen(hwnd);
+        var point = new NPoint { X = roi.X + roi.W / 2, Y = roi.Y + roi.H / 2 };
+        var (x, y) = PixelMapper.ToPixel(point, rect.Left, rect.Top, rect.Width, rect.Height);
+        _input.MoveTo(x, y);
+    }
+
     /// <summary>在区域中心滚动(负档向下翻列表)。</summary>
     public void ScrollRoi(nint hwnd, NRect roi, int notches)
     {
@@ -130,6 +139,16 @@ public sealed class ScreenProbe
     /// <summary>读取区域内全部 OCR 行(配方目录扫描用)。</summary>
     public async Task<IReadOnlyList<OcrLine>> ReadAreaLinesAsync(nint hwnd, NRect area) =>
         (await _ocr.ReadAsync(Capture(hwnd), area)).Lines;
+
+    /// <summary>.300 BLK 专用识别保留 OCR 对应原帧,避免文字与品质颜色来自不同画面。</summary>
+    public async Task<(CapturedFrame Frame, IReadOnlyList<OcrLine> Lines)> ReadAreaFrameAsync(nint hwnd, NRect area)
+    {
+        var frame = Capture(hwnd);
+        return (frame, (await _ocr.ReadAsync(frame, area)).Lines);
+    }
+
+    public async Task<string> ReadFrameRoiAsync(CapturedFrame frame, NRect roi) =>
+        (await _ocr.ReadAsync(frame, roi)).FullText;
 
     /// <summary>保存整帧截图与全文 OCR 转储(失败现场/校准诊断)。返回(截图路径, OCR 文本)。</summary>
     public async Task<(string PngPath, string OcrText)> DumpAsync(nint hwnd, string tag)

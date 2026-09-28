@@ -50,9 +50,9 @@ void processLine(const String &line)
     if (strcmp(command, "info") == 0) {
         doc.clear();
         doc["ok"] = true;
-        doc["firmware"] = "axeuh-keys-v2";
+        doc["firmware"] = "axeuh-actions-v4";
         doc["build"] = __DATE__ " " __TIME__;
-        doc["controls"] = "GPIO0=cycle,GPIO14=confirm";
+        doc["controls"] = "GPIO0=confirm,GPIO14=cycle";
         doc["configured"] = valid();
         doc["wifiConnected"] = WiFi.status() == WL_CONNECTED;
         doc["ip"] = WiFi.localIP().toString();

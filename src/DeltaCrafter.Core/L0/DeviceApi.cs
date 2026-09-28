@@ -29,7 +29,7 @@ public sealed record DeviceStatus(
     DateTimeOffset? LastRunAt, string? LastRunSummary, bool LastRunFailed,
     IReadOnlyList<DeviceFacilityStatus> Facilities,
     DeviceGameStatus? Game = null, bool SteamDetectionEnabled = false,
-    string AfterRun = "CloseGame", bool SettingsSupported = true);
+    string AfterRun = "CloseGame", bool SettingsSupported = true, bool SyncSupported = true);
 
 public sealed record DeviceGameStatus(string State, string Detail, DateTimeOffset? CheckedAt);
 
