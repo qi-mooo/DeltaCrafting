@@ -59,11 +59,15 @@ Windows 串口填写实际的 `COM5` 等端口,macOS 填 `/dev/cu.usbmodemXXXX`�
 | GPIO 0 单击 | 进入菜单或确认选中设置 |
 | GPIO 14 单击 | 循环选择下一项 |
 
-按住只触发一次,无长按功能。
+普通菜单按住只触发一次；制造物品列表中 GPIO 0 长按 0.8 秒保存，成功后返回设施设置。
+短按物品不保存；「返回设施设置」单击退出。
 
-主页为四分格:左上技术中心、右上工作台、左下制药台、右下防具台,底部状态栏显示游戏状态。
+主页为四分格:左上技术中心、右上工作台、左下制药台、右下防具台,底部状态栏显示游戏状态、下次执行时刻和电量图标。
+下次时刻使用电脑本地时间 HH:mm，未计划或离线显示 `--:--`；游戏中仅指三角洲行动，其他游戏忽略。
 所有页面黑底白字,选中项使用粗双框和角标。Axeuh_UI 提供焦点缓动,页面切换使用滑动过渡。主页焦点循环经过四格和状态栏。
-选择设施后按确认进入启用/停用、制造模式设置;计划物品保留在 App 本体修改。
+选择设施后按确认进入启用/停用、制造模式设置；自定义模式增加制造物品列表。
+列表读取电脑配方目录、保留已有手填物品，进入时定位到已选项；GPIO 14 循环浏览。
+仅收到保存成功才自动返回，失败留在原页。目录超过 254 项时提示在电脑选择。
 选择状态栏后按确认进入全局菜单，包括自动循环、Steam 游戏检测、收取后行为、
 开始制造、识别当前任务和返回。超出一屏时菜单随焦点滚动。
 开始制造按 App 的计划执行一轮；识别当前任务只观察四设施，不领取或开工。
@@ -74,7 +78,7 @@ Windows 串口填写实际的 `COM5` 等端口,macOS 填 `/dev/cu.usbmodemXXXX`�
 默认每 3 秒获取一次状态,屏幕目标 60 FPS 绘制,倒计时按设备本地单调时钟推算,无需 NTP。
 API 返回的完成时刻来自游戏 OCR。即使倒计时归零,仍保留服务器观测的阶段,
 不会凭计时将「制造中」改成「可领取」。禁用计划的设施仍显示已观测的任务。
-网络错误时保留四格旧数据,状态栏显示连接中断、游戏状态未知,停止倒计时且禁用保存。
+网络错误时保留四格旧数据,状态栏显示离线,停止倒计时且禁用保存。
 网络任务独立运行,重连不阻塞按键。
 
 每格底部显示制造进度条。客户端确认开工后保存起点,按实际 OCR 完成时刻计算总时长。
@@ -104,7 +108,7 @@ Authorization: Bearer <配对密钥>
 | `lastRunAt`, `lastRunSummary`, `lastRunFailed` | 上次执行结果;未执行时前两项可为 null |
 | `facilities` | 四个设施的数组,见下表 |
 | `game.state`, `game.detail`, `game.checkedAt` | Steam 游戏状态 Playing/NotPlaying/Unavailable/Unknown、说明和观测时间;与自动化任务状态独立 |
-| `steamDetectionEnabled`, `afterRun`, `settingsSupported`, `syncSupported` | 游戏检测开关、收取后行为、是否支持保存设置及识别当前任务 |
+| `steamDetectionEnabled`, `afterRun`, `settingsSupported`, `syncSupported`, `itemSelectionSupported` | 游戏检测开关、收取后行为、是否支持保存设置、识别当前任务及物品选择 |
 
 | 设施字段 | 含义 |
 | --- | --- |
@@ -169,9 +173,17 @@ Invoke-RestMethod 'http://127.0.0.1:17890/api/v1/status' -Headers @{ Authorizati
 
 全局请求分别使用 `autoLoopEnabled` (bool)、`steamDetectionEnabled` (bool) 或
 `afterRun` (CloseGame / KeepRunning / KeepAtLobby)。设施模式为 Custom / HourlyProfit / TotalProfit。
-不提供计划物品编辑。设置在任务之间保存,与 App 计划页共用保存和利润推荐逻辑。
+自定义模式可使用 `{"facility":"workbench","plannedItemName":".300BLK五级弹"}` 保存制造物品。
+名称必须来自该设施目录或已选物品，最长 192 个 UTF-8 字节；非自定义模式返回 409，未知物品返回 400。
+设置在任务之间保存,与 App 计划页共用保存、OCR 匹配名解析和自定义选择记忆。
 非法字段组合返回 400,只读返回 403,更新进行中返回 409,等待任务结束超时返回 503。
 Steam 显示状态每 30 秒独立查询,过期或失败显示不可用,不会改变任务的 5 分钟重试等待。
+
+### GET /api/v1/items?facility=workbench
+
+需要配对鉴权，只读设备也可浏览。返回 `facility`、`selectedItemName` 和 `items` 名称数组；
+设施使用与状态接口相同的 kebab 键，缺失或非法设施返回 400。列表去重并包含当前手填选择。
+S3 进入列表时单独请求目录，不放进每 3 秒的状态轮询。
 
 ## 验证范围
 

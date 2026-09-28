@@ -89,7 +89,7 @@
                 <TextBlock Text="Steam 游戏状态" Style="{StaticResource BodyStrongTextBlockStyle}"
                            Margin="0,12,0,0" />
                 <controls:SettingCard Glyph="&#xE7FC;" Header="游戏中暂停任务"
-                                      Description="游戏中或查询失败时等待 5 分钟再检查。">
+                                      Description="三角洲行动运行中或查询失败时等待 5 分钟再检查，其他游戏不影响任务。">
                     <controls:SettingCard.Slot>
                         <ToggleSwitch IsOn="{x:Bind Vm.SteamActivityEnabled, Mode=TwoWay}" />
                     </controls:SettingCard.Slot>

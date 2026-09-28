@@ -9,6 +9,7 @@ public sealed class DeviceApiCoordinator : IDisposable
     private readonly Func<CancellationToken, Task<DeviceStatus>> _status;
     private readonly Func<string, CancellationToken, Task<DeviceActionResult>> _action;
     private readonly Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? _settings;
+    private readonly Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? _items;
     private readonly ILogger _log;
     private DeviceApiServer? _server;
     public string StatusText { get; private set; } = "设备 API 已关闭";
@@ -16,11 +17,13 @@ public sealed class DeviceApiCoordinator : IDisposable
 
     public DeviceApiCoordinator(Func<CancellationToken, Task<DeviceStatus>> status,
         Func<string, CancellationToken, Task<DeviceActionResult>> action, ILogger log,
-        Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? updateSettings = null)
+        Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? updateSettings = null,
+        Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? getItems = null)
     {
         _status = status;
         _action = action;
         _settings = updateSettings;
+        _items = getItems;
         _log = log;
     }
 
@@ -35,7 +38,7 @@ public sealed class DeviceApiCoordinator : IDisposable
         }
         try
         {
-            _server = new DeviceApiServer(settings, _status, _action, _log, _settings);
+            _server = new DeviceApiServer(settings, _status, _action, _log, _settings, _items);
             var server = _server;
             server.Failed += ex =>
             {

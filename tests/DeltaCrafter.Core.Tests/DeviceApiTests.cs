@@ -88,7 +88,7 @@ public sealed class DeviceApiTests
                 {
                     Updates.Add(update);
                     return Task.FromResult(new DeviceActionResult(200, "saved"));
-                });
+                }, (key, _) => Task.FromResult(new DeviceItemList(FacilityKeys.JsonKey(key), "当前物品", ["候选物品", "当前物品"])));
             Api.Start();
             Client = new HttpClient(new HttpClientHandler { UseProxy = false })
             {
@@ -249,6 +249,7 @@ public sealed class DeviceApiTests
     [InlineData("{\"autoLoopEnabled\":false}")]
     [InlineData("{\"steamDetectionEnabled\":true}")]
     [InlineData("{\"afterRun\":\"KeepAtLobby\"}")]
+    [InlineData("{\"facility\":\"workbench\",\"plannedItemName\":\".300BLK五级弹\"}")]
     public async Task Settings_require_control_and_dispatch_one_valid_update(string body)
     {
         using var readOnly = new Server();
@@ -268,7 +269,11 @@ public sealed class DeviceApiTests
     [InlineData("{\"facility\":\"workbench\",\"craftMode\":\"invalid\"}")]
     [InlineData("{\"facility\":\"workbench\",\"enabled\":true,\"craftMode\":\"Custom\"}")]
     [InlineData("{\"facility\":\"workbench\",\"enabled\":true,\"autoLoopEnabled\":true}")]
-    [InlineData("{\"facility\":\"workbench\",\"plannedItemName\":\"not remotely editable\"}")]
+    [InlineData("{\"facility\":\"workbench\",\"plannedItemName\":\" \"}")]
+    [InlineData("{\"facility\":\"workbench\",\"plannedItemName\":\"item\",\"enabled\":true}")]
+    [InlineData("{\"facility\":\"workbench\",\"plannedItemName\":\"item\",\"craftMode\":\"Custom\"}")]
+    [InlineData("{\"plannedItemName\":\"item\"}")]
+    [InlineData("{\"facility\":\"workbench\",\"unknown\":true}")]
     [InlineData("{\"afterRun\":\"Delete\"}")]
     [InlineData("{\"autoLoopEnabled\":true,\"steamDetectionEnabled\":false}")]
     [InlineData("{\"enabled\":true}")]
@@ -295,5 +300,41 @@ public sealed class DeviceApiTests
             new StringContent("{\"autoLoopEnabled\":true}", Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Empty(server.Updates);
+    }
+
+    [Fact]
+    public async Task Item_list_requires_pairing_but_can_be_browsed_read_only()
+    {
+        using var server = new Server();
+        using var response = await server.Client.GetAsync("/api/v1/items?facility=workbench");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("workbench", json.RootElement.GetProperty("facility").GetString());
+        Assert.Equal("当前物品", json.RootElement.GetProperty("selectedItemName").GetString());
+        Assert.Equal(2, json.RootElement.GetProperty("items").GetArrayLength());
+        using var missing = await server.Client.GetAsync("/api/v1/items");
+        Assert.Equal(HttpStatusCode.BadRequest, missing.StatusCode);
+        using var invalid = await server.Client.GetAsync("/api/v1/items?facility=unknown");
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        server.Client.DefaultRequestHeaders.Authorization = null;
+        using var denied = await server.Client.GetAsync("/api/v1/items?facility=workbench");
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+    }
+
+    [Fact]
+    public void Item_selection_preserves_custom_entries_and_rejects_stale_mode_or_unknown_items()
+    {
+        var plan = new FacilityPlan { Key = FacilityKey.Workbench, ItemName = "手填物品" };
+        string[] catalog = [".300BLK五级弹", "", ".300BLK五级弹", "另一物品"];
+        var list = DeviceItemList.Create(plan, catalog);
+        Assert.Equal(new[] { ".300BLK五级弹", "另一物品", "手填物品" }, list.Items);
+        Assert.Equal("手填物品", list.SelectedItemName);
+        Assert.Null(DeviceItemList.ValidateSelection(plan, catalog, "手填物品"));
+        Assert.Null(DeviceItemList.ValidateSelection(plan, catalog, ".300BLK五级弹"));
+        Assert.Equal(400, DeviceItemList.ValidateSelection(plan, catalog, "未知物品")!.StatusCode);
+        Assert.False(new DeviceSettingsRequest(Facility: "workbench", PlannedItemName: new string('中', 65)).IsValid());
+        Assert.False(new DeviceSettingsRequest(Facility: "workbench", PlannedItemName: "item\n").IsValid());
+        plan.ChangeMode(CraftMode.HourlyProfit);
+        Assert.Equal(409, DeviceItemList.ValidateSelection(plan, catalog, ".300BLK五级弹")!.StatusCode);
     }
 }

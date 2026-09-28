@@ -22,7 +22,8 @@ public sealed class DeviceApiService : IDisposable
         _host = host;
         _api = new DeviceApiCoordinator(
             ct => OnUiAsync(Snapshot, ct),
-            (action, ct) => OnUiAsync(() => Execute(action), ct), host.Log, UpdateSettingsAsync);
+            (action, ct) => OnUiAsync(() => Execute(action), ct), host.Log, UpdateSettingsAsync,
+            (key, ct) => OnUiAsync(() => DeviceItemList.Create(_host.Plan.For(key), _host.CatalogNamesFor(key)), ct));
         _api.Changed += () => _dispatcher.TryEnqueue(() => Changed?.Invoke());
     }
 
@@ -32,7 +33,7 @@ public sealed class DeviceApiService : IDisposable
         typeof(AppHost).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
         DateTimeOffset.Now, _host.Coordinator.Status, _host.Coordinator.IsRunning,
         _host.Settings, _host.Plan, _host.Coordinator.ScheduleSnapshot(),
-        _host.SteamStatus.Snapshot(_host.Settings.SteamActivity));
+        _host.SteamStatus.Snapshot(_host.Settings.SteamActivity)) with { ItemSelectionSupported = true };
 
     private async Task<DeviceActionResult> UpdateSettingsAsync(DeviceSettingsRequest update, CancellationToken ct)
     {
@@ -48,8 +49,13 @@ public sealed class DeviceApiService : IDisposable
                 if (update.Facility is { } facility)
                 {
                     var key = FacilityKeys.All.Single(k => FacilityKeys.JsonKey(k) == facility);
+                    if (update.PlannedItemName is { } item)
+                    {
+                        var error = DeviceItemList.ValidateSelection(_host.Plan.For(key), _host.CatalogNamesFor(key), item);
+                        if (error is not null) return error;
+                    }
                     _host.PlanVm.UpdateDeviceFacility(key, update.Enabled,
-                        update.CraftMode is { } mode ? Enum.Parse<CraftMode>(mode) : null);
+                        update.CraftMode is { } mode ? Enum.Parse<CraftMode>(mode) : null, update.PlannedItemName);
                 }
                 if (update.AutoLoopEnabled is { } loop) _host.PlanVm.AutoLoopEnabled = loop;
                 if (update.SteamDetectionEnabled is { } steam) _host.SettingsVm.SteamActivityEnabled = steam;

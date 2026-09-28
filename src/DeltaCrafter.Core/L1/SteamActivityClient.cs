@@ -71,20 +71,20 @@ public sealed class SteamActivityClient : ISteamActivitySource
         if (matches.Length != 1) return Unavailable("Steam 未返回此账号的状态");
         var player = matches[0];
         string gameId = Text(player, "gameid"), game = Text(player, "gameextrainfo");
-        if ((!string.IsNullOrWhiteSpace(gameId) && gameId != "0") || !string.IsNullOrWhiteSpace(game))
-        {
-            string name = string.Concat(game.Where(c => !char.IsControl(c))).Trim();
-            if (name.Length > 80) name = name[..80];
-            return new(SteamActivityState.Playing,
-                name.Length > 0 ? $"Steam 游戏中: {name}" : "Steam 游戏中");
-        }
         if ((player.TryGetProperty("gameid", out var id) && id.ValueKind is not (JsonValueKind.String or JsonValueKind.Null))
             || (player.TryGetProperty("gameextrainfo", out var info) && info.ValueKind is not (JsonValueKind.String or JsonValueKind.Null)))
             return Unavailable("Steam 游戏状态格式无效");
+        // Prefer the exact Steam App ID; use exact names only when no ID is available.
+        bool hasId = !string.IsNullOrWhiteSpace(gameId) && gameId != "0";
+        bool delta = gameId == "2507950" || (!hasId
+            && (game.Trim().Equals("Delta Force", StringComparison.OrdinalIgnoreCase) || game.Trim() == "三角洲行动"));
+        if (delta) return new(SteamActivityState.Playing, "游戏中");
+        if (hasId || !string.IsNullOrWhiteSpace(game))
+            return new(SteamActivityState.NotPlaying, "未在游戏中");
         if (!player.TryGetProperty("communityvisibilitystate", out var visibility)
             || visibility.ValueKind != JsonValueKind.Number || !visibility.TryGetInt32(out int state) || state != 3)
             return Unavailable("Steam 资料不可见,请将个人资料和游戏详情设为公开");
-        return new(SteamActivityState.NotPlaying, "Steam 未报告正在游戏");
+        return new(SteamActivityState.NotPlaying, "未在游戏中");
     }
 
     private static string Text(JsonElement value, string key) =>

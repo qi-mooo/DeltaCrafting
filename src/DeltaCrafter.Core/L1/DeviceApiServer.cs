@@ -17,6 +17,7 @@ public sealed class DeviceApiServer : IDisposable
     private readonly Func<CancellationToken, Task<DeviceStatus>> _status;
     private readonly Func<string, CancellationToken, Task<DeviceActionResult>> _action;
     private readonly Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? _settings;
+    private readonly Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? _items;
     private readonly ILogger _log;
     private readonly byte[] _keyHash;
     private readonly bool _allowControl;
@@ -27,12 +28,14 @@ public sealed class DeviceApiServer : IDisposable
     public DeviceApiServer(DeviceApiSettings settings,
         Func<CancellationToken, Task<DeviceStatus>> status,
         Func<string, CancellationToken, Task<DeviceActionResult>> action, ILogger log,
-        Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? updateSettings = null)
+        Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? updateSettings = null,
+        Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? getItems = null)
     {
         settings.Validate();
         _status = status;
         _action = action;
         _settings = updateSettings;
+        _items = getItems;
         _log = log;
         _allowControl = settings.AllowControl;
         _keyHash = SHA256.HashData(Encoding.UTF8.GetBytes(settings.ApiKey));
@@ -100,6 +103,7 @@ public sealed class DeviceApiServer : IDisposable
             string? method = path switch
             {
                 "/api/v1/status" => "GET",
+                "/api/v1/items" => "GET",
                 "/api/v1/action" => "POST",
                 "/api/v1/settings" => "POST",
                 _ => null,
@@ -110,6 +114,16 @@ public sealed class DeviceApiServer : IDisposable
             {
                 context.Response.Headers["Allow"] = method;
                 await ReplyAsync(context, 405, new { error = "method_not_allowed" }, ct);
+            }
+            else if (path == "/api/v1/items")
+            {
+                string? facility = request.QueryString["facility"];
+                var keys = FacilityKeys.All.Where(k => FacilityKeys.JsonKey(k) == facility).ToArray();
+                if (keys.Length != 1)
+                    await ReplyAsync(context, 400, new { error = "invalid_facility" }, ct);
+                else if (_items is null)
+                    await ReplyAsync(context, 501, new { error = "items_not_supported" }, ct);
+                else await ReplyAsync(context, 200, await _items(keys[0], ct).WaitAsync(ct), ct);
             }
             else if (method == "GET")
                 await ReplyAsync(context, 200, await _status(ct).WaitAsync(ct), ct);

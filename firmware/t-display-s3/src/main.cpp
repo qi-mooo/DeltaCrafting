@@ -4,6 +4,7 @@
 #include <HTTPClient.h>
 #include <TFT_eSPI.h>
 #include <WiFi.h>
+#include <vector>
 #include "config.h"
 #include "lcd_init.h"
 #include "device_config.h"
@@ -30,28 +31,38 @@ struct Facility {
 struct Snapshot {
     Facility facilities[4];
     String mode, detail, lastRun, error = "Connecting Wi-Fi", notice;
-    String gameState, gameDetail, afterRun;
+    String gameState, gameDetail, afterRun, nextRunClock;
     bool valid = false, running = false, autoLoop = false, control = false;
     bool lastRunFailed = false;
     bool steamDetection = false, settingsSupported = false, syncSupported = false;
+    bool itemSelectionSupported = false;
     int32_t nextRun = -1;
     uint32_t fetchedAt = 0, noticeAt = 0;
 };
 
-enum class Command : uint8_t { Refresh, Start, Sync, Stop, Pause, Resume };
-enum class Setting : uint8_t { None, FacilityEnabled, CraftMode, AutoLoop, SteamDetection, AfterRun };
+enum class Command : uint8_t { Refresh, Start, Sync, Stop, Pause, Resume, Items };
+enum class Setting : uint8_t { None, FacilityEnabled, CraftMode, AutoLoop, SteamDetection, AfterRun, PlannedItem };
 struct Request {
     Command command = Command::Refresh;
     Setting setting = Setting::None;
     uint8_t facility = 0, value = 0;
+    char item[193] = {};
 };
+struct ItemList {
+    std::vector<String> names;
+    String selected, error;
+};
+constexpr uint8_t MAX_ITEMS = 254; // Axeuh uses an 8-bit row count; reserve a return row.
+ItemList sharedItems, itemList;
+bool itemsReady = false, itemLoading = false, itemSaving = false;
+int itemSaveResult = -1;
 TFT_eSPI display;
 MonoDisplay canvas;
 Axeuh_UI uiEngine(&canvas);
 Axeuh_UI_Panel mainPanel;
 Axeuh_UI_StatusBar statusBar;
-MenuOption menuOptions[6];
-Axeuh_UI_TextMenu settingsMenu(menuOptions, 6);
+MenuOption menuOptions[255];
+Axeuh_UI_TextMenu settingsMenu(menuOptions, 255);
 Axeuh_UI_Panel settingsPanel;
 float focusX = 1, focusY = 1, focusW = 158, focusH = 70;
 IN_PUT_Mode pendingInput = STOP;
@@ -59,6 +70,8 @@ SemaphoreHandle_t stateMutex;
 QueueHandle_t commands;
 Snapshot shared;
 UiButton cycleButton, confirmButton;
+UiHoldConfirm itemHold;
+bool pendingHold = false;
 UiState ui;
 bool requestPending = false;
 uint32_t batteryMv = 0;
@@ -143,6 +156,10 @@ bool parseStatus(JsonDocument &doc, Snapshot &next)
     next.steamDetection = doc["steamDetectionEnabled"] | false;
     next.settingsSupported = doc["settingsSupported"] | false;
     next.syncSupported = doc["syncSupported"] | false;
+    next.itemSelectionSupported = doc["itemSelectionSupported"] | false;
+    String nextAt = doc["nextRunAt"] | "";
+    if (nextAt.length() >= 19 && nextAt[10] == 'T' && nextAt[13] == ':')
+        next.nextRunClock = nextAt.substring(11, 16);
     uint8_t seen = 0;
     for (JsonObject row : doc["facilities"].as<JsonArray>()) {
         int index = -1;
@@ -230,15 +247,53 @@ void sendAction(Command command)
 const char *const CRAFT_MODES[] = {"Custom", "HourlyProfit", "TotalProfit"};
 const char *const AFTER_RUN[] = {"CloseGame", "KeepRunning", "KeepAtLobby"};
 
-void saveSetting(const Request &request)
+ItemList fetchItems(uint8_t facility)
+{
+    ItemList result;
+    WiFiClient client;
+    HTTPClient http;
+    String path = String("/api/v1/items?facility=") + KEYS[facility];
+    beginHttp(http, client, path.c_str());
+    int code = http.GET();
+    int size = http.getSize();
+    if (code != 200 || size <= 0 || size > 65536) {
+        result.error = code != 200 ? httpError(code) : "物品列表过大";
+        http.end();
+        return result;
+    }
+    String body = http.getString();
+    http.end();
+    DynamicJsonDocument doc(98304);
+    if (body.length() != unsigned(size) || deserializeJson(doc, body)
+        || strcmp(doc["facility"] | "", KEYS[facility]) != 0
+        || !doc["items"].is<JsonArray>() || !doc["selectedItemName"].is<const char *>()) {
+        result.error = "物品列表无效";
+        return result;
+    }
+    auto rows = doc["items"].as<JsonArray>();
+    if (rows.size() > MAX_ITEMS) { result.error = "物品超过 254 项,请在电脑选择"; return result; }
+    for (JsonVariant row : rows) {
+        String name = row.as<String>();
+        if (!row.is<const char *>() || name.isEmpty() || name.length() > 192) {
+            result.names.clear();
+            result.error = "物品名称无效";
+            return result;
+        }
+        result.names.push_back(name);
+    }
+    result.selected = doc["selectedItemName"].as<String>();
+    return result;
+}
+
+bool saveSetting(const Request &request)
 {
     Snapshot s = readSnapshot();
     if (!fresh(s) || !s.control || !s.settingsSupported) {
         setNotice(!fresh(s) ? "设备离线" : !s.control ? "电脑未允许设备控制" : "请更新电脑客户端");
-        return;
+        return false;
     }
-    StaticJsonDocument<256> doc;
-    if (request.setting == Setting::FacilityEnabled || request.setting == Setting::CraftMode)
+    StaticJsonDocument<512> doc;
+    if (request.setting == Setting::FacilityEnabled || request.setting == Setting::CraftMode || request.setting == Setting::PlannedItem)
         doc["facility"] = KEYS[request.facility];
     switch (request.setting) {
         case Setting::FacilityEnabled: doc["enabled"] = bool(request.value); break;
@@ -246,7 +301,8 @@ void saveSetting(const Request &request)
         case Setting::AutoLoop: doc["autoLoopEnabled"] = bool(request.value); break;
         case Setting::SteamDetection: doc["steamDetectionEnabled"] = bool(request.value); break;
         case Setting::AfterRun: doc["afterRun"] = AFTER_RUN[request.value]; break;
-        default: return;
+        case Setting::PlannedItem: doc["plannedItemName"] = request.item; break;
+        default: return false;
     }
     String body;
     serializeJson(doc, body);
@@ -260,6 +316,7 @@ void saveSetting(const Request &request)
     http.end();
     setNotice(code == 200 ? "设置已保存" : code <= 0 ? "保存结果未知,正在刷新"
         : code == 403 ? "电脑未允许设备控制" : code == 409 || code == 503 ? "电脑忙,请稍后重试" : httpError(code));
+    return code == 200;
 }
 
 void networkTask(void *)
@@ -276,6 +333,9 @@ void networkTask(void *)
         Request request;
         bool hasCommand = xQueueReceive(commands, &request, pdMS_TO_TICKS(50)) == pdTRUE;
         bool connected = WiFi.status() == WL_CONNECTED;
+        ItemList fetched;
+        fetched.error = "设备离线";
+        bool savedItem = false;
         if (!DeviceConfig::valid()) {
             setError("Setup via USB serial");
         } else if (!connected) {
@@ -286,7 +346,8 @@ void networkTask(void *)
                 lastWifiAttempt = millis();
             }
         } else {
-            if (hasCommand && request.setting != Setting::None) saveSetting(request);
+            if (hasCommand && request.setting != Setting::None) savedItem = saveSetting(request);
+            else if (hasCommand && request.command == Command::Items) fetched = fetchItems(request.facility);
             else if (hasCommand && request.command != Command::Refresh) sendAction(request.command);
             if (!wasConnected || hasCommand || millis() - lastPoll >= DELTA_POLL_MS) {
                 pollStatus();
@@ -296,6 +357,8 @@ void networkTask(void *)
         if (hasCommand) {
             xSemaphoreTake(stateMutex, portMAX_DELAY);
             requestPending = false;
+            if (request.command == Command::Items) { sharedItems = std::move(fetched); itemsReady = true; }
+            if (request.setting == Setting::PlannedItem) itemSaveResult = savedItem ? 1 : 0;
             xSemaphoreGive(stateMutex);
         }
         wasConnected = connected;
@@ -382,15 +445,11 @@ String afterRunName(const String &mode)
 
 String gameStatus(const Snapshot &s)
 {
-    if (!fresh(s)) return s.valid ? "连接中断 / 游戏状态未知" : "连接中 / 游戏状态未知";
-    if (s.gameState == "Playing") {
-        String detail = s.gameDetail;
-        if (detail.startsWith("Steam ")) detail.remove(0, 6);
-        return detail.isEmpty() ? "游戏中" : detail;
-    }
+    if (!fresh(s)) return "离线";
+    if (s.gameState == "Playing") return "游戏中";
     if (s.gameState == "NotPlaying") return "未在游戏中";
-    if (s.gameState == "Unavailable") return "游戏状态暂不可用";
-    return "游戏状态查询中";
+    if (s.gameState == "Unavailable") return "状态未知";
+    return "查询中";
 }
 
 void menuRow(uint8_t index, const String &label)
@@ -402,7 +461,18 @@ void menuRow(uint8_t index, const String &label)
     }
 }
 
-void activateSelection();
+void activateSelection(bool held = false);
+void loadItems();
+
+void positionMenu()
+{
+    settingsMenu.interface_text_y = ui.initialScroll();
+    settingsMenu.interface_text_y_now = ui.initialScroll();
+    settingsMenu.meun_number_now = ui.row;
+    settingsMenu.pointer_y_now = ui.row * 29 + ui.initialScroll();
+    settingsMenu.pointer_w_now = 24;
+    settingsMenu.pointer_h_now = 29;
+}
 
 void drawProgress(int x, int y, const Facility &facility, const Snapshot &s)
 {
@@ -468,6 +538,7 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         }
     } else {
         String title = ui.page == UiPage::Global ? "全局设置"
+            : ui.page == UiPage::Items ? String(NAMES[ui.facility()]) + " / 制造物品"
             : ui.page == UiPage::CraftMode ? String(NAMES[ui.facility()]) + " / 制造模式"
             : ui.page == UiPage::AfterRun ? "收取后行为" : String(NAMES[ui.facility()]) + " / 设置";
         textAt(8, 18, 304, title);
@@ -476,7 +547,8 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         if (ui.page == UiPage::Facility) {
             menuRow(0, String("设施: ") + (!s.valid ? "未知" : f.enabled ? "启用" : "停用"));
             menuRow(1, String("制造模式: ") + craftModeName(f.craftMode));
-            menuRow(2, "返回主界面");
+            if (ui.customMode) menuRow(2, String("制造物品: ") + (f.plannedItem.isEmpty() ? "未选择" : f.plannedItem));
+            menuRow(ui.customMode ? 3 : 2, "返回主界面");
         } else if (ui.page == UiPage::Global) {
             menuRow(0, String("自动循环: ") + (s.autoLoop ? "开启" : "关闭"));
             menuRow(1, String("Steam 检测: ") + (s.steamDetection ? "开启" : "关闭"));
@@ -488,6 +560,11 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             for (uint8_t i = 0; i < 3; ++i)
                 menuRow(i, String(f.craftMode == CRAFT_MODES[i] ? "* " : "  ") + craftModeName(CRAFT_MODES[i]));
             menuRow(3, "返回设施设置");
+        } else if (ui.page == UiPage::Items) {
+            for (unsigned i = 0; i < itemList.names.size(); ++i)
+                menuRow(i, String(itemList.names[i] == itemList.selected ? "* " : "  ") + itemList.names[i]);
+            if (!itemList.error.isEmpty()) menuRow(0, "读取失败,单击重试");
+            menuRow(ui.itemCount, itemLoading ? "正在读取..." : "返回设施设置");
         } else {
             for (uint8_t i = 0; i < 3; ++i)
                 menuRow(i, String(s.afterRun == AFTER_RUN[i] ? "* " : "  ") + afterRunName(AFTER_RUN[i]));
@@ -508,8 +585,10 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         border(px, py, pw + 7, ph, true);
         canvas.setMaxClipWindow();
         String hint = !s.notice.isEmpty() && millis() - s.noticeAt < 5000 ? s.notice
+            : ui.page == UiPage::Items && !itemList.error.isEmpty() ? itemList.error
             : !fresh(s) ? "离线 / 可浏览,暂不能保存"
             : !s.control ? "只读 / 电脑未允许设备控制"
+            : ui.page == UiPage::Items ? (itemSaving ? "正在保存..." : "循环选择 / 长按确认保存")
             : s.running || s.mode == "WaitingSchedule" || s.mode == "Faulted" ? s.detail : gameStatus(s);
         textAt(8, 165, 304, hint);
     }
@@ -520,7 +599,9 @@ void drawStatusBar(U8G2 *, Axeuh_UI *)
     if (ui.page != UiPage::Home) return;
     Snapshot s = readSnapshot();
     border(1, 145, 318, 25, false);
-    textAt(18, 162, 256, gameStatus(s));
+    textAt(18, 162, 117, gameStatus(s));
+    canvas.drawVLine(139, 150, 14);
+    textAt(148, 162, 126, String("下次 ") + (fresh(s) && s.autoLoop && !s.nextRunClock.isEmpty() ? s.nextRunClock : "--:--"));
     drawBattery();
     float x = ui.home == 4 ? 1 : 1 + (ui.home % 2) * 160;
     float y = ui.home == 4 ? 145 : 1 + (ui.home / 2) * 72;
@@ -537,19 +618,42 @@ void draw()
     // and the framebuffer capture stay on the same task as drawing.
     uiEngine.IN_now = canvas.offset == 0 ? uiEngine.handleInput() : STOP;
     UiPage before = ui.page;
-    if (canvas.offset == 0) {
-        if (uiEngine.IN_now == DOWN) ui.move(1);
-        else if (uiEngine.IN_now == SELECT) activateSelection();
+    Snapshot s = readSnapshot();
+    ui.customMode = s.facilities[ui.facility()].craftMode == "Custom";
+    if (ui.page == UiPage::Facility && ui.row >= ui.count()) ui.row = ui.count() - 1;
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    bool receivedItems = itemsReady;
+    if (receivedItems) { itemList = std::move(sharedItems); itemsReady = false; }
+    int saved = itemSaveResult;
+    itemSaveResult = -1;
+    xSemaphoreGive(stateMutex);
+    if (receivedItems) {
+        itemLoading = false;
+        if (ui.page == UiPage::Items) {
+            ui.openItems(itemList.names, itemList.selected);
+            if (!itemList.error.isEmpty()) ui.itemCount = 1; // Retry plus a separate return row.
+            positionMenu();
+        }
     }
+    if (saved >= 0) {
+        itemSaving = false;
+        if (saved == 1 && ui.page == UiPage::Items) ui.open(UiPage::Facility, 2);
+    }
+    if (canvas.offset == 0 && !receivedItems && saved < 0) {
+        bool blocked = ui.page == UiPage::Items && (itemLoading || itemSaving);
+        if (!blocked) {
+            if (pendingHold) activateSelection(true);
+            else if (uiEngine.IN_now == DOWN) ui.move(1);
+            else if (uiEngine.IN_now == SELECT) activateSelection();
+        }
+        pendingHold = false;
+    }
+    if (receivedItems || saved >= 0) pendingHold = false;
     if (ui.page != before) {
         bool forward = ui.page != UiPage::Home
-            && before != UiPage::CraftMode && before != UiPage::AfterRun;
+            && before != UiPage::CraftMode && before != UiPage::AfterRun && before != UiPage::Items;
         canvas.startTransition(forward);
-        settingsMenu.interface_text_y = 0;
-        settingsMenu.interface_text_y_now = 0;
-        settingsMenu.pointer_y_now = ui.row * 29;
-        settingsMenu.pointer_w_now = 24;
-        settingsMenu.pointer_h_now = 29;
+        positionMenu();
     }
     uiEngine.animation(&canvas.offset, 0.0f, uiEngine.fps * 0.8f, 0.5f);
     canvas.clearBuffer();
@@ -572,7 +676,7 @@ bool enqueueRequest(const Request &request)
         setNotice("请求排队中");
         return false;
     }
-    setNotice(request.setting != Setting::None ? "正在保存..." : "正在提交...");
+    setNotice(request.setting != Setting::None ? "正在保存..." : request.command == Command::Items ? "正在读取物品..." : "正在提交...");
     return true;
 }
 
@@ -603,7 +707,24 @@ void submitAction(Command command)
     enqueueRequest(request);
 }
 
-void activateSelection()
+void loadItems()
+{
+    Snapshot s = readSnapshot();
+    if (!fresh(s) || !s.itemSelectionSupported) {
+        setNotice(!fresh(s) ? "设备离线" : "请更新电脑客户端");
+        return;
+    }
+    Request request;
+    request.command = Command::Items;
+    request.facility = ui.facility();
+    if (enqueueRequest(request)) {
+        itemList = ItemList{};
+        itemLoading = true;
+        ui.openItems(itemList.names, itemList.selected);
+    }
+}
+
+void activateSelection(bool held)
 {
     Snapshot s = readSnapshot();
     if (ui.page == UiPage::Home) {
@@ -615,7 +736,22 @@ void activateSelection()
             for (uint8_t i = 0; i < 3; ++i)
                 if (s.facilities[ui.facility()].craftMode == CRAFT_MODES[i]) selected = i;
             ui.open(UiPage::CraftMode, selected);
-        } else ui.open(UiPage::Home);
+        } else if (ui.row == 2 && ui.customMode) loadItems();
+        else ui.open(UiPage::Home);
+    } else if (ui.page == UiPage::Items) {
+        if (ui.row == ui.itemCount) ui.open(UiPage::Facility, 2);
+        else if (!itemList.error.isEmpty()) loadItems();
+        else if (held) {
+            if (!fresh(s) || !s.control || !s.itemSelectionSupported || !ui.customMode) {
+                setNotice(!fresh(s) ? "设备离线,暂不能保存" : !s.control ? "电脑未允许设备控制" : "请确认电脑为自定义模式");
+                return;
+            }
+            Request request;
+            request.setting = Setting::PlannedItem;
+            request.facility = ui.facility();
+            strlcpy(request.item, itemList.names[ui.row].c_str(), sizeof(request.item));
+            itemSaving = enqueueRequest(request);
+        } else setNotice("长按确认键 0.8 秒保存");
     } else if (ui.page == UiPage::Global) {
         if (ui.row == 0) submit(Setting::AutoLoop, !s.autoLoop);
         else if (ui.row == 1) submit(Setting::SteamDetection, !s.steamDetection);
@@ -638,6 +774,9 @@ void handleButtons()
     uint32_t now = millis();
     bool cycle = cycleButton.update(digitalRead(UI_CYCLE_PIN), now);
     bool confirm = confirmButton.update(digitalRead(UI_CONFIRM_PIN), now);
+    if (itemHold.update(confirm, confirmButton.raw || confirmButton.stable,
+        ui.page == UiPage::Items && !itemLoading && !itemSaving && cycleButton.raw
+            && canvas.offset == 0, now)) pendingHold = true;
     if (cycle && confirmButton.stable) pendingInput = DOWN;
     else if (confirm && cycleButton.stable) pendingInput = SELECT;
 }

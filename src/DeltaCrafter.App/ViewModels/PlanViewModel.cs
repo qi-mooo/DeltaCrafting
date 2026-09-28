@@ -119,11 +119,12 @@ public sealed partial class PlanViewModel : ObservableObject
             Facilities.Add(CreateModel(key));
     }
 
-    public void UpdateDeviceFacility(FacilityKey key, bool? enabled, CraftMode? mode)
+    public void UpdateDeviceFacility(FacilityKey key, bool? enabled, CraftMode? mode, string? itemName = null)
     {
         var row = Facilities[Array.IndexOf(DisplayOrder, key)];
         if (enabled is { } value) row.Enabled = value;
         if (mode is { } selected) row.ModeIndex = (int)selected;
+        if (itemName is { } item) row.ItemName = item;
     }
 
     /// <summary>利润推荐替换了部分设施的物品后,只重建受影响的卡片:未受影响的卡片

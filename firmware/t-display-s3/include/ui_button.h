@@ -23,3 +23,17 @@ struct UiButton {
         return pressed;
     }
 };
+
+// Armed only by a new press inside the item picker; entry presses cannot save.
+struct UiHoldConfirm {
+    bool active = false;
+    uint32_t started = 0;
+    bool update(bool pressed, bool released, bool eligible, uint32_t now)
+    {
+        if (released || !eligible) active = false;
+        if (pressed && eligible) { active = true; started = now; }
+        if (!active || uint32_t(now - started) < 800) return false;
+        active = false;
+        return true;
+    }
+};

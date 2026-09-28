@@ -2,6 +2,8 @@
 #include "ui_button.h"
 #include "ui_indicators.h"
 #include <assert.h>
+#include <string>
+#include <vector>
 
 int main()
 {
@@ -33,6 +35,36 @@ int main()
     assert(ui.row == 3);
     ui.move(1);
     assert(ui.row == 0 && ui.facility() == 2);
+    ui.customMode = true;
+    ui.open(UiPage::Facility);
+    ui.move(-1);
+    assert(ui.row == 3 && ui.count() == 4);
+    std::vector<std::string> items(254);
+    for (unsigned i = 0; i < items.size(); ++i) items[i] = std::to_string(i);
+    ui.openItems(items, std::string("200"));
+    assert(ui.row == 200 && ui.count() == 255);
+    assert(ui.row * 29 + ui.initialScroll() == 29); // Selected item visible immediately, even far down the list.
+    ui.open(UiPage::Items, 254);
+    ui.move(1);
+    assert(ui.row == 0);
+    ui.move(-1);
+    assert(ui.row == 254); // Return row, no 8-bit overflow.
+    ui.openItems(std::vector<std::string>{}, std::string());
+    assert(ui.row == 0 && ui.count() == 1);
+
+    UiHoldConfirm hold;
+    assert(!hold.update(true, false, false, 0)); // Entry press cannot arm confirmation.
+    assert(!hold.update(false, false, true, 900));
+    assert(!hold.update(true, false, true, 1000));
+    assert(!hold.update(false, false, true, 1799));
+    assert(hold.update(false, false, true, 1800));
+    assert(!hold.update(false, false, true, 2600)); // Never repeat while held.
+    assert(!hold.update(true, false, true, 3000));
+    assert(!hold.update(false, true, true, 3100)); // Short press never saves.
+    assert(!hold.update(false, false, true, 4000));
+    assert(!hold.update(true, false, true, 5000));
+    assert(!hold.update(false, false, false, 5500)); // Changing page/cycling cancels hold.
+    assert(!hold.update(false, false, true, 5900));
 
     UiButton button;
     assert(!button.update(true, 100));

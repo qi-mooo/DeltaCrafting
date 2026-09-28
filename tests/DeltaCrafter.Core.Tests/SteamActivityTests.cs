@@ -34,12 +34,25 @@ public sealed class SteamActivityTests
 
     [Theory]
     [InlineData("\"gameid\":\"2507950\",\"gameextrainfo\":\"Delta Force\"")]
-    [InlineData("\"gameid\":\"570\",\"personastate\":0")]
-    [InlineData("\"gameextrainfo\":\"Non-Steam Game\"")]
-    public async Task Any_game_blocks_even_when_persona_is_offline(string fields)
+    [InlineData("\"gameid\":\"2507950\",\"personastate\":0")]
+    [InlineData("\"gameextrainfo\":\"三角洲行动\"")]
+    public async Task Delta_force_blocks_even_when_persona_is_offline(string fields)
     {
         var result = await Client(Player(fields)).CheckAsync(Key, Id, default);
         Assert.Equal(SteamActivityState.Playing, result.State);
+        Assert.Equal("游戏中", result.Detail);
+    }
+
+    [Theory]
+    [InlineData("\"gameid\":\"570\",\"personastate\":0")]
+    [InlineData("\"gameextrainfo\":\"Non-Steam Game\"")]
+    [InlineData("\"gameid\":\"570\",\"gameextrainfo\":\"Delta Force\"")]
+    [InlineData("\"gameextrainfo\":\"Delta Force 2\"")]
+    public async Task Other_games_do_not_block_or_show_their_names(string fields)
+    {
+        var result = await Client(Player(fields)).CheckAsync(Key, Id, default);
+        Assert.Equal(SteamActivityState.NotPlaying, result.State);
+        Assert.Equal("未在游戏中", result.Detail);
     }
 
     [Fact]
