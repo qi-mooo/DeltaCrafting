@@ -23,11 +23,20 @@ public sealed partial class QuantPage : Page
     private AmmoTrade? _trade;
     private int _generation;
     private QuantSnapshot? _snapshot;
+    private readonly DispatcherTimer _cacheClock = new() { Interval = TimeSpan.FromSeconds(30) };
     private sealed record Row(string Title, string Detail, string Value, string Extra, object Source);
 
     public QuantPage()
     {
         InitializeComponent();
+        _cacheClock.Tick += (_, _) =>
+        {
+            if (!_ready || QueryProgress.IsActive || Views.SelectedIndex is not (2 or 4)) return;
+            try { Reload(keepDetail: true); UpdateQuoteDetail(); }
+            catch (Exception ex) { Status.Text = ex.Message; }
+        };
+        Loaded += (_, _) => _cacheClock.Start();
+        Unloaded += (_, _) => _cacheClock.Stop();
         HourFilter.Items.Add("全部时段");
         for (int hour = 0; hour < 24; hour++) HourFilter.Items.Add($"{hour:00}:00");
         HourFilter.SelectedIndex = 0;
@@ -36,15 +45,18 @@ public sealed partial class QuantPage : Page
             _quant = _host.Quant;
             Budget.Value = (double)_quant.Preferences.Budget;
             Fee.Value = (double)_quant.Preferences.FeePercent;
+            foreach (var strategy in QuantOptions.Strategies) StrategyFilter.Items.Add(QuantOptions.Label(strategy));
+            StrategyFilter.SelectedIndex = Array.IndexOf(QuantOptions.Strategies, _quant.Snapshot(DateTimeOffset.Now).Options!.Strategy);
             _ready = true;
             Reload();
         }
         catch (Exception ex) { Status.Text = ex.Message; RefreshButton.IsEnabled = false; }
     }
 
-    private void Reload()
+    private void Reload(bool keepDetail = false)
     {
         if (!_ready || _quant is null) return;
+        var selected = keepDetail ? Rows.SelectedItem as Row : null;
         _snapshot = _quant.Snapshot(DateTimeOffset.Now);
         var summary = _snapshot.Summary;
         OpenCost.Text = $"{summary.OpenCost:N0}";
@@ -59,7 +71,10 @@ public sealed partial class QuantPage : Page
         bool Match(string name) => name.Contains(search, StringComparison.OrdinalIgnoreCase);
         IEnumerable<Row> rows;
         int view = Math.Max(0, Views.SelectedIndex);
-        GradeFilter.IsEnabled = HourFilter.IsEnabled = SortFilter.IsEnabled = view == 0 && !QueryProgress.IsActive;
+        UpdateQueryControls();
+        HourFilter.Visibility = SortFilter.Visibility = view == 0 ? Visibility.Visible : Visibility.Collapsed;
+        StrategyFilter.Visibility = view == 4 ? Visibility.Visible : Visibility.Collapsed;
+        BatchButton.Visibility = view is 2 or 4 ? Visibility.Visible : Visibility.Collapsed;
         RefreshButton.Visibility = view == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (view == 0)
         {
@@ -84,18 +99,81 @@ public sealed partial class QuantPage : Page
             ListHeading.Text = "自选计划 · 目标收益";
             Status.Text = $"{_snapshot.Watchlist.Count} 项自选";
         }
+        else if (view == 4)
+        {
+            rows = (_snapshot.Candidates ?? []).Where(c => c.Item.Grade == GradeFilter.SelectedIndex && Match(c.Item.Label))
+                .Select(c => new Row(c.Item.Label,
+                    $"{c.Reason}" + (c.LatestPrice is { } price ? $" · 报价 {price:N0} · {c.QuoteAt?.ToOffset(TimeSpan.FromHours(8)):HH:mm}" : ""),
+                    c.NetReturn is { } ret ? $"{ret:+0.#;-0.#;0}%" : "未估算",
+                    c.Eligible ? "满足策略" : "观察", c));
+            ListHeading.Text = $"{QuantOptions.Label(_snapshot.Options!.Strategy)} · 已查询的近 24 小时行情 · 税后目标空间";
+            Status.Text = $"{(_snapshot.Candidates ?? []).Count(c => c.Item.Grade == GradeFilter.SelectedIndex && c.Eligible)} 项满足策略 · 最低税后空间 {_snapshot.Options.MinimumReturn:0.#}%";
+        }
         else
         {
             rows = _snapshot.Trades.Where(t => t.IsClosed == (view == 3) && Match(t.Label))
-                .OrderByDescending(t => t.ClosedAt ?? t.OpenedAt).Select(t => new Row(t.Label,
+                .OrderByDescending(t => t.ClosedAt ?? t.OpenedAt).Select(t =>
+                {
+                    var position = _snapshot.Positions?.FirstOrDefault(p => p.TradeId == t.Id);
+                    return new Row(t.Label,
                     $"{(t.ClosedAt ?? t.OpenedAt).ToOffset(TimeSpan.FromHours(8)):MM-dd HH:mm} · {t.Quantity:N0} 发 · 买入 {t.BuyPrice:N0}" +
-                    (t.IsClosed ? $" · 卖出 {t.SellPrice:N0}" : ""),
-                    t.IsClosed ? $"{t.Profit:+#,##0;-#,##0;0}" : $"{t.Cost:N0}", t.IsClosed ? "已实现收益" : "持仓成本", t));
+                    (t.IsClosed ? $" · 卖出 {t.SellPrice:N0}" : $" · {position?.Signal ?? "待查询持仓行情"}"),
+                    t.IsClosed ? $"{t.Profit:+#,##0;-#,##0;0}" : position?.FloatingProfit is { } profit ? $"{profit:+#,##0;-#,##0;0}" : "未估值",
+                    t.IsClosed ? "已实现收益" : "税后浮盈", t);
+                });
             ListHeading.Text = view == 3 ? "成交记录 · 实际价格扣除卖出手续费" : "持仓 · 实际买入成本";
-            Status.Text = view == 3 ? $"{summary.ClosedCount} 笔已完成交易" : $"{summary.OpenCount} 笔持仓";
+            var valued = (_snapshot.Positions ?? []).Where(p => p.FloatingProfit.HasValue).ToArray();
+            Status.Text = view == 3 ? $"{summary.ClosedCount} 笔已完成交易" :
+                $"{summary.OpenCount} 笔持仓 · {valued.Length} 笔有效报价 · 税后浮盈 {valued.Sum(p => p.FloatingProfit!.Value):+#,##0;-#,##0;0}";
         }
-        Rows.ItemsSource = rows.ToArray();
-        HideDetail();
+        var array = rows.ToArray();
+        _editing = true;
+        Rows.ItemsSource = array;
+        if (selected is not null)
+            Rows.SelectedItem = array.FirstOrDefault(row => Equals(RowIdentity(row), RowIdentity(selected)));
+        _editing = false;
+        EmptyRows.Text = view == 4 ? "暂无选品目录，请先刷新所选等级的低价预测" : "暂无记录";
+        EmptyRows.Visibility = array.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (Rows.SelectedItem is null) HideDetail();
+    }
+
+    private static object RowIdentity(Row row) => row.Source switch
+    {
+        AmmoTrade trade => trade.Id,
+        AmmoWatchItem watch => watch.Id,
+        QuantCandidate candidate => candidate.Item.Id,
+        AmmoLowPrice quote => (quote.Id, quote.Hour),
+        _ => row.Source,
+    };
+
+    private void UpdateQueryControls()
+    {
+        bool busy = QueryProgress.IsActive;
+        GradeFilter.IsEnabled = (Views.SelectedIndex is 0 or 4) && !busy;
+        HourFilter.IsEnabled = SortFilter.IsEnabled = !busy;
+        RefreshButton.IsEnabled = !busy;
+        HistoryButton.IsEnabled = _objectId > 0 && !busy;
+        int targets = _quant?.RefreshTargets(GradeFilter.SelectedIndex, Views.SelectedIndex == 2).Length ?? 0;
+        BatchButton.Content = $"刷新行情 ({targets} 项)";
+        BatchButton.IsEnabled = targets > 0 && !busy;
+        CancelQueryButton.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void SetQueryState(bool active)
+    { QueryProgress.IsActive = active; UpdateQueryControls(); }
+
+    private void UpdateQuoteDetail()
+    {
+        if (Rows.SelectedItem is not Row row) return;
+        if (row.Source is QuantCandidate choice)
+            ItemInfo.Text = $"{choice.Reason}\n报价时间 {choice.QuoteAt?.ToOffset(TimeSpan.FromHours(8)):MM-dd HH:mm}\n目标空间 {choice.NetReturn:0.#}% · 预算数量 {choice.Quantity:N0}";
+        else if (_trade is { IsClosed: false })
+        {
+            var position = _snapshot?.Positions?.FirstOrDefault(p => p.TradeId == _trade.Id);
+            ItemInfo.Text = $"实际买入 {_trade.OpenedAt.ToOffset(TimeSpan.FromHours(8)):yyyy-MM-dd HH:mm}\n{position?.Signal}\n" +
+                (position?.FloatingProfit is { } profit ? $"税后浮盈 {profit:+#,##0;-#,##0;0}" : "未估值") +
+                $"\n报价 {position?.QuoteAt?.ToOffset(TimeSpan.FromHours(8)):MM-dd HH:mm}";
+        }
     }
 
     private async void RefreshForecast(object sender, RoutedEventArgs e)
@@ -105,8 +183,7 @@ public sealed partial class QuantPage : Page
         _request?.Dispose();
         _request = CancellationTokenSource.CreateLinkedTokenSource(_host.AppStopToken);
         int grade = GradeFilter.SelectedIndex;
-        QueryProgress.IsActive = true;
-        RefreshButton.IsEnabled = GradeFilter.IsEnabled = false;
+        SetQueryState(true);
         Status.Text = $"正在查询 {grade} 级子弹…";
         try
         {
@@ -119,37 +196,39 @@ public sealed partial class QuantPage : Page
         {
             if (generation == _generation)
             {
-                QueryProgress.IsActive = false;
-                RefreshButton.IsEnabled = true;
-                GradeFilter.IsEnabled = HourFilter.IsEnabled = SortFilter.IsEnabled = Views.SelectedIndex == 0;
+                SetQueryState(false);
             }
         }
     }
 
     private void SelectRow(object sender, SelectionChangedEventArgs e)
     {
-        if (Rows.SelectedItem is not Row row || _quant is null) return;
+        if (_editing || Rows.SelectedItem is not Row row || _quant is null) return;
         _editing = true;
         _trade = row.Source as AmmoTrade;
+        var source = row.Source is QuantCandidate candidate ? candidate.Item : row.Source;
         decimal buy, sell;
         int quantity;
         ItemImage.Source = null;
         _objectId = 0;
-        if (row.Source is AmmoLowPrice quote)
+        if (source is AmmoLowPrice quote)
         {
             (_itemId, _name, _grade) = (quote.Id, quote.Name, quote.Grade);
             _objectId = quote.ObjectId;
             var watch = _snapshot?.Watchlist.FirstOrDefault(w => w.Id == _itemId);
-            buy = watch?.BuyLimit ?? quote.Price;
-            sell = watch?.SellTarget ?? 0;
-            quantity = watch?.Quantity ?? Math.Max(1, QuantAccounting.AffordableQuantity(Number(Budget), buy));
+            var choice = row.Source as QuantCandidate;
+            buy = watch?.BuyLimit ?? choice?.LatestPrice ?? quote.Price;
+            sell = watch?.SellTarget ?? choice?.TargetPrice ?? 0;
+            quantity = watch?.Quantity ?? Math.Max(1, choice?.Quantity ?? QuantAccounting.AffordableQuantity(Number(Budget), buy));
             Fee.Value = (double)(watch?.FeePercent ?? _quant.Preferences.FeePercent);
-            ItemInfo.Text = $"预测时段 {quote.TimeLabel}\n预测低价 {quote.Price:N0} / 发";
+            ItemInfo.Text = choice is null ? $"预测时段 {quote.TimeLabel}\n预测低价 {quote.Price:N0} / 发" :
+                $"{choice.Reason}\n报价时间 {choice.QuoteAt?.ToOffset(TimeSpan.FromHours(8)):MM-dd HH:mm}\n目标空间 {choice.NetReturn:0.#}% · 预算数量 {choice.Quantity:N0}";
             if (quote.ImageUrl.Length > 0) ItemImage.Source = new BitmapImage(new Uri(quote.ImageUrl));
         }
         else if (row.Source is AmmoWatchItem watch)
         {
             (_itemId, _name, _grade) = (watch.Id, watch.Name, watch.Grade);
+            _objectId = watch.ObjectId;
             buy = watch.BuyLimit; sell = watch.SellTarget; quantity = watch.Quantity;
             Fee.Value = (double)watch.FeePercent;
             ItemInfo.Text = "自选计划";
@@ -157,9 +236,12 @@ public sealed partial class QuantPage : Page
         else if (_trade is { } trade)
         {
             (_itemId, _name, _grade) = (trade.ItemId, trade.Name, trade.Grade);
+            _objectId = trade.ObjectId;
             buy = trade.BuyPrice; sell = trade.SellPrice ?? 0; quantity = trade.Quantity;
             Fee.Value = (double)trade.FeePercent;
-            ItemInfo.Text = $"实际买入 {trade.OpenedAt.ToOffset(TimeSpan.FromHours(8)):yyyy-MM-dd HH:mm}";
+            var position = _snapshot?.Positions?.FirstOrDefault(p => p.TradeId == trade.Id);
+            ItemInfo.Text = $"实际买入 {trade.OpenedAt.ToOffset(TimeSpan.FromHours(8)):yyyy-MM-dd HH:mm}" +
+                (position is null ? "" : $"\n{position.Signal}\n税后浮盈 {position.FloatingProfit:+#,##0;-#,##0;0}\n报价 {position.QuoteAt?.ToOffset(TimeSpan.FromHours(8)):MM-dd HH:mm}");
         }
         else { _editing = false; return; }
         if (_objectId == 0)
@@ -188,7 +270,7 @@ public sealed partial class QuantPage : Page
         if (!double.IsFinite(Fee.Value)) throw new ArgumentException("请填写手续费比例。");
         decimal quantity = Number(Quantity);
         if (quantity != decimal.Truncate(quantity)) throw new ArgumentException("数量必须是整数。");
-        var item = new AmmoWatchItem(_itemId, _name, _grade, Number(BuyPrice), Number(SellPrice), (int)quantity, Number(Fee));
+        var item = new AmmoWatchItem(_itemId, _name, _grade, Number(BuyPrice), Number(SellPrice), (int)quantity, Number(Fee), _objectId);
         item.Validate();
         return item;
     }
@@ -211,21 +293,25 @@ public sealed partial class QuantPage : Page
         int generation = ++_generation;
         _request?.Dispose();
         _request = CancellationTokenSource.CreateLinkedTokenSource(_host.AppStopToken);
-        QueryProgress.IsActive = true;
-        HistoryButton.IsEnabled = RefreshButton.IsEnabled = false;
+        SetQueryState(true);
         Status.Text = "正在查询历史价格…";
         try
         {
             var history = await _quant.RefreshHistoryAsync(objectId, _host.Settings.ManufactureApi.Token, _request.Token);
             if (generation == _generation && objectId == _objectId)
-            { ShowHistory(history); Status.Text = "历史与指标已更新"; }
+            {
+                Reload(keepDetail: true);
+                ShowHistory(history);
+                UpdateQuoteDetail();
+                Status.Text = "历史与指标已更新";
+            }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { if (generation == _generation) Status.Text = ex.Message; }
         finally
         {
             if (generation == _generation)
-            { QueryProgress.IsActive = false; RefreshButton.IsEnabled = true; HistoryButton.IsEnabled = _objectId > 0; }
+            { SetQueryState(false); }
         }
     }
 
@@ -233,11 +319,14 @@ public sealed partial class QuantPage : Page
     {
         _history = history;
         HistoryPanel.Visibility = history is null ? Visibility.Collapsed : Visibility.Visible;
+        BacktestButton.IsEnabled = QuantStrategies.HasChronologicalPoints(history)
+            && history!.Points.Count >= (_snapshot?.Options?.Period ?? 20) + 2;
         if (history is null) return;
         HistoryTime.Text = history.Points.Count == 0 ? "暂无历史价格" :
             $"{history.Points[0].TimeLabel} — {history.Points[^1].TimeLabel}\n查询于 {history.FetchedAt.ToOffset(TimeSpan.FromHours(8)):MM-dd HH:mm}";
-        var metrics = QuantIndicators.Calculate(history.Points);
-        Indicators.Text = metrics is null ? $"{history.Points.Count} 个有效采样，至少需要 20 个采样计算指标" :
+        int period = _snapshot?.Options?.Period ?? 20;
+        var metrics = QuantIndicators.Calculate(history.Points, period);
+        Indicators.Text = metrics is null ? $"{history.Points.Count} 个有效采样，至少需要 {period} 个采样计算指标" :
             $"最近 {metrics.Samples} 个采样\n最新 {metrics.Last:N0} · MA {metrics.Mean:N0} · EMA {metrics.Ema:N0}\n" +
             $"RSI {metrics.Rsi:0.#} · 区间位置 {metrics.PositionPercent:0.#}%\n" +
             $"低 {metrics.Low:N0} / 高 {metrics.High:N0}\n涨跌 {metrics.ChangePercent:+0.0;-0.0;0}% · 波动 {metrics.Volatility:0.#}";
@@ -273,7 +362,7 @@ public sealed partial class QuantPage : Page
             decimal quantity = Number(Quantity), price = Number(BuyPrice), fee = Number(Fee);
             if (!double.IsFinite(Fee.Value)) throw new ArgumentException("请填写手续费比例。");
             if (quantity != decimal.Truncate(quantity)) throw new ArgumentException("数量必须是整数。");
-            var trade = new AmmoTrade(Guid.NewGuid(), _itemId, _name, _grade, (int)quantity, price, DateTimeOffset.Now, FeePercent: fee);
+            var trade = new AmmoTrade(Guid.NewGuid(), _itemId, _name, _grade, (int)quantity, price, DateTimeOffset.Now, FeePercent: fee, ObjectId: _objectId);
             trade.Validate();
             if (!await Confirm("记录实际买入", $"{trade.Label}\n{trade.Quantity:N0} 发 × {price:N0}\n实际支出 {trade.Cost:N0}")) return;
             Execute(() => _quant!.RecordPurchase(trade), "买入记录已保存");
@@ -313,5 +402,5 @@ public sealed partial class QuantPage : Page
     private void HideDetail() { DetailPanel.Visibility = Visibility.Collapsed; DetailColumn.Width = new GridLength(0); _trade = null; _objectId = 0; }
     private void CloseDetail(object sender, RoutedEventArgs e) { Rows.SelectedItem = null; HideDetail(); }
     protected override void OnNavigatedFrom(NavigationEventArgs e)
-    { ++_generation; _request?.Cancel(); _request?.Dispose(); _request = null; base.OnNavigatedFrom(e); }
+    { _cacheClock.Stop(); ++_generation; _request?.Cancel(); _request?.Dispose(); _request = null; base.OnNavigatedFrom(e); }
 }

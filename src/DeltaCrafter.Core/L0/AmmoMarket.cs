@@ -22,11 +22,11 @@ public interface IAmmoMarketSource
     Task<AmmoPriceHistory> FetchHistoryAsync(long objectId, string token, CancellationToken ct);
 }
 
-public sealed record AmmoPricePoint(string TimeLabel, decimal Price);
+public sealed record AmmoPricePoint(string TimeLabel, decimal Price, DateTimeOffset? ObservedAt = null);
 public sealed record AmmoPriceHistory(long ObjectId, DateTimeOffset FetchedAt, IReadOnlyList<AmmoPricePoint> Points);
 
 public sealed record AmmoWatchItem(long Id, string Name, int Grade, decimal BuyLimit,
-    decimal SellTarget, int Quantity, decimal FeePercent)
+    decimal SellTarget, int Quantity, decimal FeePercent, long ObjectId = 0)
 {
     public string Label => AmmoLabels.Format(Name, Grade);
     public decimal Cost => BuyLimit * Quantity;
@@ -36,14 +36,14 @@ public sealed record AmmoWatchItem(long Id, string Name, int Grade, decimal BuyL
     {
         if (Id <= 0 || string.IsNullOrWhiteSpace(Name) || Name.Length > 160 || Name.Any(char.IsControl)
             || Grade is < 0 or > 6 || BuyLimit is <= 0 or > 1_000_000_000 || SellTarget is <= 0 or > 1_000_000_000
-            || Quantity is < 1 or > 1_000_000 || FeePercent is < 0 or >= 100)
+            || Quantity is < 1 or > 1_000_000 || FeePercent is < 0 or >= 100 || ObjectId < 0)
             throw new ArgumentException("请检查物品、买入限价、卖出目标、数量和手续费。");
     }
 }
 
 public sealed record AmmoTrade(Guid Id, long ItemId, string Name, int Grade, int Quantity,
     decimal BuyPrice, DateTimeOffset OpenedAt, decimal? SellPrice = null,
-    decimal FeePercent = 0, DateTimeOffset? ClosedAt = null)
+    decimal FeePercent = 0, DateTimeOffset? ClosedAt = null, long ObjectId = 0)
 {
     public string Label => AmmoLabels.Format(Name, Grade);
     public bool IsClosed => ClosedAt.HasValue;
@@ -52,7 +52,7 @@ public sealed record AmmoTrade(Guid Id, long ItemId, string Name, int Grade, int
         ? (SellPrice.Value * (1 - FeePercent / 100m) - BuyPrice) * Quantity : null;
     public void Validate()
     {
-        new AmmoWatchItem(ItemId, Name, Grade, BuyPrice, SellPrice ?? BuyPrice, Quantity, FeePercent).Validate();
+        new AmmoWatchItem(ItemId, Name, Grade, BuyPrice, SellPrice ?? BuyPrice, Quantity, FeePercent, ObjectId).Validate();
         if (Id == Guid.Empty || OpenedAt == default || SellPrice.HasValue != ClosedAt.HasValue || ClosedAt < OpenedAt)
             throw new ArgumentException("交易记录的时间或成交价格无效。");
     }
@@ -66,15 +66,23 @@ public sealed class QuantWorkspace
     public List<AmmoTrade> Trades { get; set; } = [];
     public decimal Budget { get; set; } = 100_000;
     public decimal FeePercent { get; set; } = 13;
+    public QuantOptions Options { get; set; } = new();
+    public List<AmmoPriceHistory> Histories { get; set; } = [];
 
     public void Validate()
     {
         if (SchemaVersion != 1 || Budget is <= 0 or > 1_000_000_000 || FeePercent is < 0 or >= 100
-            || Forecasts is null || Watchlist is null || Trades is null
+            || Forecasts is null || Watchlist is null || Trades is null || Histories is null || Options is null
+            || Histories.Count > 200 || Histories.Select(h => h.ObjectId).Distinct().Count() != Histories.Count
             || Forecasts.Count > 7 || Forecasts.Select(f => f.Grade).Distinct().Count() != Forecasts.Count
             || Watchlist.Select(w => w.Id).Distinct().Count() != Watchlist.Count
             || Trades.Select(t => t.Id).Distinct().Count() != Trades.Count)
             throw new ArgumentException("量化工作区数据无效，请检查 quant.json。");
+        Options.Validate();
+        foreach (var history in Histories)
+            if (history.ObjectId <= 0 || history.FetchedAt == default || history.Points is null || history.Points.Count > 1440
+                || history.Points.Any(p => p.Price is <= 0 or > 1_000_000_000 || string.IsNullOrWhiteSpace(p.TimeLabel)))
+                throw new ArgumentException("历史行情缓存无效。");
         foreach (var item in Watchlist) item.Validate();
         foreach (var trade in Trades) trade.Validate();
         foreach (var forecast in Forecasts)
@@ -118,7 +126,8 @@ public static class QuantAccounting
 
 /// <summary>后续设备端使用相同快照；读取快照不会触发收费请求。</summary>
 public sealed record QuantSnapshot(int SchemaVersion, IReadOnlyList<AmmoForecast> Forecasts,
-    IReadOnlyList<AmmoWatchItem> Watchlist, IReadOnlyList<AmmoTrade> Trades, QuantSummary Summary);
+    IReadOnlyList<AmmoWatchItem> Watchlist, IReadOnlyList<AmmoTrade> Trades, QuantSummary Summary,
+    QuantOptions? Options = null, IReadOnlyList<QuantCandidate>? Candidates = null, IReadOnlyList<QuantPosition>? Positions = null);
 
 public static class AmmoLabels
 {

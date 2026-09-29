@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using DeltaCrafter.Core.L0;
 
 namespace DeltaCrafter.Core.L1;
@@ -45,8 +46,12 @@ public sealed class AmmoMarketClient(HttpClient? http = null) : IAmmoMarketSourc
                 || times.Any(t => t.Length is 0 or > 60 || t.Any(char.IsControl))
                 || prices.Any(p => p is < 0 or > 1_000_000_000)) throw new FormatException();
             // 零值是缺失报价，不能当作免费子弹参与指标计算。
-            return new(objectId, fetchedAt, times.Zip(prices).Where(p => p.Second > 0)
-                .Select(p => new AmmoPricePoint(p.First, p.Second)).ToArray());
+            var points = times.Zip(prices).Where(p => p.Second > 0)
+                .Select(p => new AmmoPricePoint(p.First, p.Second, ParseTime(p.First, fetchedAt))).ToArray();
+            // Mixed/unordered timestamps remain displayable, but never supply fresh trading signals.
+            if (points.Any(p => p.ObservedAt is null) || points.Zip(points.Skip(1)).Any(p => p.First.ObservedAt >= p.Second.ObservedAt))
+                points = points.Select(p => p with { ObservedAt = null }).ToArray();
+            return new(objectId, fetchedAt, points);
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or FormatException or OverflowException
             || ex is InvalidOperationException and not ProviderException)
@@ -114,6 +119,23 @@ public sealed class AmmoMarketClient(HttpClient? http = null) : IAmmoMarketSourc
     }
 
     private sealed class ProviderException(string message) : InvalidOperationException(message);
+
+    private static DateTimeOffset? ParseTime(string label, DateTimeOffset fetchedAt)
+    {
+        var match = Regex.Match(label, @"\A(?:(?<month>\d{1,2})-)?(?<day>\d{1,2})\s+(?:周.\s+)?(?<hour>\d{1,2}):(?<minute>\d{2})分?\z");
+        if (!match.Success) return null;
+        int day = int.Parse(match.Groups["day"].Value), hour = int.Parse(match.Groups["hour"].Value), minute = int.Parse(match.Groups["minute"].Value);
+        int? month = match.Groups["month"].Success ? int.Parse(match.Groups["month"].Value) : null;
+        var china = fetchedAt.ToOffset(TimeSpan.FromHours(8));
+        for (int offset = 0; offset <= 2; offset++)
+        {
+            var date = china.Date.AddDays(-offset);
+            if (date.Day != day || month.HasValue && date.Month != month || hour > 23 || minute > 59) continue;
+            var time = new DateTimeOffset(date.Year, date.Month, date.Day, hour, minute, 0, TimeSpan.FromHours(8));
+            if (time <= fetchedAt && fetchedAt - time <= TimeSpan.FromHours(48)) return time;
+        }
+        return null;
+    }
 
     public static string SafeImageUrl(string url) => Uri.TryCreate(url, UriKind.Absolute, out var uri)
         && uri.Scheme == "https" && uri.IsDefaultPort && uri.UserInfo.Length == 0

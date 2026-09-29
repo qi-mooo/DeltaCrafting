@@ -20,7 +20,7 @@
             <StackPanel Grid.Column="3" Spacing="4"><TextBlock Text="胜率 / 最大回撤"/><TextBlock x:Name="TradeStats" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"/></StackPanel>
         </Grid>
         <Pivot x:Name="Views" Grid.Row="2" SelectionChanged="ChangeView">
-            <PivotItem Header="低价预测"/><PivotItem Header="自选计划"/><PivotItem Header="持仓"/><PivotItem Header="成交记录"/>
+            <PivotItem Header="低价预测"/><PivotItem Header="自选计划"/><PivotItem Header="持仓"/><PivotItem Header="成交记录"/><PivotItem Header="策略选品"/>
         </Pivot>
         <Grid Grid.Row="3" RowSpacing="12">
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
@@ -37,6 +37,11 @@
                         <x:String>每种最低价</x:String>
                     </ComboBox>
                     <NumberBox x:Name="Budget" Header="预算" Width="150" Minimum="1" Maximum="1000000000" ValueChanged="PreferenceChanged"/>
+                    <ComboBox x:Name="StrategyFilter" Header="策略" Width="136" SelectionChanged="StrategyChanged" Visibility="Collapsed"/>
+                    <Button x:Name="BatchButton" Content="刷新行情" Click="RefreshBatch" VerticalAlignment="Bottom" Visibility="Collapsed"/>
+                    <Button x:Name="CancelQueryButton" Click="CancelRefresh" VerticalAlignment="Bottom" Width="40" Height="32" Visibility="Collapsed"
+                            ToolTipService.ToolTip="取消查询" AutomationProperties.Name="取消查询"><FontIcon Glyph="&#xE711;" FontSize="16"/></Button>
+                    <Button Click="EditOptions" VerticalAlignment="Bottom" Width="40" Height="32" ToolTipService.ToolTip="量化参数" AutomationProperties.Name="量化参数"><FontIcon Glyph="&#xE713;" FontSize="18"/></Button>
                     <Button x:Name="RefreshButton" Click="RefreshForecast" VerticalAlignment="Bottom" Width="40" Height="32"
                             ToolTipService.ToolTip="刷新所选等级的低价预测" AutomationProperties.Name="刷新低价预测">
                         <FontIcon Glyph="&#xE72C;" FontSize="18"/>
@@ -49,6 +54,7 @@
                 <Grid RowSpacing="6">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                     <TextBlock x:Name="ListHeading" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock x:Name="EmptyRows" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap"/>
                     <ListView x:Name="Rows" Grid.Row="1" SelectionMode="Single" SelectionChanged="SelectRow" HorizontalContentAlignment="Stretch">
                         <ListView.ItemTemplate><DataTemplate>
                             <Grid Padding="4,10" ColumnSpacing="12">
@@ -75,6 +81,7 @@
                         <Image x:Name="ItemImage" Height="76" Width="120" Stretch="Uniform" HorizontalAlignment="Left"/>
                         <TextBlock x:Name="ItemInfo" TextWrapping="Wrap"/>
                         <Button x:Name="HistoryButton" Content="查询历史与指标" Click="RefreshHistory" HorizontalAlignment="Stretch"/>
+                        <Button x:Name="BacktestButton" Content="运行历史回测" Click="RunBacktest" HorizontalAlignment="Stretch" IsEnabled="False"/>
                         <StackPanel x:Name="HistoryPanel" Visibility="Collapsed" Spacing="6">
                             <TextBlock x:Name="HistoryTime" FontSize="12" TextWrapping="Wrap"/>
                             <Canvas x:Name="HistoryChart" Height="80" SizeChanged="ChartSizeChanged" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
