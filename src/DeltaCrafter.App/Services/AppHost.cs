@@ -83,6 +83,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
             Log.Information("制造计划配置已升级到 schema {Schema};旧版全局制造模式已迁移并移除。",
                 Plan.SchemaVersion);
         Catalog = Store.Load<ItemCatalog>(Paths.ItemsPath);
+        ApplyCachedItemMetadata();
 
         var clock = new SystemClock();
         SteamStatus = new SteamStatusMonitor(new SteamActivityClient(), clock);
@@ -122,6 +123,28 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
 
         _ = Task.Run(() => Coordinator.RunSchedulerLoopAsync(_appStop.Token));
         _ = Task.Run(() => RunSteamStatusLoopAsync(_appStop.Token));
+    }
+
+    private void ApplyCachedItemMetadata()
+    {
+        if (!File.Exists(Paths.ItemMetadataPath)) return;
+        try
+        {
+            var metadata = Store.Load<ItemMetadataSnapshot>(Paths.ItemMetadataPath);
+            if (metadata.Items is null || metadata.Items.Count == 0)
+                throw new InvalidDataException("基础物品缓存为空。");
+            int changed = ItemMetadataCatalog.Apply(Catalog, metadata);
+            int retired = ItemMetadataCatalog.RemoveRetiredLegacyAmmo(Catalog);
+            if (changed == 0 && retired == 0) return;
+            File.Copy(Paths.ItemsPath, Paths.ItemsPath + ".metadata.bak", overwrite: true);
+            Store.Save(Paths.ItemsPath, Catalog);
+            Log.Information("已使用本地基础物品接口缓存补全 {Count} 个目录条目的元数据。", changed);
+            if (retired > 0) Log.Information("已移除 {Count} 个旧赛季弹药候选，原计划保持不变。", retired);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            Log.Warning("无法应用基础物品缓存:{Reason}", ex.Message);
+        }
     }
 
     private async Task RunSteamStatusLoopAsync(CancellationToken ct)

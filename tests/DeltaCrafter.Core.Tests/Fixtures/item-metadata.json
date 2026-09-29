@@ -1,0 +1,120 @@
+{
+  "code": 0,
+  "data": [
+    {
+      "objectID": 37150600001,
+      "objectName": "6.8x51mm AP",
+      "grade": 6
+    },
+    {
+      "objectID": 37180600001,
+      "objectName": "7.62x54R SNB",
+      "grade": 6
+    },
+    {
+      "objectID": 37240700001,
+      "objectName": ".338 Lap Mag AP",
+      "grade": 6
+    },
+    {
+      "objectID": 11010006003,
+      "objectName": "DICH-9重型头盔",
+      "grade": 6
+    },
+    {
+      "objectID": 11010006004,
+      "objectName": "GT5 指挥官头盔",
+      "grade": 6
+    },
+    {
+      "objectID": 11010006007,
+      "objectName": "H70 夜视精英头盔",
+      "grade": 6
+    },
+    {
+      "objectID": 11050006001,
+      "objectName": "金刚防弹衣",
+      "grade": 6
+    },
+    {
+      "objectID": 11050006003,
+      "objectName": "特里克MAS2.0装甲",
+      "grade": 6
+    },
+    {
+      "objectID": 11050006004,
+      "objectName": "泰坦防弹装甲",
+      "grade": 6
+    },
+    {
+      "objectID": 37230500001,
+      "objectName": ".50 AE AP",
+      "grade": 5
+    },
+    {
+      "objectID": 37300700001,
+      "objectName": ".50 BMG M903 SLAP",
+      "grade": 7
+    },
+    {
+      "objectID": 37300600001,
+      "objectName": ".50 BMG M10 RAZOR",
+      "grade": 6
+    },
+    {
+      "objectID": 37300600002,
+      "objectName": ".50 BMG M3 K-0",
+      "grade": 6
+    },
+    {
+      "objectID": 37120500003,
+      "objectName": "5.45x39mm BS ST+",
+      "grade": 5
+    },
+    {
+      "objectID": 37130400002,
+      "objectName": "5.8x42mm DVC12+P",
+      "grade": 5
+    },
+    {
+      "objectID": 37150500002,
+      "objectName": "6.8x51mm PLY-III",
+      "grade": 5
+    },
+    {
+      "objectID": 37130500002,
+      "objectName": "5.8x42mm DBP10+P",
+      "grade": 4
+    },
+    {
+      "objectID": 37140400002,
+      "objectName": "9x39mm PAB-9",
+      "grade": 4
+    },
+    {
+      "objectID": 37150400002,
+      "objectName": "6.8x51mm PLY-II",
+      "grade": 4
+    },
+    {
+      "objectID": 37190000002,
+      "objectName": ".45 ACP CT",
+      "grade": 4
+    },
+    {
+      "objectID": 37200000002,
+      "objectName": "9x19mm CT",
+      "grade": 4
+    },
+    {
+      "objectID": 18010000049,
+      "objectName": "RM277突击步枪",
+      "grade": 0
+    },
+    {
+      "objectID": 0,
+      "objectName": "特里克MAS2.0装甲 (破损)",
+      "grade": 6
+    }
+  ]
+}

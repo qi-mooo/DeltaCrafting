@@ -6,7 +6,7 @@ public static class CatalogItemLabel
     public static string Format(CatalogItem item)
     {
         int? ammoGrade = BlkAmmoIdentity.Grade(item.Name);
-        int grade = item.Grade is >= 1 and <= 6 ? item.Grade : ammoGrade ?? 0;
+        int grade = item.Grade is >= 1 and <= 7 ? item.Grade : ammoGrade ?? 0;
         string name = ammoGrade.HasValue ? ".300BLK" : item.Name;
         return grade > 0 ? $"{grade}级 {name}" : $"等级未知 {name}";
     }

@@ -58,7 +58,7 @@ public sealed record DeviceItemList(string Facility, string SelectedItemName, IR
             {
                 int grade = catalog.FirstOrDefault(i => i.Name == name)?.Grade ?? 0;
                 return new DeviceItemOption(name, CatalogItemLabel.ForName(catalog, name),
-                    grade is >= 1 and <= 6 ? grade : BlkAmmoIdentity.Grade(name) ?? 0);
+                    grade is >= 1 and <= 7 ? grade : BlkAmmoIdentity.Grade(name) ?? 0);
             }).ToArray(),
         };
     }

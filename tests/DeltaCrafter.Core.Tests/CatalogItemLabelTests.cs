@@ -12,6 +12,7 @@ public sealed class CatalogItemLabelTests
     [InlineData(".300BLK SUB-3", 0, "3级 .300BLK")]
     [InlineData("DICH-9重型头盔", 6, "6级 DICH-9重型头盔")]
     [InlineData("7.62x51mm M61", 6, "6级 7.62x51mm M61")]
+    [InlineData(".50 BMG M903 SLAP", 7, "7级 .50 BMG M903 SLAP")]
     [InlineData("旧目录物品", 0, "等级未知 旧目录物品")]
     public void Grade_labels_keep_catalog_identity_and_match_key(string name, int grade, string expected)
     {

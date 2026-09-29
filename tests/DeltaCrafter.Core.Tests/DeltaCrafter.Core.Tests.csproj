@@ -18,6 +18,7 @@
     <Content Include="Fixtures\datatools-*.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Fixtures\button-*.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Fixtures\title-*.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Fixtures\item-metadata.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -25,5 +26,9 @@
          显式以 Link 复制一份,保证 AppContext.BaseDirectory\Data 下存在。 -->
     <Content Include="..\..\src\DeltaCrafter.Core\Data\anchors.json"
              Link="Data\anchors.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\src\DeltaCrafter.Core\Data\items.json"
+             Link="Data\items.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\src\DeltaCrafter.Core\Data\item-metadata.json"
+             Link="Data\item-metadata.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

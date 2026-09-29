@@ -49,9 +49,12 @@ public static class ManufactureCatalog
         {
             var rows = snapshot.Items.Select(i => i.ToCatalogItem()).ToList();
             var names = rows.Select(i => Identity(i.Name)).ToHashSet(StringComparer.Ordinal);
-            rows.AddRange(builtIn.For(snapshot.Facility).Where(i => names.Add(Identity(i.Name))));
+            rows.AddRange(builtIn.For(snapshot.Facility).Where(i => names.Add(Identity(i.Name))).Select(i =>
+                new CatalogItem { ObjectId = i.ObjectId, Name = i.Name, Grade = i.Grade,
+                    UnlockLevel = i.UnlockLevel, Ocr = i.Ocr, Note = i.Note }));
             catalog.Facilities[FacilityKeys.JsonKey(snapshot.Facility)] = rows;
         }
+        ItemMetadataCatalog.RemoveRetiredLegacyAmmo(catalog);
         return catalog;
     }
 

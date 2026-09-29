@@ -12,6 +12,7 @@ public sealed class ProfitPlanService
     private readonly ILogger _log;
     private readonly DispatcherQueue _ui = DispatcherQueue.GetForCurrentThread();
     private readonly ManufactureApiClient _client = new();
+    private readonly ItemMetadataApiClient _metadataClient = new();
     private readonly Dictionary<FacilityKey, DeviceDataRefreshStatus> _profits = [];
     private readonly SemaphoreSlim _queryGate = new(1, 1);
     private long _settingsVersion;
@@ -126,8 +127,10 @@ public sealed class ProfitPlanService
             var requests = await OnUi(() => FacilityKeys.All.Select(Capture).ToArray(), Stop);
             var snapshots = new List<ManufactureMarketSnapshot>();
             foreach (var request in requests) snapshots.Add(await FetchAsync(request, Stop, catalogOnly: true));
+            var metadata = await _metadataClient.FetchAsync(requests[0].Token, Stop);
             var builtIn = _host.Store.Load<ItemCatalog>(Path.Combine(AppContext.BaseDirectory, "Data", "items.json"));
             var catalog = ManufactureCatalog.Build(snapshots, builtIn);
+            ItemMetadataCatalog.Apply(catalog, metadata);
             await _host.Coordinator.RunBetweenRoundsAsync(async () =>
             {
                 await OnUi(() =>
@@ -135,6 +138,7 @@ public sealed class ProfitPlanService
                     if (_host.Coordinator.RunsBlocked) throw new InvalidOperationException("客户端正在更新,请稍后刷新。");
                     if (requests.Any(r => r != Capture(r.Key)))
                         throw new InvalidOperationException("接口设置已改变,请重新刷新。");
+                    _host.Store.Save(_host.Paths.ItemMetadataPath, metadata);
                     _host.ReplaceCatalog(catalog);
                     string detail = $"已刷新 {catalog.Facilities.Values.Sum(v => v.Count)} 个可制造物品";
                     SetDataRefresh(new(false, detail, DateTimeOffset.Now));

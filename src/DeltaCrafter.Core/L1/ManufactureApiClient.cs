@@ -77,7 +77,7 @@ public sealed class ManufactureApiClient
                     name = BlkAmmoIdentity.Name(blkGrade);
                 }
                 if (id <= 0 || name.Length is < 2 or > 120 || name.Any(char.IsControl) ||
-                    grade is < 0 or > 6 || unlock is < 1 or > 3 || period <= 0 ||
+                    grade is < 0 or > 7 || unlock is < 1 or > 3 || period <= 0 ||
                     !double.IsFinite(period) || !double.IsFinite(profit) || !double.IsFinite(hourly) ||
                     !ids.Add(id) || !names.Add(CatalogNameResolver.Canonical(name))) throw new FormatException();
                 result.Add(new(id, name, grade, unlock, period, profit, hourly));
