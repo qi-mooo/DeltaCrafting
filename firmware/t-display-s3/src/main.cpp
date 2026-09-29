@@ -99,6 +99,7 @@ float focusX = 1, focusY = 1, focusW = 158, focusH = 70;
 IN_PUT_Mode pendingInput = STOP;
 SemaphoreHandle_t stateMutex;
 QueueHandle_t commands;
+TaskHandle_t networkTaskHandle = nullptr;
 Snapshot shared;
 UiButton cycleButton, confirmButton;
 UiHoldConfirm itemHold;
@@ -221,7 +222,7 @@ bool parseStatus(JsonDocument &doc, Snapshot &next)
     return seen == 15;
 }
 
-void pollStatus()
+void __attribute__((noinline)) pollStatus()
 {
     WiFiClient client;
     HTTPClient http;
@@ -258,7 +259,7 @@ void pollStatus()
     xSemaphoreGive(stateMutex);
 }
 
-void sendAction(Command command, uint8_t facility)
+void __attribute__((noinline)) sendAction(Command command, uint8_t facility)
 {
     Snapshot s = readSnapshot();
     if (!fresh(s) || !s.control || (s.running && command != Command::RefreshData)) {
@@ -287,7 +288,7 @@ void sendAction(Command command, uint8_t facility)
 const char *const CRAFT_MODES[] = {"Custom", "HourlyProfit", "TotalProfit"};
 const char *const AFTER_RUN[] = {"CloseGame", "KeepRunning", "KeepAtLobby"};
 
-ItemList fetchItems(uint8_t facility)
+ItemList __attribute__((noinline)) fetchItems(uint8_t facility)
 {
     ItemList result;
     WiFiClient client;
@@ -354,7 +355,7 @@ String urlEncode(const String &value)
     return encoded;
 }
 
-ToolData fetchTool(const Request &request)
+ToolData __attribute__((noinline)) fetchTool(const Request &request)
 {
     ToolData result;
     result.tool = request.tool;
@@ -403,7 +404,7 @@ ToolData fetchTool(const Request &request)
     return result;
 }
 
-void fetchToolImage(const Request &request)
+void __attribute__((noinline)) fetchToolImage(const Request &request)
 {
     WiFiClient client;
     HTTPClient http;
@@ -432,7 +433,7 @@ void fetchToolImage(const Request &request)
     xSemaphoreGive(stateMutex);
 }
 
-void copyToolCode(const Request &request)
+void __attribute__((noinline)) copyToolCode(const Request &request)
 {
     WiFiClient client;
     HTTPClient http;
@@ -449,7 +450,7 @@ void copyToolCode(const Request &request)
     else setNotice(code == 200 ? "已复制到 Windows 剪贴板" : "复制失败,请重试");
 }
 
-bool saveSetting(const Request &request)
+bool __attribute__((noinline)) saveSetting(const Request &request)
 {
     Snapshot s = readSnapshot();
     if (!fresh(s) || !s.control || !s.settingsSupported) {
@@ -485,6 +486,9 @@ bool saveSetting(const Request &request)
 
 void networkTask(void *)
 {
+    // This single worker owns the queue buffer. Keep it off the Wi-Fi startup
+    // call stack and keep HTTP handlers out of line to bound this task's frame.
+    static Request request;
     WiFi.mode(WIFI_STA);
     WiFi.setHostname("deltacrafter-s3");
     WiFi.setAutoReconnect(true);
@@ -494,7 +498,6 @@ void networkTask(void *)
     uint32_t lastWifiAttempt = millis(), lastPoll = 0;
     bool wasConnected = false;
     for (;;) {
-        Request request;
         bool hasCommand = xQueueReceive(commands, &request, pdMS_TO_TICKS(50)) == pdTRUE;
         bool connected = WiFi.status() == WL_CONNECTED;
         ItemList fetched;
@@ -1326,7 +1329,7 @@ void setup()
     uiEngine.set(readInput);
     DeviceConfig::setScreenCapture(captureScreen);
     draw();
-    if (xTaskCreate(networkTask, "delta-http", 8192, nullptr, 1, nullptr) != pdPASS)
+    if (xTaskCreate(networkTask, "delta-http", 12288, nullptr, 1, &networkTaskHandle) != pdPASS)
         setError("Network task init failed");
 }
 
@@ -1335,6 +1338,8 @@ void loop()
     if (Serial.available()) {
         Snapshot s = readSnapshot();
         DeviceConfig::setHealth(fresh(s), s.error, s.valid ? 4 : 0);
+        DeviceConfig::setStackHealth(uxTaskGetStackHighWaterMark(nullptr),
+            networkTaskHandle ? uxTaskGetStackHighWaterMark(networkTaskHandle) : 0);
     }
     DeviceConfig::handleSerial();
     updateBattery();

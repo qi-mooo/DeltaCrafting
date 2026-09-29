@@ -12,6 +12,7 @@ bool overflow = false;
 bool apiOnline = false;
 String apiError;
 int facilities = 0;
+uint32_t loopMinFreeStack = 0, networkMinFreeStack = 0;
 void (*screenCapture)() = nullptr;
 
 bool validKey(const String &value)
@@ -50,7 +51,7 @@ void processLine(const String &line)
     if (strcmp(command, "info") == 0) {
         doc.clear();
         doc["ok"] = true;
-        doc["firmware"] = "axeuh-tools-v10";
+        doc["firmware"] = "axeuh-tools-v11";
         doc["build"] = __DATE__ " " __TIME__;
         doc["controls"] = "GPIO0=confirm,GPIO14=cycle";
         doc["configured"] = valid();
@@ -60,6 +61,8 @@ void processLine(const String &line)
         doc["error"] = apiError;
         doc["facilities"] = facilities;
         doc["freeHeap"] = ESP.getFreeHeap();
+        doc["loopMinFreeStack"] = loopMinFreeStack;
+        doc["networkMinFreeStack"] = networkMinFreeStack;
         doc["uptimeMs"] = millis();
         serializeJson(doc, Serial);
         Serial.println();
@@ -147,6 +150,12 @@ void setHealth(bool online, const String &error, int facilityCount)
     apiOnline = online;
     apiError = error;
     facilities = facilityCount;
+}
+
+void setStackHealth(uint32_t loopBytes, uint32_t networkBytes)
+{
+    loopMinFreeStack = loopBytes;
+    networkMinFreeStack = networkBytes;
 }
 
 bool valid() { return validUrl(url) && validKey(key); }
