@@ -157,7 +157,8 @@ public sealed class CraftStartFlow
         }
 
         _probe.ClickFramePoint(hwnd, line.CenterX, line.CenterY);
-        if (blkGrade is not null) _probe.MovePointerToRoi(hwnd, prodSpec.Roi(AnchorKeys.RoiDetailTitle));
+        var titleArea = ItemTitleOcr.AreaFor(displayName, prodSpec.Roi(AnchorKeys.RoiDetailTitle));
+        if (blkGrade is not null) _probe.MovePointerToRoi(hwnd, titleArea);
         long deadline = Environment.TickCount64 + 8000;
         // 普通物品保留原有标题强匹配。.300 BLK 五级弹额外确认金色行的白色选中框,
         // 因为同名标题无法区分等级。所有确认必须在补齐材料/生产之前完成。
@@ -169,12 +170,12 @@ public sealed class CraftStartFlow
             {
                 var (frame, readout) = await _probe.ReadAreaFrameAsync(hwnd, listArea, [expectedName]);
                 var selected = BlkAmmoMatcher.Find(frame, readout.Lines, listArea, requireSelected: true, grade: grade);
-                string title = await _probe.ReadFrameRoiAsync(frame, prodSpec.Roi(AnchorKeys.RoiDetailTitle), expectedName);
+                string title = await _probe.ReadFrameRoiAsync(frame, titleArea, expectedName);
                 if (selected is not null && BlkAmmoIdentity.IsBareName(title)) return;
             }
             else
             {
-                string title = await _probe.ReadFrameRoiAsync(_probe.Capture(hwnd), prodSpec.Roi(AnchorKeys.RoiDetailTitle), expectedName);
+                string title = await _probe.ReadFrameRoiAsync(_probe.Capture(hwnd), titleArea, expectedName);
                 if (CatalogNameResolver.Matches(items, title, searchName)) return;
             }
         }

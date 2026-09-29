@@ -18,6 +18,33 @@ public sealed class WindowsOcrFactAttribute : FactAttribute
 public sealed class PaddleRuntimeTests
 {
     [WindowsOcrFact]
+    public async Task Actual_compound_bow_title_is_complete_in_weapon_area_at_both_resolutions()
+    {
+        // 183 失败截图只保留标题区域；还原其位置以验证生产流程所用的 ROI。
+        using var crop = Cv2.ImRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", "title-compound-bow.png"));
+        using var original = new Mat(1080, 1920, MatType.CV_8UC3, Scalar.Black);
+        using (var destination = new Mat(original, new Rect(624, 144, crop.Width, crop.Height)))
+            crop.CopyTo(destination);
+        var configured = new NRect { X = .347, Y = .1472, W = .126, H = .0426 };
+        var area = ItemTitleOcr.AreaFor("复合弓", configured);
+        var ocr = new PaddleOcrBrick();
+        foreach (int width in new[] { 1920, 2560 })
+        {
+            using var scaled = new Mat();
+            Cv2.Resize(original, scaled, new Size(width, width * 9 / 16));
+            using var canvas = new Mat();
+            Cv2.CvtColor(scaled, canvas, ColorConversionCodes.BGR2BGRA);
+            var pixels = new byte[canvas.Width * canvas.Height * 4];
+            Marshal.Copy(canvas.Data, pixels, 0, pixels.Length);
+            var frame = new CapturedFrame(canvas.Width, canvas.Height, pixels);
+            var title = OcrMatchFilter.Filter(ItemTitleOcr.Normalize(await ocr.ReadAsync(frame, area)), ["复合弓"]);
+            Assert.False(title.HasUncertainText);
+            Assert.Equal("复合弓", title.FullText);
+            Assert.True(CatalogNameResolver.Matches([new() { Name = "复合弓" }], title.FullText, "复合弓"));
+        }
+    }
+
+    [WindowsOcrFact]
     public async Task Actual_replenish_and_purchased_button_images_are_recognized()
     {
         var ocr = new PaddleOcrBrick();

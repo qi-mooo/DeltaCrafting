@@ -17,6 +17,7 @@
     <Content Include="Fixtures\manufacture-*.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Fixtures\datatools-*.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Fixtures\button-*.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Fixtures\title-*.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

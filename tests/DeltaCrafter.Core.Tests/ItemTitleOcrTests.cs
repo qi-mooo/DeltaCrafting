@@ -78,6 +78,50 @@ public sealed class ItemTitleOcrTests
         Assert.False(title.HasUncertainText);
     }
 
+    [Theory]
+    [InlineData("AKM突击步枪")]
+    [InlineData("PKM通用机枪")]
+    [InlineData("M700狙击步枪")]
+    [InlineData("M700狙击枪")]
+    [InlineData("M14射手步枪")]
+    [InlineData("P90冲锋枪")]
+    [InlineData("FS-12霰弹枪")]
+    [InlineData("M870散弹枪")]
+    [InlineData("G18手枪")]
+    [InlineData("复合弓")]
+    public void Weapon_title_area_starts_at_640_and_scales_with_resolution(string name)
+    {
+        var configured = new NRect { X = .347, Y = .1472, W = .126, H = .0426 };
+        var area = ItemTitleOcr.AreaFor(name, configured);
+        Assert.Equal(640, (int)Math.Round(area.X * 1920));
+        Assert.Equal(853, (int)Math.Round(area.X * 2560));
+        Assert.Equal(configured.X + configured.W, area.X + area.W, 10);
+        Assert.Equal(configured.Y, area.Y);
+        Assert.Equal(configured.H, area.H);
+        Assert.Equal(.347, configured.X);
+        Assert.Equal(.126, configured.W);
+    }
+
+    [Theory]
+    [InlineData("侧置全景红点瞄准镜")]
+    [InlineData(".300 BLK")]
+    [InlineData("特里克MAS2.0装甲")]
+    [InlineData("骨架狙击枪托")]
+    [InlineData("M4A1突击步枪长枪管")]
+    public void Accessories_ammo_and_armor_keep_their_calibrated_area(string name)
+    {
+        var configured = new NRect { X = .347, Y = .1472, W = .126, H = .0426 };
+        Assert.Same(configured, ItemTitleOcr.AreaFor(name, configured));
+    }
+
+    [Fact]
+    public void An_already_wider_weapon_calibration_is_not_shrunk()
+    {
+        var configured = new NRect { X = .30, Y = .2, W = .2, H = .04 };
+        var area = ItemTitleOcr.AreaFor("复合弓", configured);
+        Assert.Same(configured, area);
+    }
+
     [Fact]
     public void Low_confidence_combined_region_and_multiple_rows_are_not_excused()
     {

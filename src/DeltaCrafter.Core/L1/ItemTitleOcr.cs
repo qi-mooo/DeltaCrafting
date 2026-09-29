@@ -1,10 +1,30 @@
 using System.Text.RegularExpressions;
+using DeltaCrafter.Core.L0;
 
 namespace DeltaCrafter.Core.L1;
 
 /// <summary>详情标题的「物品名 * 数量」只用名称匹配和检查置信度。</summary>
 internal static class ItemTitleOcr
 {
+    private static readonly string[] WeaponSuffixes = ["步枪", "机枪", "冲锋枪", "霰弹枪", "散弹枪", "手枪", "狙击枪"];
+
+    /// <summary>
+    /// 武器详情标题的左边缘在游戏中比其它物品更靠左，旧 ROI 会裁掉首字。
+    /// 坐标按 1920×1080 的实机标定向左扩展到 x=640；右边缘和垂直范围保持不变。
+    /// </summary>
+    internal static NRect AreaFor(string itemName, NRect configured)
+    {
+        string name = CatalogNameResolver.Canonical(itemName);
+        bool weapon = name == "复合弓" ||
+            WeaponSuffixes.Any(suffix => name.EndsWith(suffix, StringComparison.Ordinal));
+        if (!weapon) return configured;
+
+        double left = Math.Min(configured.X, 640.0 / 1920.0);
+        if (left == configured.X) return configured;
+        double right = configured.X + configured.W;
+        return new NRect { X = left, Y = configured.Y, W = right - left, H = configured.H };
+    }
+
     internal static OcrReadout Normalize(OcrReadout readout)
     {
         var words = readout.Lines.SelectMany(l => l.Words.Select(w =>
