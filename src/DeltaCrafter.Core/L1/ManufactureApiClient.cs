@@ -67,8 +67,8 @@ public sealed class ManufactureApiClient
                 string name = row.GetProperty("name").GetString()?.Trim() ?? "";
                 int grade = row.GetProperty("grade").GetInt32();
                 int unlock = row.GetProperty("unlockLevel").GetInt32();
-                // The provider combines catalog and quotes. List refresh consumes identity only.
-                double period = catalogOnly ? 1 : row.GetProperty("period").GetDouble();
+                // 目录刷新保存配方身份及制造时长，不读取利润字段。
+                double period = row.GetProperty("period").GetDouble();
                 double profit = catalogOnly ? 0 : row.GetProperty("price").GetDouble();
                 double hourly = catalogOnly ? 0 : row.GetProperty("price_hour").GetDouble();
                 if (BlkAmmoIdentity.Grade(name) is { } blkGrade)
@@ -77,7 +77,7 @@ public sealed class ManufactureApiClient
                     name = BlkAmmoIdentity.Name(blkGrade);
                 }
                 if (id <= 0 || name.Length is < 2 or > 120 || name.Any(char.IsControl) ||
-                    grade is < 0 or > 7 || unlock is < 1 or > 3 || period <= 0 ||
+                    grade is < 0 or > 7 || unlock is < 1 or > 3 || period <= 0 || period > 8760 ||
                     !double.IsFinite(period) || !double.IsFinite(profit) || !double.IsFinite(hourly) ||
                     !ids.Add(id) || !names.Add(CatalogNameResolver.Canonical(name))) throw new FormatException();
                 result.Add(new(id, name, grade, unlock, period, profit, hourly));

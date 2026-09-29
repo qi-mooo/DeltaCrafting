@@ -84,6 +84,12 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
                 Plan.SchemaVersion);
         Catalog = Store.Load<ItemCatalog>(Paths.ItemsPath);
         ApplyCachedItemMetadata();
+        var bundledPeriods = Store.Load<ItemCatalog>(Path.Combine(AppContext.BaseDirectory, "Data", "manufacture-periods.json"));
+        if (ManufacturePeriods.Merge(Catalog, bundledPeriods, overwrite: false) > 0)
+        {
+            File.Copy(Paths.ItemsPath, Paths.ItemsPath + ".before-periods.bak", overwrite: true);
+            Store.Save(Paths.ItemsPath, Catalog);
+        }
 
         var clock = new SystemClock();
         SteamStatus = new SteamStatusMonitor(new SteamActivityClient(), clock);
@@ -105,7 +111,8 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         var abort = new AbortFlow(probe, runner, input, Log);
         var scan = new CatalogScanFlow(probe, runner, input, this, Log);
         var shutdown = new ShutdownFlow(process, WindowBrick, probe, runner, Log);
-        var engine = new ScheduleEngine(Store, Paths.StatePath, clock, Log);
+        var engine = new ScheduleEngine(Store, Paths.StatePath, clock, Log,
+            (key, name) => ManufacturePeriods.SecondsFor(ItemsFor(key), name, Settings.ManufactureApi.LevelFor(key)));
 
         Coordinator = new AutomationCoordinator(launch, nav, collect, craft, abort, scan, this,
             this, this, shutdown, engine, probe, WindowBrick, SleepGuard, () => Settings, () => Plan,
@@ -240,6 +247,8 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     {
         lock (_catalogGate)
         {
+            // 接口仍缺失的补充配方保留已缓存周期，新响应提供的周期优先。
+            ManufacturePeriods.Merge(catalog, Catalog, overwrite: false);
             File.Copy(Paths.ItemsPath, Paths.ItemsPath + ".before-api.bak", overwrite: true);
             Store.Save(Paths.ItemsPath, catalog);
             Catalog.Facilities = catalog.Facilities;
@@ -247,7 +256,22 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
             Catalog.UpdatedAt = catalog.UpdatedAt;
             Catalog.Revision = catalog.Revision;
         }
+        Coordinator.RefreshRecipeDurations();
         PlanVm.RebuildFromCatalog();
+    }
+
+    public void MergeManufacturePeriods(ManufactureMarketSnapshot snapshot)
+    {
+        var periods = new ItemCatalog { Facilities = new()
+        {
+            [FacilityKeys.JsonKey(snapshot.Facility)] = snapshot.Items.Select(i => i.ToCatalogItem(snapshot.Level)).ToList(),
+        } };
+        lock (_catalogGate)
+        {
+            if (ManufacturePeriods.Merge(Catalog, periods, overwrite: true) > 0)
+                Store.Save(Paths.ItemsPath, Catalog);
+        }
+        Coordinator.RefreshRecipeDurations();
     }
 
     /// <summary>

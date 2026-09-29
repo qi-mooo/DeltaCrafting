@@ -84,6 +84,7 @@ public sealed class ProfitPlanService
                     throw new InvalidOperationException("接口设置或制造模式已改变,请重试。");
                 string name = CatalogNameResolver.Resolve(_host.ItemsFor(key), best.ItemName)
                     ?? throw new InvalidOperationException("推荐物品未收录,请先刷新物品列表。");
+                _host.MergeManufacturePeriods(snapshot);
                 var plan = _host.Plan.For(key);
                 plan.ItemName = plan.MatchName = name;
                 _host.SavePlan();

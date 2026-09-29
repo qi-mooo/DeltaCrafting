@@ -100,6 +100,25 @@ public sealed class DeviceApiTests
         Assert.Equal("之前制造的物品", state.For(FacilityKey.Workbench).ItemName);
     }
 
+    [Fact]
+    public void Device_receives_recipe_period_for_existing_task_without_recorded_start()
+    {
+        var state = ScheduleState.CreateDefault();
+        var runtime = state.For(FacilityKey.Workbench);
+        runtime.Phase = FacilityPhase.Crafting;
+        runtime.ItemName = ".300BLK五级弹";
+        runtime.ReadyAt = Now.AddHours(4);
+        runtime.RecipeTotalSeconds = 28800;
+        var plan = CraftPlanConfig.CreateDefault();
+        plan.For(FacilityKey.Workbench).ItemName = "另一计划物品";
+        var status = DeviceApiCoordinator.CreateStatus("test", Now,
+            new(EngineMode.Idle, "", null), false, new AppSettings(), plan, state);
+        Assert.Equal(28800, status.Facilities[0].TotalSeconds);
+        Assert.Equal(14400, status.Facilities[0].RemainingSeconds);
+        Assert.Equal(runtime.ReadyAt, status.Facilities[0].ReadyAt);
+        Assert.Null(runtime.StartedAt);
+    }
+
     [Theory]
     [InlineData(1023, Key)]
     [InlineData(65536, Key)]

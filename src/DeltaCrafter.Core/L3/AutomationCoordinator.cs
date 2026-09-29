@@ -68,6 +68,12 @@ public sealed partial class AutomationCoordinator : IDisposable
 
     public ScheduleState ScheduleSnapshot() => _engine.Snapshot();
 
+    public void RefreshRecipeDurations()
+    {
+        _engine.RefreshRecipeDurations();
+        StatusChanged?.Invoke(Status);
+    }
+
     public (DateTimeOffset? LastRunAt, string? Summary, bool Failed) LastRunInfo()
     {
         var s = _engine.Snapshot();
@@ -305,8 +311,8 @@ public sealed partial class AutomationCoordinator : IDisposable
         {
             var o = final[fp.Key];
             string item = DisplayItem(fp.Key, o.ItemName);
-            _engine.RecordObservation(fp.Key, o.Phase,
-                item.Length > 0 ? item : fp.ItemName,
+            // 未识别出当前物品时不能拿下一轮计划替代，否则会套用错误的制造周期。
+            _engine.RecordObservation(fp.Key, o.Phase, item,
                 o.Phase == FacilityPhase.Crafting && o.Remaining is { } r ? _clock.Now + r : null,
                 null);
         }

@@ -88,9 +88,7 @@ public sealed class DeviceApiCoordinator : IDisposable
                 phase.ToString(), phase == FacilityPhase.Idle ? "" : runtime.ItemName, runtime.ReadyAt,
                 runtime.Phase == FacilityPhase.Crafting ? Remaining(runtime.ReadyAt, now) : null,
                 runtime.ManualReason, runtime.ObservedAt,
-                runtime.Phase == FacilityPhase.Crafting && runtime.StartedAt is { } start
-                    && runtime.ReadyAt is { } end && end > start
-                    ? (long)Math.Ceiling((end - start).TotalSeconds) : null);
+                CraftProgress.TotalSeconds(runtime));
         }).ToArray(), game, settings.SteamActivity.Enabled, settings.AfterRun.ToString());
 
     private static long? Remaining(DateTimeOffset? until, DateTimeOffset now) =>

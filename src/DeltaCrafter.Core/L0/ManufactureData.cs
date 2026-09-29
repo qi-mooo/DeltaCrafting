@@ -11,9 +11,10 @@ public sealed class ManufactureApiSettings
 public sealed record ManufactureItem(long ObjectId, string Name, int Grade, int UnlockLevel,
     double PeriodHours, double Profit, double HourlyProfit)
 {
-    public CatalogItem ToCatalogItem() => new()
+    public CatalogItem ToCatalogItem(int facilityLevel = 0) => new()
     {
         ObjectId = ObjectId, Name = Name, Grade = Grade, UnlockLevel = UnlockLevel,
+        PeriodHours = PeriodHours, PeriodFacilityLevel = facilityLevel,
     };
 }
 
@@ -47,11 +48,12 @@ public static class ManufactureCatalog
         };
         foreach (var snapshot in snapshots)
         {
-            var rows = snapshot.Items.Select(i => i.ToCatalogItem()).ToList();
+            var rows = snapshot.Items.Select(i => i.ToCatalogItem(snapshot.Level)).ToList();
             var names = rows.Select(i => Identity(i.Name)).ToHashSet(StringComparer.Ordinal);
             rows.AddRange(builtIn.For(snapshot.Facility).Where(i => names.Add(Identity(i.Name))).Select(i =>
                 new CatalogItem { ObjectId = i.ObjectId, Name = i.Name, Grade = i.Grade,
-                    UnlockLevel = i.UnlockLevel, Ocr = i.Ocr, Note = i.Note }));
+                    UnlockLevel = i.UnlockLevel, Ocr = i.Ocr, Note = i.Note,
+                    PeriodHours = i.PeriodHours, PeriodFacilityLevel = i.PeriodFacilityLevel }));
             catalog.Facilities[FacilityKeys.JsonKey(snapshot.Facility)] = rows;
         }
         ItemMetadataCatalog.RemoveRetiredLegacyAmmo(catalog);

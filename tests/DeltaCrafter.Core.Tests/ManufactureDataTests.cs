@@ -105,11 +105,11 @@ public sealed class ManufactureDataTests
         {
             row!.AsObject().Remove("price");
             row.AsObject().Remove("price_hour");
-            row.AsObject().Remove("period");
         }
         var items = ManufactureApiClient.Parse(root.ToJsonString(), catalogOnly: true);
         Assert.Equal(60, items.Count);
         Assert.All(items, item => { Assert.Equal(0, item.Profit); Assert.Equal(0, item.HourlyProfit); });
+        Assert.Equal(8, items.Single(i => i.Name == ".300BLK五级弹").PeriodHours);
         Assert.Throws<InvalidOperationException>(() => ManufactureApiClient.Parse(root.ToJsonString()));
     }
 
@@ -121,6 +121,33 @@ public sealed class ManufactureDataTests
         Assert.Equal("总利润", snapshot.Best(CraftMode.TotalProfit).ItemName);
         Assert.Equal("小时利润", snapshot.Best(CraftMode.HourlyProfit).ItemName);
         Assert.Throws<InvalidOperationException>(() => snapshot.Best(CraftMode.Custom));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("8761")]
+    [InlineData("null")]
+    [InlineData("\"8h\"")]
+    public void Catalog_refresh_rejects_invalid_duration(string value)
+    {
+        var root = JsonNode.Parse(Fixture())!;
+        root["data"]![0]!["period"] = JsonNode.Parse(value);
+        Assert.Throws<InvalidOperationException>(() => ManufactureApiClient.Parse(root.ToJsonString(), catalogOnly: true));
+    }
+
+    [Fact]
+    public void Catalog_preserves_fractional_hours_and_queried_facility_level()
+    {
+        var root = JsonNode.Parse(Fixture())!;
+        root["data"]![0]!["period"] = 4.5;
+        var items = ManufactureApiClient.Parse(root.ToJsonString(), catalogOnly: true);
+        var snapshots = FacilityKeys.All.Select(key => new ManufactureMarketSnapshot(key, 2, DateTimeOffset.Now, items)).ToArray();
+        var catalog = ManufactureCatalog.Build(snapshots, new ItemCatalog());
+        var item = catalog.For(FacilityKey.Workbench)[0];
+        Assert.Equal(4.5, item.PeriodHours);
+        Assert.Equal(2, item.PeriodFacilityLevel);
+        Assert.Equal(16200, ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.Workbench), item.Name, 2));
     }
 
     [Fact]

@@ -25,6 +25,7 @@
     <Content Include="Data\anchors.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Data\items.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Data\item-metadata.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Data\manufacture-periods.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

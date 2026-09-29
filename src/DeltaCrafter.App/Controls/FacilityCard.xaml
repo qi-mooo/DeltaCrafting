@@ -29,10 +29,20 @@
                        Style="{StaticResource BodyTextBlockStyle}"
                        TextTrimming="CharacterEllipsis" />
 
-            <TextBlock Grid.Row="2"
-                       Text="{x:Bind Model.CountdownText, Mode=OneWay}"
-                       Style="{StaticResource NumericTextStyle}"
-                       VerticalAlignment="Center" />
+            <StackPanel Grid.Row="2" Spacing="6" VerticalAlignment="Center">
+                <TextBlock Text="{x:Bind Model.CountdownText, Mode=OneWay}"
+                           Style="{StaticResource NumericTextStyle}" />
+                <Grid ColumnSpacing="8" Visibility="{x:Bind Model.ProgressVisibility, Mode=OneWay}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="40" />
+                    </Grid.ColumnDefinitions>
+                    <ProgressBar Minimum="0" Maximum="100" Height="4" VerticalAlignment="Center"
+                                 Value="{x:Bind Model.ProgressValue, Mode=OneWay}" />
+                    <TextBlock Grid.Column="1" Text="{x:Bind Model.ProgressText, Mode=OneWay}"
+                               Style="{StaticResource SecondaryTextStyle}" HorizontalAlignment="Right" />
+                </Grid>
+            </StackPanel>
 
             <Grid Grid.Row="3" ColumnSpacing="8" VerticalAlignment="Center">
                 <Grid.ColumnDefinitions>

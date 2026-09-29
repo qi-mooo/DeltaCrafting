@@ -15,12 +15,18 @@ public sealed partial class FacilityCardModel : ObservableObject
     private readonly Func<FacilityCardModel, Task> _cancel;
     private FacilityPhase _phase = FacilityPhase.Unknown;
     private DateTimeOffset? _readyAt;
+    private long? _totalSeconds;
 
     [ObservableProperty] private string itemName = "—";
     [ObservableProperty] private string phaseText = "未观察";
     [ObservableProperty] private StatusLevel badgeLevel = StatusLevel.Neutral;
     [ObservableProperty] private string countdownText = "—";
     [ObservableProperty] private string readyAtText = " ";
+    [ObservableProperty] private double progressValue;
+    [ObservableProperty] private string progressText = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ProgressVisibility))]
+    private bool hasProgress;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CancelVisibility))]
@@ -35,6 +41,7 @@ public sealed partial class FacilityCardModel : ObservableObject
 
     /// <summary>仅"制造中"才允许取消(取消=游戏内点「中止」,会销毁材料)。</summary>
     public Visibility CancelVisibility => CanCancel ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility ProgressVisibility => HasProgress ? Visibility.Visible : Visibility.Collapsed;
 
     [RelayCommand]
     private Task CancelAsync() => _cancel(this);
@@ -43,6 +50,7 @@ public sealed partial class FacilityCardModel : ObservableObject
     {
         _phase = rt.Phase;
         _readyAt = rt.ReadyAt;
+        _totalSeconds = CraftProgress.TotalSeconds(rt);
         ItemName = rt.Phase == FacilityPhase.Idle ? "" : CatalogItemLabel.ForName(catalog, rt.ItemName);
         CanCancel = rt.Phase == FacilityPhase.Crafting;
 
@@ -66,6 +74,10 @@ public sealed partial class FacilityCardModel : ObservableObject
 
     public void Tick(DateTimeOffset now)
     {
+        var percent = CraftProgress.Percent(_phase, _readyAt, _totalSeconds, now);
+        HasProgress = percent.HasValue;
+        ProgressValue = percent ?? 0;
+        ProgressText = percent is { } value ? $"{Math.Floor(value):0}%" : "";
         if (_phase == FacilityPhase.Crafting && _readyAt is { } r)
         {
             var left = r - now;

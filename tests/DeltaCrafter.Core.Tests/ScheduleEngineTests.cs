@@ -113,6 +113,69 @@ public class ScheduleEngineTests : IDisposable
         Assert.Null(_engine.Snapshot().For(FacilityKey.Workbench).StartedAt);
     }
 
+    [Fact]
+    public void Upgrade_restores_progress_without_changing_ocr_times_or_schedule_state()
+    {
+        var end = _clock.Now.AddHours(4);
+        _plan.For(FacilityKey.Workbench).Enabled = true;
+        _plan.For(FacilityKey.Workbench).ItemName = "下一轮物品";
+        _engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, ".300BLK五级弹", end, null);
+        _engine.MarkRunStarted();
+        _engine.MarkRunFinished("上轮记录", failed: true, failureRetryMinutes: 30);
+        var before = _engine.Snapshot();
+        var nextRun = _engine.ComputeNextRunAt(_plan, _settings);
+        var upgraded = new ScheduleEngine(new JsonStoreBrick(), Path.Combine(_dir, "state.json"), _clock,
+            new LoggerConfiguration().CreateLogger(), (key, name) =>
+                key == FacilityKey.Workbench && name == ".300BLK五级弹" ? 28800 : null);
+        var after = upgraded.Snapshot();
+        var runtime = after.For(FacilityKey.Workbench);
+        Assert.Equal(28800, runtime.RecipeTotalSeconds);
+        Assert.Null(runtime.StartedAt);
+        Assert.Equal(end, runtime.ReadyAt);
+        Assert.Equal(before.For(FacilityKey.Workbench).ObservedAt, runtime.ObservedAt);
+        Assert.Equal(before.LastRunAt, after.LastRunAt);
+        Assert.Equal(before.LastRunSummary, after.LastRunSummary);
+        Assert.Equal(before.LastRunFailed, after.LastRunFailed);
+        Assert.Equal(before.FailureBackoffUntil, after.FailureBackoffUntil);
+        Assert.Equal(nextRun, upgraded.ComputeNextRunAt(_plan, _settings));
+        Assert.Equal("下一轮物品", _plan.For(FacilityKey.Workbench).ItemName);
+        var reloaded = new ScheduleEngine(new JsonStoreBrick(), Path.Combine(_dir, "state.json"), _clock,
+            new LoggerConfiguration().CreateLogger());
+        Assert.Equal(28800, reloaded.Snapshot().For(FacilityKey.Workbench).RecipeTotalSeconds);
+    }
+
+    [Fact]
+    public void Recipe_period_survives_same_task_but_never_leaks_to_other_or_unidentified_tasks()
+    {
+        long? period = 28800;
+        var engine = new ScheduleEngine(new JsonStoreBrick(), Path.Combine(_dir, "state.json"), _clock,
+            new LoggerConfiguration().CreateLogger(), (_, name) => name == "A" ? period : null);
+        var end = _clock.Now.AddHours(4);
+        engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "A", end, null);
+        period = 25200;
+        engine.RefreshRecipeDurations();
+        Assert.Equal(25200, engine.Snapshot().For(FacilityKey.Workbench).RecipeTotalSeconds);
+        Assert.Equal(end, engine.Snapshot().For(FacilityKey.Workbench).ReadyAt);
+        period = null;
+        engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "A", end.AddSeconds(2), null);
+        Assert.Equal(25200, engine.Snapshot().For(FacilityKey.Workbench).RecipeTotalSeconds);
+        engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "", end, null);
+        Assert.Null(engine.Snapshot().For(FacilityKey.Workbench).RecipeTotalSeconds);
+        period = 28800;
+        engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "A", end, null);
+        engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "B", end, null);
+        Assert.Null(engine.Snapshot().For(FacilityKey.Workbench).RecipeTotalSeconds);
+        engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "A", end, null);
+        period = null;
+        engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "A", end, null, startedNow: true);
+        Assert.Null(engine.Snapshot().For(FacilityKey.Workbench).RecipeTotalSeconds);
+        Assert.Equal(_clock.Now, engine.Snapshot().For(FacilityKey.Workbench).StartedAt);
+        period = 28800;
+        engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Crafting, "A", end, null);
+        engine.RecordObservation(FacilityKey.Workbench, FacilityPhase.Idle, "", null, null);
+        Assert.Null(engine.Snapshot().For(FacilityKey.Workbench).RecipeTotalSeconds);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_dir, recursive: true); } catch { /* 临时目录清理失败不影响断言 */ }

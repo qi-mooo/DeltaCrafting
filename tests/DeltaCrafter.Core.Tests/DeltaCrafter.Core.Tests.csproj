@@ -30,5 +30,7 @@
              Link="Data\items.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\src\DeltaCrafter.Core\Data\item-metadata.json"
              Link="Data\item-metadata.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\src\DeltaCrafter.Core\Data\manufacture-periods.json"
+             Link="Data\manufacture-periods.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

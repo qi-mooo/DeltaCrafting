@@ -9,6 +9,10 @@ public sealed class CatalogItem
     public long ObjectId { get; set; }
     public int Grade { get; set; }
     public int UnlockLevel { get; set; }
+    /// <summary>数据帝 manufacturePro 的制造小时数；仅供显示进度，不参与调度。</summary>
+    public double? PeriodHours { get; set; }
+    /// <summary>查询该时长时的设施等级，防止套用其它等级的生产周期。</summary>
+    public int PeriodFacilityLevel { get; set; }
     public string Name { get; set; } = "";
     public string Ocr { get; set; } = "";
     public string? Note { get; set; }

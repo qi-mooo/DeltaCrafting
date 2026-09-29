@@ -21,6 +21,8 @@ public sealed class FacilityRuntime
     public DateTimeOffset? ReadyAt { get; set; }
     /// <summary>本客户端确认开工的时刻;首次接管已有任务时未知,不猜测总时长。</summary>
     public DateTimeOffset? StartedAt { get; set; }
+    /// <summary>与当前任务绑定的数据帝制造周期，秒；仅用于进度显示。</summary>
+    public long? RecipeTotalSeconds { get; set; }
     /// <summary>Phase 为 NeedsManual 时的原因(如"材料不足"),用于 UI 与通知。</summary>
     public string? ManualReason { get; set; }
     public DateTimeOffset? ObservedAt { get; set; }
