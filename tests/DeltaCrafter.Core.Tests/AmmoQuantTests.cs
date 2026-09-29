@@ -170,7 +170,8 @@ public sealed class AmmoQuantTests : IDisposable
         var coordinator = new QuantCoordinator(new Source(), new(), FilePath);
         File.Delete(FilePath);
         Directory.CreateDirectory(FilePath);
-        Assert.ThrowsAny<IOException>(() => coordinator.SaveWatch(new(35, "子弹", 4, 100, 150, 10, 13)));
+        var error = Record.Exception(() => coordinator.SaveWatch(new(35, "子弹", 4, 100, 150, 10, 13)));
+        Assert.True(error is IOException or UnauthorizedAccessException, error?.ToString() ?? "Expected a write failure");
         Assert.Empty(coordinator.Snapshot(Now).Watchlist);
     }
 

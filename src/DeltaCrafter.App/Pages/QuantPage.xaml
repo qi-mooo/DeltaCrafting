@@ -34,13 +34,14 @@
                     <TextBox x:Name="Search" Header="物品名称" Width="180" TextChanged="SearchChanged"/>
                     <ComboBox x:Name="SortFilter" Header="排序" Width="136" SelectedIndex="0" SelectionChanged="FilterChanged">
                         <x:String>时段优先</x:String><x:String>价格从低到高</x:String><x:String>物品名称</x:String>
+                        <x:String>每种最低价</x:String>
                     </ComboBox>
                     <NumberBox x:Name="Budget" Header="预算" Width="150" Minimum="1" Maximum="1000000000" ValueChanged="PreferenceChanged"/>
                     <Button x:Name="RefreshButton" Click="RefreshForecast" VerticalAlignment="Bottom" Width="40" Height="32"
                             ToolTipService.ToolTip="刷新所选等级的低价预测" AutomationProperties.Name="刷新低价预测">
                         <FontIcon Glyph="&#xE72C;" FontSize="18"/>
                     </Button>
-                    <ProgressRing x:Name="Loading" Width="24" Height="24" IsActive="False" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
+                    <ProgressRing x:Name="QueryProgress" Width="24" Height="24" IsActive="False" VerticalAlignment="Bottom" Margin="0,0,0,4"/>
                 </StackPanel>
             </ScrollViewer>
             <Grid Grid.Row="1" ColumnSpacing="20">

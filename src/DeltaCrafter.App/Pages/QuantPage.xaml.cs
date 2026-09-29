@@ -59,14 +59,16 @@ public sealed partial class QuantPage : Page
         bool Match(string name) => name.Contains(search, StringComparison.OrdinalIgnoreCase);
         IEnumerable<Row> rows;
         int view = Math.Max(0, Views.SelectedIndex);
-        GradeFilter.IsEnabled = HourFilter.IsEnabled = SortFilter.IsEnabled = view == 0 && !Loading.IsActive;
+        GradeFilter.IsEnabled = HourFilter.IsEnabled = SortFilter.IsEnabled = view == 0 && !QueryProgress.IsActive;
         RefreshButton.Visibility = view == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (view == 0)
         {
             var entries = (forecast?.Entries ?? []).Where(e => Match(e.Label)
                 && (HourFilter.SelectedIndex <= 0 || e.Hour == HourFilter.SelectedIndex - 1));
+            if (SortFilter.SelectedIndex == 3)
+                entries = entries.GroupBy(e => e.Id).Select(g => g.OrderBy(e => e.Price).ThenBy(e => e.Hour).First());
             entries = SortFilter.SelectedIndex switch
-            { 1 => entries.OrderBy(e => e.Price).ThenBy(e => e.Hour), 2 => entries.OrderBy(e => e.Label).ThenBy(e => e.Hour), _ => entries.OrderBy(e => e.Hour).ThenBy(e => e.Price) };
+            { 1 or 3 => entries.OrderBy(e => e.Price).ThenBy(e => e.Hour), 2 => entries.OrderBy(e => e.Label).ThenBy(e => e.Hour), _ => entries.OrderBy(e => e.Hour).ThenBy(e => e.Price) };
             decimal budget = Number(Budget);
             rows = entries.Select(e => new Row(e.Label, $"预测时段 {e.TimeLabel} · 预算可买 {QuantAccounting.AffordableQuantity(budget, e.Price):N0} 发",
                 e.PriceLabel, "预测低价 / 发", e));
@@ -98,12 +100,12 @@ public sealed partial class QuantPage : Page
 
     private async void RefreshForecast(object sender, RoutedEventArgs e)
     {
-        if (_quant is null || Loading.IsActive) return;
+        if (_quant is null || QueryProgress.IsActive) return;
         int generation = ++_generation;
         _request?.Dispose();
         _request = CancellationTokenSource.CreateLinkedTokenSource(_host.AppStopToken);
         int grade = GradeFilter.SelectedIndex;
-        Loading.IsActive = true;
+        QueryProgress.IsActive = true;
         RefreshButton.IsEnabled = GradeFilter.IsEnabled = false;
         Status.Text = $"正在查询 {grade} 级子弹…";
         try
@@ -117,7 +119,7 @@ public sealed partial class QuantPage : Page
         {
             if (generation == _generation)
             {
-                Loading.IsActive = false;
+                QueryProgress.IsActive = false;
                 RefreshButton.IsEnabled = true;
                 GradeFilter.IsEnabled = HourFilter.IsEnabled = SortFilter.IsEnabled = Views.SelectedIndex == 0;
             }
@@ -162,7 +164,7 @@ public sealed partial class QuantPage : Page
         else { _editing = false; return; }
         if (_objectId == 0)
             _objectId = _snapshot?.Forecasts.SelectMany(f => f.Entries).FirstOrDefault(q => q.Id == _itemId)?.ObjectId ?? 0;
-        HistoryButton.IsEnabled = _objectId > 0 && !Loading.IsActive;
+        HistoryButton.IsEnabled = _objectId > 0 && !QueryProgress.IsActive;
         ShowHistory(_quant.CachedHistory(_objectId));
         ItemTitle.Text = AmmoLabels.Format(_name, _grade);
         BuyPrice.Value = (double)buy;
@@ -204,12 +206,12 @@ public sealed partial class QuantPage : Page
 
     private async void RefreshHistory(object sender, RoutedEventArgs e)
     {
-        if (_quant is null || _objectId <= 0 || Loading.IsActive) return;
+        if (_quant is null || _objectId <= 0 || QueryProgress.IsActive) return;
         long objectId = _objectId;
         int generation = ++_generation;
         _request?.Dispose();
         _request = CancellationTokenSource.CreateLinkedTokenSource(_host.AppStopToken);
-        Loading.IsActive = true;
+        QueryProgress.IsActive = true;
         HistoryButton.IsEnabled = RefreshButton.IsEnabled = false;
         Status.Text = "正在查询历史价格…";
         try
@@ -223,7 +225,7 @@ public sealed partial class QuantPage : Page
         finally
         {
             if (generation == _generation)
-            { Loading.IsActive = false; RefreshButton.IsEnabled = true; HistoryButton.IsEnabled = _objectId > 0; }
+            { QueryProgress.IsActive = false; RefreshButton.IsEnabled = true; HistoryButton.IsEnabled = _objectId > 0; }
         }
     }
 
