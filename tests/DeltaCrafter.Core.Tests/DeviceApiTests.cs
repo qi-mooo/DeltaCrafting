@@ -116,6 +116,8 @@ public sealed class DeviceApiTests
         public List<string> Actions { get; } = [];
         public List<DeviceActionRequest> ActionRequests { get; } = [];
         public List<DeviceSettingsRequest> Updates { get; } = [];
+        public List<DataToolQuery> ToolQueries { get; } = [];
+        public List<string> CopiedCodes { get; } = [];
 
         public Server(bool control = false,
             Func<CancellationToken, Task<DeviceStatus>>? getStatus = null)
@@ -134,7 +136,16 @@ public sealed class DeviceApiTests
                 {
                     Updates.Add(update);
                     return Task.FromResult(new DeviceActionResult(200, "saved"));
-                }, (key, _) => Task.FromResult(new DeviceItemList(FacilityKeys.JsonKey(key), "当前物品", ["候选物品", "当前物品"])));
+                }, (key, _) => Task.FromResult(new DeviceItemList(FacilityKeys.JsonKey(key), "当前物品", ["候选物品", "当前物品"])),
+                (query, _) =>
+                {
+                    ToolQueries.Add(query);
+                    return Task.FromResult(new DataToolResult(query.Tool, query.Title, query.Page, false, "测试", [], Now));
+                }, (code, _) =>
+                {
+                    CopiedCodes.Add(code);
+                    return Task.FromResult(new DeviceActionResult(200, "copied"));
+                });
             Api.Start();
             Client = new HttpClient(new HttpClientHandler { UseProxy = false })
             {
@@ -148,6 +159,34 @@ public sealed class DeviceApiTests
             Client.PostAsync("/api/v1/action", new StringContent(body, Encoding.UTF8, contentType));
 
         public void Dispose() { Client.Dispose(); Api.Dispose(); }
+    }
+
+    [Fact]
+    public async Task Tool_queries_are_explicit_and_do_not_run_during_status_or_catalog_reads()
+    {
+        using var server = new Server();
+        await server.Client.GetAsync("/api/v1/status");
+        await server.Client.GetAsync("/api/v1/items?facility=workbench");
+        Assert.Empty(server.ToolQueries);
+        Assert.Equal(HttpStatusCode.OK, (await server.Client.GetAsync("/api/v1/tools?tool=gun&page=2&mode=operator&search=M7")).StatusCode);
+        Assert.Equal(new DataToolQuery("gun", 2, "operator", "M7"), Assert.Single(server.ToolQueries));
+        Assert.Equal(HttpStatusCode.BadRequest, (await server.Client.GetAsync("/api/v1/tools?tool=gun&page=bad")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await server.Client.GetAsync("/api/v1/tools?tool=unknown")).StatusCode);
+        Assert.Single(server.ToolQueries);
+    }
+
+    [Theory]
+    [InlineData(false, HttpStatusCode.Forbidden)]
+    [InlineData(true, HttpStatusCode.OK)]
+    public async Task Clipboard_write_requires_control_and_does_not_query_provider(bool control, HttpStatusCode expected)
+    {
+        using var server = new Server(control);
+        using var response = await server.Client.PostAsync("/api/v1/tool-copy",
+            new StringContent("{\"code\":\"M7-ABC123\"}", Encoding.UTF8, "application/json"));
+        Assert.Equal(expected, response.StatusCode);
+        Assert.Equal(control ? 1 : 0, server.CopiedCodes.Count);
+        Assert.Empty(server.ToolQueries);
+        Assert.Empty(server.Actions);
     }
 
     [Fact]

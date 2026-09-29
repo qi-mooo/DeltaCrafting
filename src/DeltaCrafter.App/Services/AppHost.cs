@@ -33,6 +33,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     public UpdateService Updater { get; }
     public ProfitPlanService ProfitPlan { get; }
     public DeviceApiService DeviceApi { get; }
+    public DataToolsService DataTools { get; } = new();
     public SteamStatusMonitor SteamStatus { get; }
     public CancellationToken AppStopToken => _appStop.Token;
 

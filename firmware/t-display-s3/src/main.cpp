@@ -39,20 +39,38 @@ struct Snapshot {
     bool steamDetection = false, settingsSupported = false, syncSupported = false;
     bool itemSelectionSupported = false, closeGameSupported = false;
     bool dataRefreshSupported = false, dataRefreshing = false;
-    bool profitRefreshSupported = false;
+    bool profitRefreshSupported = false, toolsSupported = false;
     String dataRefreshDetail;
     int32_t nextRun = -1;
     uint32_t fetchedAt = 0, noticeAt = 0;
 };
 
-enum class Command : uint8_t { Refresh, Start, Sync, Stop, Pause, Resume, Items, CloseGame, RefreshData, RefreshProfit };
+enum class Command : uint8_t { Refresh, Start, Sync, Stop, Pause, Resume, Items, CloseGame, RefreshData, RefreshProfit, Tool, CopyCode };
 enum class Setting : uint8_t { None, FacilityEnabled, CraftMode, AutoLoop, SteamDetection, AfterRun, PlannedItem };
 struct Request {
     Command command = Command::Refresh;
     Setting setting = Setting::None;
     uint8_t facility = 0, value = 0;
     char item[193] = {};
+    uint8_t tool = 0;
+    uint16_t toolPage = 1;
+    bool battlefield = false;
+    char code[769] = {};
 };
+const char *const TOOL_KEYS[] = {"password", "market", "gun"};
+const char *const TOOL_NAMES[] = {"今日密码", "当前集市物品", "改枪码"};
+struct ToolEntry { String title, code; std::vector<String> lines; };
+struct ToolData {
+    std::vector<ToolEntry> entries;
+    String detail, error;
+    uint8_t tool = 0;
+    uint16_t page = 1;
+    bool next = false, battlefield = false;
+};
+ToolData sharedTool, toolData;
+bool toolReady = false, toolLoading = false;
+uint8_t toolSelected = 0;
+std::vector<String> toolLines;
 struct ItemList {
     std::vector<String> names, labels;
     String selected, error;
@@ -165,6 +183,7 @@ bool parseStatus(JsonDocument &doc, Snapshot &next)
     next.closeGameSupported = doc["closeGameSupported"] | false;
     next.dataRefreshSupported = doc["dataRefreshSupported"] | false;
     next.profitRefreshSupported = doc["profitRefreshSupported"] | false;
+    next.toolsSupported = doc["toolsSupported"] | false;
     next.dataRefreshing = doc["dataRefresh"]["isRunning"] | false;
     next.dataRefreshDetail = doc["dataRefresh"]["detail"] | "";
     String nextAt = doc["nextRunAt"] | "";
@@ -315,6 +334,65 @@ ItemList fetchItems(uint8_t facility)
     return result;
 }
 
+ToolData fetchTool(const Request &request)
+{
+    ToolData result;
+    result.tool = request.tool;
+    result.page = request.toolPage;
+    result.battlefield = request.battlefield;
+    WiFiClient client;
+    HTTPClient http;
+    String path = String("/api/v1/tools?tool=") + TOOL_KEYS[request.tool]
+        + "&page=" + request.toolPage + "&mode=" + (request.battlefield ? "operator" : "gun");
+    beginHttp(http, client, path.c_str());
+    http.setTimeout(30000);
+    int code = http.GET(), size = http.getSize();
+    if (size <= 0 || size > 65536) {
+        result.error = code == 200 ? "工具数据过大" : httpError(code);
+        http.end(); return result;
+    }
+    String body = http.getString();
+    http.end();
+    DynamicJsonDocument doc(98304);
+    if (body.length() != unsigned(size) || deserializeJson(doc, body)) { result.error = "工具数据无效"; return result; }
+    if (code != 200) { result.error = doc["error"] | httpError(code); return result; }
+    if (strcmp(doc["tool"] | "", TOOL_KEYS[request.tool]) != 0 || !doc["entries"].is<JsonArray>()
+        || doc["entries"].size() > 200 || doc["page"] != request.toolPage) {
+        result.error = "工具数据无效"; return result;
+    }
+    result.detail = doc["detail"] | "";
+    result.next = doc["hasNext"] | false;
+    for (JsonObject row : doc["entries"].as<JsonArray>()) {
+        if (!row["title"].is<const char *>() || !row["lines"].is<JsonArray>()) {
+            result.entries.clear(); result.error = "工具条目无效"; return result;
+        }
+        ToolEntry entry;
+        entry.title = row["title"].as<String>();
+        entry.code = row["copyText"] | "";
+        if (entry.code.length() >= sizeof(request.code)) { result.error = "改枪码过长"; result.entries.clear(); return result; }
+        for (JsonVariant line : row["lines"].as<JsonArray>()) entry.lines.push_back(line.as<String>());
+        result.entries.push_back(std::move(entry));
+    }
+    return result;
+}
+
+void copyToolCode(const Request &request)
+{
+    WiFiClient client;
+    HTTPClient http;
+    beginHttp(http, client, "/api/v1/tool-copy");
+    http.setTimeout(6000);
+    http.addHeader("Content-Type", "application/json");
+    DynamicJsonDocument doc(2048);
+    doc["code"] = request.code;
+    String body; serializeJson(doc, body);
+    int code = http.POST(body);
+    String response = http.getSize() > 0 && http.getSize() < 2048 ? http.getString() : "";
+    http.end();
+    if (!deserializeJson(doc, response) && doc["message"].is<const char *>()) setNotice(doc["message"].as<String>());
+    else setNotice(code == 200 ? "已复制到 Windows 剪贴板" : "复制失败,请重试");
+}
+
 bool saveSetting(const Request &request)
 {
     Snapshot s = readSnapshot();
@@ -365,6 +443,9 @@ void networkTask(void *)
         bool connected = WiFi.status() == WL_CONNECTED;
         ItemList fetched;
         fetched.error = "设备离线";
+        ToolData fetchedTool;
+        fetchedTool.tool = request.tool; fetchedTool.page = request.toolPage;
+        fetchedTool.battlefield = request.battlefield; fetchedTool.error = "设备离线";
         bool savedItem = false;
         if (!DeviceConfig::valid()) {
             setError("Setup via USB serial");
@@ -378,6 +459,8 @@ void networkTask(void *)
         } else {
             if (hasCommand && request.setting != Setting::None) savedItem = saveSetting(request);
             else if (hasCommand && request.command == Command::Items) fetched = fetchItems(request.facility);
+            else if (hasCommand && request.command == Command::Tool) fetchedTool = fetchTool(request);
+            else if (hasCommand && request.command == Command::CopyCode) copyToolCode(request);
             else if (hasCommand && request.command != Command::Refresh) sendAction(request.command, request.facility);
             if (!wasConnected || hasCommand || millis() - lastPoll >= DELTA_POLL_MS) {
                 pollStatus();
@@ -388,6 +471,7 @@ void networkTask(void *)
             xSemaphoreTake(stateMutex, portMAX_DELAY);
             requestPending = false;
             if (request.command == Command::Items) { sharedItems = std::move(fetched); itemsReady = true; }
+            if (request.command == Command::Tool) { sharedTool = std::move(fetchedTool); toolReady = true; }
             if (request.setting == Setting::PlannedItem) itemSaveResult = savedItem ? 1 : 0;
             xSemaphoreGive(stateMutex);
         }
@@ -499,6 +583,8 @@ void menuRow(uint8_t index, const String &label)
 
 void activateSelection(bool held = false);
 void loadItems();
+void loadTool(uint8_t tool, uint16_t page = 1, bool battlefield = false);
+void copySelectedTool();
 
 void positionMenu()
 {
@@ -581,13 +667,32 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         }
     } else {
         String title = ui.page == UiPage::Global ? "全局设置"
+            : ui.page == UiPage::Tools ? "工具 / 数据帝"
+            : ui.page == UiPage::ToolList || ui.page == UiPage::ToolDetail ? TOOL_NAMES[ui.tool]
             : ui.page == UiPage::Items ? String(NAMES[ui.facility()]) + " / 制造物品"
             : ui.page == UiPage::CraftMode ? String(NAMES[ui.facility()]) + " / 制造模式"
             : ui.page == UiPage::AfterRun ? "收取后行为" : String(NAMES[ui.facility()]) + " / 设置";
         textAt(8, 18, 304, title);
         canvas.drawHLine(0, 24, 320);
         const auto &f = s.facilities[ui.facility()];
-        if (ui.page == UiPage::Facility) {
+        if (ui.page == UiPage::Tools) {
+            for (uint8_t i = 0; i < 3; ++i) menuRow(i, TOOL_NAMES[i]);
+            menuRow(3, "返回主界面");
+        } else if (ui.page == UiPage::ToolList) {
+            for (unsigned i = 0; i < toolData.entries.size(); ++i) menuRow(i, toolData.entries[i].title);
+            uint8_t row = ui.toolCount;
+            if (ui.tool == 2) {
+                menuRow(row++, toolData.battlefield ? "切换: 烽火地带" : "切换: 大战场");
+                menuRow(row++, toolData.page > 1 ? "上一页" : "上一页 (已到首页)");
+                menuRow(row++, toolData.next ? "下一页" : "下一页 (已到末页)");
+            }
+            menuRow(row++, toolLoading ? "正在查询..." : toolData.error.isEmpty() ? "刷新" : "查询失败,重试");
+            menuRow(row, "返回工具");
+        } else if (ui.page == UiPage::ToolDetail) {
+            for (unsigned i = 0; i < toolLines.size(); ++i) menuRow(i, toolLines[i]);
+            if (ui.tool == 2) menuRow(ui.detailCount, "复制到 Windows 剪贴板");
+            menuRow(ui.detailCount + (ui.tool == 2 ? 1 : 0), "返回列表");
+        } else if (ui.page == UiPage::Facility) {
             menuRow(0, String("设施: ") + (!s.valid ? "未知" : f.enabled ? "启用" : "停用"));
             menuRow(1, String("制造模式: ") + craftModeName(f.craftMode));
             if (ui.customMode) menuRow(2, String("制造物品: ") + (f.plannedItem.isEmpty() ? "未选择" : f.plannedItem));
@@ -631,6 +736,9 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         border(px, py, pw + 7, ph, true);
         canvas.setMaxClipWindow();
         String hint = !s.notice.isEmpty() && millis() - s.noticeAt < 5000 ? s.notice
+            : ui.page == UiPage::ToolList ? (toolLoading ? "正在查询数据帝" : !toolData.error.isEmpty() ? toolData.error
+                : toolData.entries.empty() ? "暂无数据" : toolData.detail)
+            : ui.page == UiPage::ToolDetail ? toolData.detail
             : ui.page == UiPage::Items && !itemList.error.isEmpty() ? itemList.error
             : !fresh(s) ? "离线 / 可浏览,暂不能保存"
             : !s.control ? "只读 / 电脑未允许设备控制"
@@ -647,16 +755,20 @@ void drawStatusBar(U8G2 *, Axeuh_UI *)
     if (ui.page != UiPage::Home) return;
     Snapshot s = readSnapshot();
     border(1, 145, 318, 25, false);
-    textAt(18, 162, 117, gameStatus(s));
-    canvas.drawVLine(139, 150, 14);
-    textAt(148, 162, 126, String("下次 ") + (fresh(s) && s.autoLoop && !s.nextRunClock.isEmpty() ? s.nextRunClock : "--:--"));
+    if (ui.settingsHint()) textAt(82, 162, 136, "进入设置");
+    else {
+        textAt(12, 162, 91, gameStatus(s));
+        textAt(108, 162, 112, String("下次 ") + (fresh(s) && s.autoLoop && !s.nextRunClock.isEmpty() ? s.nextRunClock : "--:--"));
+    }
+    canvas.drawVLine(229, 146, 23);
+    textAt(245, 162, 34, "工具");
     drawBattery();
-    float x = ui.home == 4 ? 1 : 1 + (ui.home % 2) * 160;
-    float y = ui.home == 4 ? 145 : 1 + (ui.home / 2) * 72;
+    float x = ui.home == 5 ? 230 : ui.home == 4 ? 1 : 1 + (ui.home % 2) * 160;
+    float y = ui.home >= 4 ? 145 : 1 + (ui.home / 2) * 72;
     uiEngine.animation(&focusX, x, uiEngine.fps, 0.5f);
     uiEngine.animation(&focusY, y, uiEngine.fps, 0.5f);
-    uiEngine.animation(&focusW, ui.home == 4 ? 318.0f : 158.0f, uiEngine.fps, 0.5f);
-    uiEngine.animation(&focusH, ui.home == 4 ? 25.0f : 70.0f, uiEngine.fps, 0.5f);
+    uiEngine.animation(&focusW, ui.home == 5 ? 89.0f : ui.home == 4 ? 228.0f : 158.0f, uiEngine.fps, 0.5f);
+    uiEngine.animation(&focusH, ui.home >= 4 ? 25.0f : 70.0f, uiEngine.fps, 0.5f);
     border(lroundf(focusX), lroundf(focusY), lroundf(focusW), lroundf(focusH), true);
 }
 
@@ -673,9 +785,17 @@ void draw()
     xSemaphoreTake(stateMutex, portMAX_DELAY);
     bool receivedItems = itemsReady;
     if (receivedItems) { itemList = std::move(sharedItems); itemsReady = false; }
+    bool receivedTool = toolReady;
+    if (receivedTool) { toolData = std::move(sharedTool); toolReady = false; }
     int saved = itemSaveResult;
     itemSaveResult = -1;
     xSemaphoreGive(stateMutex);
+    if (receivedTool) {
+        toolLoading = false;
+        if (ui.page == UiPage::ToolList && ui.tool == toolData.tool) {
+            ui.toolCount = toolData.entries.size(); ui.row = 0; positionMenu();
+        }
+    }
     if (receivedItems) {
         itemLoading = false;
         if (ui.page == UiPage::Items) {
@@ -688,7 +808,7 @@ void draw()
         itemSaving = false;
         if (saved == 1 && ui.page == UiPage::Items) ui.open(UiPage::Facility, 2);
     }
-    if (canvas.offset == 0 && !receivedItems && saved < 0) {
+    if (canvas.offset == 0 && !receivedItems && !receivedTool && saved < 0) {
         bool blocked = ui.page == UiPage::Items && (itemLoading || itemSaving);
         if (!blocked) {
             if (pendingHold) activateSelection(true);
@@ -697,10 +817,11 @@ void draw()
         }
         pendingHold = false;
     }
-    if (receivedItems || saved >= 0) pendingHold = false;
+    if (receivedItems || receivedTool || saved >= 0) pendingHold = false;
     if (ui.page != before) {
         bool forward = ui.page != UiPage::Home
-            && before != UiPage::CraftMode && before != UiPage::AfterRun && before != UiPage::Items;
+            && before != UiPage::CraftMode && before != UiPage::AfterRun && before != UiPage::Items
+            && before != UiPage::ToolDetail && !(before == UiPage::ToolList && ui.page == UiPage::Tools);
         canvas.startTransition(forward);
         positionMenu();
     }
@@ -780,11 +901,76 @@ void loadItems()
     }
 }
 
+void loadTool(uint8_t tool, uint16_t page, bool battlefield)
+{
+    Snapshot s = readSnapshot();
+    if (!fresh(s) || !s.toolsSupported) { setNotice(!fresh(s) ? "设备离线" : "请更新电脑客户端"); return; }
+    if (toolLoading) { setNotice("正在查询,请稍候"); return; }
+    Request request;
+    request.command = Command::Tool; request.tool = tool;
+    request.toolPage = page; request.battlefield = battlefield;
+    if (!enqueueRequest(request)) return;
+    toolLoading = true; toolData = ToolData{};
+    toolData.tool = tool; toolData.page = page; toolData.battlefield = battlefield;
+    ui.tool = tool; ui.toolCount = 0; ui.open(UiPage::ToolList);
+    positionMenu();
+}
+
+void copySelectedTool()
+{
+    if (toolSelected >= toolData.entries.size()) return;
+    Snapshot s = readSnapshot();
+    if (!fresh(s) || !s.control) { setNotice(!fresh(s) ? "设备离线" : "电脑未允许设备控制"); return; }
+    const auto &code = toolData.entries[toolSelected].code;
+    if (code.isEmpty()) { setNotice("此条目没有改枪码"); return; }
+    Request request;
+    request.command = Command::CopyCode;
+    strlcpy(request.code, code.c_str(), sizeof(request.code));
+    enqueueRequest(request);
+}
+
+void openToolDetail()
+{
+    toolSelected = ui.row;
+    const auto &entry = toolData.entries[toolSelected];
+    toolLines.clear();
+    auto wrap = [](const String &text) {
+        String remaining = text;
+        while (!remaining.isEmpty()) {
+            String line = clipped(remaining, 264);
+            if (line.isEmpty()) break;
+            toolLines.push_back(line);
+            remaining.remove(0, line.length());
+        }
+    };
+    wrap(entry.title);
+    for (const auto &line : entry.lines) wrap(line);
+    ui.detailCount = toolLines.size();
+    ui.open(UiPage::ToolDetail);
+    if (ui.tool == 2) copySelectedTool();
+}
+
 void activateSelection(bool held)
 {
     Snapshot s = readSnapshot();
     if (ui.page == UiPage::Home) {
-        ui.open(ui.home == 4 ? UiPage::Global : UiPage::Facility);
+        ui.open(ui.homeDestination());
+    } else if (ui.page == UiPage::Tools) {
+        if (ui.row < 3) loadTool(ui.row);
+        else ui.open(UiPage::Home);
+    } else if (ui.page == UiPage::ToolList) {
+        if (ui.row < ui.toolCount) openToolDetail();
+        else {
+            uint8_t action = ui.row - ui.toolCount;
+            if (ui.tool == 2 && action == 0) loadTool(ui.tool, 1, !toolData.battlefield);
+            else if (ui.tool == 2 && action == 1) { if (toolData.page > 1) loadTool(ui.tool, toolData.page - 1, toolData.battlefield); }
+            else if (ui.tool == 2 && action == 2) { if (toolData.next && toolData.page < 1000) loadTool(ui.tool, toolData.page + 1, toolData.battlefield); }
+            else if (action == (ui.tool == 2 ? 3 : 0)) loadTool(ui.tool, toolData.page, toolData.battlefield);
+            else ui.open(UiPage::Tools, ui.tool);
+        }
+    } else if (ui.page == UiPage::ToolDetail) {
+        if (ui.tool == 2 && ui.row == ui.detailCount) copySelectedTool();
+        else if (ui.row >= ui.detailCount) ui.open(UiPage::ToolList, toolSelected);
     } else if (ui.page == UiPage::Facility) {
         if (ui.row == 0) submit(Setting::FacilityEnabled, !s.facilities[ui.facility()].enabled);
         else if (ui.row == 1) {

@@ -1,7 +1,7 @@
 #pragma once
 #include <stdint.h>
 
-enum class UiPage : uint8_t { Home, Facility, Global, CraftMode, AfterRun, Items };
+enum class UiPage : uint8_t { Home, Facility, Global, CraftMode, AfterRun, Items, Tools, ToolList, ToolDetail };
 
 struct UiState {
     UiPage page = UiPage::Home;
@@ -9,10 +9,17 @@ struct UiState {
     bool customMode = false;
     bool hourlyMode = false;
     uint8_t itemCount = 0;
+    uint8_t tool = 0, toolCount = 0, detailCount = 0;
+
+    bool settingsHint() const { return page == UiPage::Home && home == 4; }
+    UiPage homeDestination() const { return home == 5 ? UiPage::Tools : home == 4 ? UiPage::Global : UiPage::Facility; }
 
     uint8_t count() const
     {
-        return page == UiPage::Home ? 5 : page == UiPage::Items ? itemCount + 1
+        return page == UiPage::Home ? 6 : page == UiPage::Tools ? 4
+            : page == UiPage::ToolList ? toolCount + (tool == 2 ? 5 : 2)
+            : page == UiPage::ToolDetail ? detailCount + (tool == 2 ? 2 : 1)
+            : page == UiPage::Items ? itemCount + 1
             : page == UiPage::Facility ? (customMode || hourlyMode ? 4 : 3) : page == UiPage::Global ? 8 : 4;
     }
 

@@ -46,6 +46,9 @@
                         <FontIcon Glyph="&#xE7C3;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="工具" Tag="tools">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE90F;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
                 <NavigationViewItem Content="设置" Tag="settings">

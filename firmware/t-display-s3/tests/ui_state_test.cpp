@@ -15,8 +15,17 @@ int main()
         ui.move(1);
     }
     assert(ui.home == 4); // Status bar is a selectable fifth item.
+    assert(ui.settingsHint() && ui.homeDestination() == UiPage::Global);
+    ui.move(1);
+    assert(ui.home == 5 && !ui.settingsHint() && ui.homeDestination() == UiPage::Tools);
     ui.move(1);
     assert(ui.home == 0);
+    assert(!ui.settingsHint());
+    ui.move(-1);
+    assert(ui.home == 5);
+    ui.open(ui.homeDestination());
+    assert(ui.page == UiPage::Tools && ui.count() == 4 && !ui.settingsHint());
+    ui.open(UiPage::Home);
     ui.move(-1);
     assert(ui.home == 4);
     ui.open(UiPage::Global);
@@ -121,4 +130,12 @@ int main()
     std::vector<std::string> ammoNames = {".300BLK三级弹", ".300BLK四级弹", ".300BLK五级弹"};
     ui.openItems(ammoNames, std::string(".300BLK五级弹"));
     assert(ui.row == 2); // Labels can change; positioning and confirmation use the stable item name.
+
+    ui.tool = 2; ui.toolCount = 12; ui.open(UiPage::ToolList);
+    assert(ui.count() == 17);
+    ui.move(-1); assert(ui.row == 16); // Back to tools, without reloading data.
+    ui.detailCount = 8; ui.open(UiPage::ToolDetail);
+    assert(ui.count() == 10); // All wrapped code lines, copy, return.
+    ui.tool = 0; ui.toolCount = 6; ui.open(UiPage::ToolList);
+    assert(ui.count() == 8); // Password entries, refresh, return.
 }

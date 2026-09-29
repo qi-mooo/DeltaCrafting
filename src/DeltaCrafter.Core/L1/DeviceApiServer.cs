@@ -18,6 +18,8 @@ public sealed class DeviceApiServer : IDisposable
     private readonly Func<DeviceActionRequest, CancellationToken, Task<DeviceActionResult>> _action;
     private readonly Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? _settings;
     private readonly Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? _items;
+    private readonly Func<DataToolQuery, CancellationToken, Task<DataToolResult>>? _tools;
+    private readonly Func<string, CancellationToken, Task<DeviceActionResult>>? _copyToolCode;
     private readonly ILogger _log;
     private readonly byte[] _keyHash;
     private readonly bool _allowControl;
@@ -29,13 +31,17 @@ public sealed class DeviceApiServer : IDisposable
         Func<CancellationToken, Task<DeviceStatus>> status,
         Func<DeviceActionRequest, CancellationToken, Task<DeviceActionResult>> action, ILogger log,
         Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? updateSettings = null,
-        Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? getItems = null)
+        Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? getItems = null,
+        Func<DataToolQuery, CancellationToken, Task<DataToolResult>>? getTool = null,
+        Func<string, CancellationToken, Task<DeviceActionResult>>? copyToolCode = null)
     {
         settings.Validate();
         _status = status;
         _action = action;
         _settings = updateSettings;
         _items = getItems;
+        _tools = getTool;
+        _copyToolCode = copyToolCode;
         _log = log;
         _allowControl = settings.AllowControl;
         _keyHash = SHA256.HashData(Encoding.UTF8.GetBytes(settings.ApiKey));
@@ -88,7 +94,7 @@ public sealed class DeviceApiServer : IDisposable
     private async Task HandleAsync(HttpListenerContext context)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        timeout.CancelAfter(TimeSpan.FromSeconds(context.Request.Url?.AbsolutePath == "/api/v1/tools" ? 30 : 5));
         var ct = timeout.Token;
         try
         {
@@ -104,6 +110,8 @@ public sealed class DeviceApiServer : IDisposable
             {
                 "/api/v1/status" => "GET",
                 "/api/v1/items" => "GET",
+                "/api/v1/tools" => "GET",
+                "/api/v1/tool-copy" => "POST",
                 "/api/v1/action" => "POST",
                 "/api/v1/settings" => "POST",
                 _ => null,
@@ -114,6 +122,23 @@ public sealed class DeviceApiServer : IDisposable
             {
                 context.Response.Headers["Allow"] = method;
                 await ReplyAsync(context, 405, new { error = "method_not_allowed" }, ct);
+            }
+            else if (path == "/api/v1/tools")
+            {
+                int page = 1;
+                bool validPage = request.QueryString["page"] is not { } value || int.TryParse(value, out page);
+                var query = new DataToolQuery(request.QueryString["tool"] ?? "", page,
+                    request.QueryString["mode"] ?? "gun", request.QueryString["search"] ?? "");
+                if (!validPage || !query.IsValid())
+                    await ReplyAsync(context, 400, new { error = "invalid_tool_query" }, ct);
+                else if (_tools is null)
+                    await ReplyAsync(context, 501, new { error = "tools_not_supported" }, ct);
+                else
+                {
+                    try { await ReplyAsync(context, 200, await _tools(query, ct).WaitAsync(ct), ct); }
+                    catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
+                    { await ReplyAsync(context, 502, new { error = ex.Message }, ct); }
+                }
             }
             else if (path == "/api/v1/items")
             {
@@ -146,6 +171,19 @@ public sealed class DeviceApiServer : IDisposable
                 if (count > 1024)
                 {
                     await ReplyAsync(context, 413, new { error = "body_too_large" }, ct);
+                    return;
+                }
+                if (path == "/api/v1/tool-copy")
+                {
+                    var copy = JsonSerializer.Deserialize<DataToolCopyRequest>(body.AsSpan(0, count), Json);
+                    if (copy is null || !copy.IsValid())
+                        await ReplyAsync(context, 400, new { error = "invalid_code" }, ct);
+                    else
+                    {
+                        var copied = _copyToolCode is null ? new DeviceActionResult(501, "tools_not_supported")
+                            : await _copyToolCode(copy.Code, ct).WaitAsync(ct);
+                        await ReplyAsync(context, copied.StatusCode, new { message = copied.Message }, ct);
+                    }
                     return;
                 }
                 if (path == "/api/v1/settings")

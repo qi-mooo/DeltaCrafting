@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\DeltaCrafter.Core\DeltaCrafter.Core.csproj" />
     <Content Include="Fixtures\manufacture-*.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Fixtures\datatools-*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

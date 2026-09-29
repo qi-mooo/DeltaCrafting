@@ -23,7 +23,12 @@ public sealed class DeviceApiService : IDisposable
         _api = new DeviceApiCoordinator(
             ct => OnUiAsync(Snapshot, ct),
             (action, ct) => OnUiAsync(() => Execute(action), ct), host.Log, UpdateSettingsAsync,
-            (key, ct) => OnUiAsync(() => DeviceItemList.CreateWithMetadata(_host.Plan.For(key), _host.ItemsFor(key)), ct));
+            (key, ct) => OnUiAsync(() => DeviceItemList.CreateWithMetadata(_host.Plan.For(key), _host.ItemsFor(key)), ct),
+            async (query, ct) =>
+            {
+                string token = await OnUiAsync(() => _host.Settings.ManufactureApi.Token, ct);
+                return await _host.DataTools.FetchAsync(query, token, ct);
+            }, (code, ct) => OnUiAsync(() => _host.DataTools.CopyGunCode(code), ct));
         _api.Changed += () => _dispatcher.TryEnqueue(() => Changed?.Invoke());
     }
 
@@ -40,7 +45,7 @@ public sealed class DeviceApiService : IDisposable
         {
             ItemSelectionSupported = true, CloseGameSupported = true,
             DataRefreshSupported = true, DataRefresh = _host.ProfitPlan.DataRefresh,
-            ProfitRefreshSupported = true,
+            ProfitRefreshSupported = true, ToolsSupported = true,
             Facilities = status.Facilities.Select(f =>
             {
                 var key = FacilityKeys.All.Single(k => FacilityKeys.JsonKey(k) == f.Key);
