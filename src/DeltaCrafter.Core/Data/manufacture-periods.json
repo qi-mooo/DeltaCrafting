@@ -1,5 +1,5 @@
 {
-  "source": "三角洲数据帝 manufacturePro，2026-09-30，设施等级 3",
+  "source": "三角洲数据帝 manufacturePro 优先；manufacture 补充防具缺项时长，2026-09-30，设施等级 3",
   "facilities": {
     "tech-center": [
       {
@@ -1236,6 +1236,72 @@
         "objectId": 11010005009,
         "name": "GN 重型夜视头盔",
         "periodHours": 8,
+        "periodFacilityLevel": 3
+      },
+      {
+        "objectId": 11010006003,
+        "name": "DICH-9重型头盔",
+        "periodHours": 12,
+        "periodFacilityLevel": 3
+      },
+      {
+        "objectId": 11010006007,
+        "name": "H70 夜视精英头盔",
+        "periodHours": 12,
+        "periodFacilityLevel": 3
+      },
+      {
+        "objectId": 11070005004,
+        "name": "DAR突击手胸挂",
+        "periodHours": 12,
+        "periodFacilityLevel": 3
+      },
+      {
+        "objectId": 11080006003,
+        "name": "D7战术背包",
+        "periodHours": 12,
+        "periodFacilityLevel": 3
+      },
+      {
+        "objectId": 11080006004,
+        "name": "GTO重型战术包",
+        "periodHours": 12,
+        "periodFacilityLevel": 3
+      },
+      {
+        "objectId": 11070005003,
+        "name": "黑鹰野战胸挂",
+        "periodHours": 12,
+        "periodFacilityLevel": 3
+      },
+      {
+        "objectId": 11050006004,
+        "name": "泰坦防弹装甲",
+        "periodHours": 12,
+        "periodFacilityLevel": 3
+      },
+      {
+        "objectId": 11010006004,
+        "name": "GT5 指挥官头盔",
+        "periodHours": 12,
+        "periodFacilityLevel": 3
+      },
+      {
+        "objectId": 11050006003,
+        "name": "特里克MAS2.0装甲",
+        "periodHours": 12,
+        "periodFacilityLevel": 3
+      },
+      {
+        "objectId": 11070005001,
+        "name": "飓风战术胸挂",
+        "periodHours": 12,
+        "periodFacilityLevel": 3
+      },
+      {
+        "objectId": 11050006001,
+        "name": "金刚防弹衣",
+        "periodHours": 12,
         "periodFacilityLevel": 3
       }
     ]

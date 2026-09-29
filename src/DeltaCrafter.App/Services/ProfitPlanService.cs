@@ -132,6 +132,22 @@ public sealed class ProfitPlanService
             var builtIn = _host.Store.Load<ItemCatalog>(Path.Combine(AppContext.BaseDirectory, "Data", "items.json"));
             var catalog = ManufactureCatalog.Build(snapshots, builtIn);
             ItemMetadataCatalog.Apply(catalog, metadata);
+            // 仅显式刷新目录时查询补缺时长；Pro 利润、开工前查询均不触发普通接口。
+            foreach (var snapshot in snapshots.Where(s => s.Level == 3))
+            {
+                if (!catalog.For(snapshot.Facility).Any(i => CraftProgress.SecondsFromHours(i.PeriodHours) is null)) continue;
+                try
+                {
+                    var request = requests.Single(r => r.Key == snapshot.Facility);
+                    var periods = await _client.FetchLegacyPeriodsAsync(request.Key, request.Token, Stop);
+                    int count = ManufacturePeriods.SupplementFromLegacy(catalog, snapshot, periods);
+                    _log.Information("数据帝补充制造时长:{Facility} {Count} 项", FacilityKeys.DisplayName(request.Key), count);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _log.Warning("补充制造时长失败,沿用缓存:{Reason}", ex.Message);
+                }
+            }
             await _host.Coordinator.RunBetweenRoundsAsync(async () =>
             {
                 await OnUi(() =>

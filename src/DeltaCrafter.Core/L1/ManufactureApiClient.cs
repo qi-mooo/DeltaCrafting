@@ -27,14 +27,33 @@ public sealed class ManufactureApiClient
             FacilityKey.PharmacyLab => 3, FacilityKey.ArmorStation => 4,
             _ => throw new ArgumentOutOfRangeException(nameof(facility)),
         };
+        var json = await FetchJsonAsync($"manufacturePro?t={type}&l={level}&token={token}", ct);
+        return new(facility, level, DateTimeOffset.Now, Parse(json, catalogOnly));
+    }
+
+    /// <summary>仅手动目录刷新补缺制造周期，绝不用于利润推荐；普通接口不支持设施等级参数。</summary>
+    public async Task<IReadOnlyList<CatalogItem>> FetchLegacyPeriodsAsync(FacilityKey facility, string token, CancellationToken ct)
+    {
+        if (!Regex.IsMatch(token, "\\A[a-zA-Z0-9]{32}\\z"))
+            throw new InvalidOperationException("请在设置页填写有效的三角洲数据帝 Token。");
+        int type = facility switch
+        {
+            FacilityKey.TechCenter => 1, FacilityKey.Workbench => 2,
+            FacilityKey.PharmacyLab => 3, FacilityKey.ArmorStation => 4,
+            _ => throw new ArgumentOutOfRangeException(nameof(facility)),
+        };
+        return ParseLegacyPeriods(await FetchJsonAsync($"manufacture?t={type}&token={token}", ct));
+    }
+
+    private async Task<string> FetchJsonAsync(string query, CancellationToken ct)
+    {
         try
         {
             using var response = await _http.GetAsync(
-                $"https://orzice.com/workApi/v1/sjz_api/manufacturePro?t={type}&l={level}&token={token}", ct);
+                $"https://orzice.com/workApi/v1/sjz_api/{query}", ct);
             if (!response.IsSuccessStatusCode)
                 throw new InvalidOperationException($"数据帝请求失败(HTTP {(int)response.StatusCode})。");
-            var json = await response.Content.ReadAsStringAsync(ct);
-            return new(facility, level, DateTimeOffset.Now, Parse(json, catalogOnly));
+            return await response.Content.ReadAsStringAsync(ct);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -44,6 +63,37 @@ public sealed class ManufactureApiClient
         {
             // 请求 URL 含 Token,禁止将异常消息/内部异常传给日志或界面。
             throw new InvalidOperationException("无法连接三角洲数据帝,请检查网络。");
+        }
+    }
+
+    public static IReadOnlyList<CatalogItem> ParseLegacyPeriods(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            int code = root.GetProperty("code").GetInt32();
+            if (code != 0) throw new ManufactureApiException($"数据帝拒绝请求(代码 {code}),请检查 Token 和剩余额度。");
+            var rows = root.GetProperty("data");
+            if (rows.ValueKind != JsonValueKind.Array || rows.GetArrayLength() is < 1 or > 1000)
+                throw new FormatException();
+            var result = new List<CatalogItem>();
+            var ids = new HashSet<long>();
+            foreach (var row in rows.EnumerateArray())
+            {
+                long id = row.GetProperty("objectID").GetInt64();
+                string name = row.GetProperty("name").GetString()?.Trim() ?? "";
+                double period = row.GetProperty("period").GetDouble();
+                if (id <= 0 || name.Length is < 2 or > 120 || name.Any(char.IsControl)
+                    || CraftProgress.SecondsFromHours(period) is null || !ids.Add(id)) throw new FormatException();
+                result.Add(new() { ObjectId = id, Name = name, PeriodHours = period, PeriodFacilityLevel = 3 });
+            }
+            return result;
+        }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or FormatException or OverflowException
+            || ex is InvalidOperationException and not ManufactureApiException)
+        {
+            throw new InvalidOperationException("数据帝返回的补充制造时长不完整,已保留缓存时长。");
         }
     }
 

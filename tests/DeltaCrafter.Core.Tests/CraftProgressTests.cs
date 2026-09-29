@@ -55,7 +55,7 @@ public sealed class CraftProgressTests
     }
 
     [Fact]
-    public void Bundled_periods_supply_real_recipes_and_leave_missing_armor_unknown()
+    public void Bundled_periods_supply_pro_recipes_and_legacy_armor_supplements()
     {
         var store = new JsonStoreBrick();
         var catalog = store.Load<ItemCatalog>(Path.Combine(AppContext.BaseDirectory, "Data", "items.json"));
@@ -64,7 +64,9 @@ public sealed class CraftProgressTests
         Assert.Equal(43200, ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.TechCenter), "复合弓", 3));
         Assert.Equal(28800, ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.Workbench), ".300BLK五级弹", 3));
         Assert.Equal(28800, ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.PharmacyLab), "高级护甲维修组合", 3));
-        Assert.Null(ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.ArmorStation), "特里克MAS2.0装甲", 3));
+        Assert.Equal(43200, ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.ArmorStation), "特里克MAS2.0装甲", 3));
+        Assert.Equal(43200, ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.ArmorStation), "DICH-9重型头盔", 3));
+        Assert.Null(ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.ArmorStation), "特里克MAS2.0装甲", 2));
         Assert.Null(ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.TechCenter), "复合弓", 2));
     }
 

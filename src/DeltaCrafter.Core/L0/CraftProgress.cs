@@ -26,6 +26,25 @@ public static class CraftProgress
 
 public static class ManufacturePeriods
 {
+    /// <summary>普通接口只补 Pro 缺项；确认重叠配方周期全部一致后才应用于三级设施。</summary>
+    public static int SupplementFromLegacy(ItemCatalog catalog, ManufactureMarketSnapshot pro, IReadOnlyList<CatalogItem> legacy)
+    {
+        if (pro.Level != 3 || pro.Items.Count == 0) return 0;
+        // 普通接口没有等级参数，用同设施 Pro 读数校验基准，禁止推测等级换算。
+        foreach (var item in pro.Items)
+        {
+            var matches = legacy.Where(i => i.ObjectId == item.ObjectId).Take(2).ToArray();
+            if (matches.Length != 1 || CraftProgress.SecondsFromHours(matches[0].PeriodHours)
+                != CraftProgress.SecondsFromHours(item.PeriodHours)) return 0;
+        }
+        var proIds = pro.Items.Select(i => i.ObjectId).ToHashSet();
+        var periods = new ItemCatalog { Facilities = new()
+        {
+            [FacilityKeys.JsonKey(pro.Facility)] = legacy.Where(i => !proIds.Contains(i.ObjectId)).ToList(),
+        } };
+        return Merge(catalog, periods, overwrite: false);
+    }
+
     public static long? SecondsFor(IReadOnlyList<CatalogItem> items, string name, int facilityLevel)
     {
         if (string.IsNullOrWhiteSpace(name) || facilityLevel is < 1 or > 3) return null;
