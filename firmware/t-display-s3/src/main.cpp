@@ -768,7 +768,7 @@ void drawToolPage(const Snapshot &s)
     }
     if (entry && ui.tool == 0) {
         bool digits = entry->password.length() > 0 && entry->password.length() <= 6;
-        for (unsigned i = 0; i < entry->password.length(); ++i) digits &= isdigit(entry->password[i]);
+        for (unsigned i = 0; i < entry->password.length(); ++i) digits = digits && isdigit(entry->password[i]) != 0;
         if (digits) {
             canvas.setFont(entry->password.length() <= 4 ? u8g2_font_logisoso78_tn : u8g2_font_logisoso46_tn);
             int width = canvas.getStrWidth(entry->password.c_str());
