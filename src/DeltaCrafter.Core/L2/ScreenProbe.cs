@@ -42,19 +42,14 @@ public sealed class ScreenProbe
 
     /// <summary>一次捕获、多区域识别,保证多个读数来自同一帧。
     /// upscale 可指定识别倍率:2x 适合小字号;1x 适合低对比大字(见 CollectFlow 交替倍率观察)。</summary>
-    public async Task<string[]> ReadRoisAsync(nint hwnd, IReadOnlyList<NRect> rois, double upscale = 2.0)
+    public async Task<OcrReadout[]> ReadSlotsAsync(CapturedFrame frame, IReadOnlyList<NRect> rois,
+        IReadOnlyList<IReadOnlyList<string>> expectedNames, double upscale = 2.0)
     {
-        var frame = Capture(hwnd);
-        return await ReadFrameRoisAsync(frame, rois, upscale);
-    }
-
-    public async Task<string[]> ReadFrameRoisAsync(CapturedFrame frame, IReadOnlyList<NRect> rois,
-        double upscale = 2.0, bool maskSlotIcons = false)
-    {
-        var result = new string[rois.Count];
+        if (rois.Count != expectedNames.Count) throw new ArgumentException("Slot target count mismatch");
+        var result = new OcrReadout[rois.Count];
         for (int i = 0; i < rois.Count; i++)
-            result[i] = (await ReadItemAsync(frame, rois[i], upscale,
-                maskSlotIcons ? SlotOcrLayout.IconMasks(rois[i]) : null)).FullText;
+            result[i] = await ReadItemAsync(frame, rois[i], expectedNames[i].Concat(Anchors.Keywords.Idle).ToArray(),
+                upscale, SlotOcrLayout.IconMasks(rois[i]), slot: true);
         return result;
     }
 
@@ -144,26 +139,25 @@ public sealed class ScreenProbe
         return readout.Lines.FirstOrDefault(l => TextMatch.LineContains(l.Text, target));
     }
 
-    /// <summary>读取生产列表名称，遮掉左侧插画/数量列(配方目录扫描用)。</summary>
-    public async Task<IReadOnlyList<OcrLine>> ReadAreaLinesAsync(nint hwnd, NRect area) =>
-        (await ReadItemAsync(Capture(hwnd), area, iconMasks: ProductionListOcrLayout.IconMasks(area))).Lines;
-
     /// <summary>.300 BLK 专用识别保留 OCR 对应原帧,避免文字与品质颜色来自不同画面。</summary>
-    public async Task<(CapturedFrame Frame, IReadOnlyList<OcrLine> Lines)> ReadAreaFrameAsync(nint hwnd, NRect area)
+    public async Task<(CapturedFrame Frame, OcrReadout Readout)> ReadAreaFrameAsync(nint hwnd, NRect area,
+        IReadOnlyList<string> expectedNames)
     {
         var frame = Capture(hwnd);
-        return (frame, (await ReadItemAsync(frame, area,
-            iconMasks: ProductionListOcrLayout.IconMasks(area))).Lines);
+        return (frame, await ReadItemAsync(frame, area, expectedNames,
+            iconMasks: ProductionListOcrLayout.IconMasks(area)));
     }
 
-    public async Task<string> ReadFrameRoiAsync(CapturedFrame frame, NRect roi) =>
-        (await ReadItemAsync(frame, roi, itemTitle: true)).FullText;
+    public async Task<string> ReadFrameRoiAsync(CapturedFrame frame, NRect roi, string expectedName) =>
+        (await ReadItemAsync(frame, roi, [expectedName], itemTitle: true)).FullText;
 
     /// <summary>物品识别使用离线模型，失败即停止，不自动切回识别率较低的路径。</summary>
-    private async Task<OcrReadout> ReadItemAsync(CapturedFrame frame, NRect roi, double upscale = 2.0,
-        IReadOnlyList<NRect>? iconMasks = null, bool itemTitle = false)
+    private async Task<OcrReadout> ReadItemAsync(CapturedFrame frame, NRect roi,
+        IReadOnlyList<string> expectedNames, double upscale = 2.0,
+        IReadOnlyList<NRect>? iconMasks = null, bool itemTitle = false, bool slot = false)
     {
         var result = await _itemOcr.ReadAsync(frame, roi, upscale, iconMasks);
+        var raw = result;
         _log.Debug("PaddleOCR 物品读数(图标遮罩={Masked})：{Text}",
             iconMasks is { Count: > 0 }, result.FullText.Replace('\n', '|'));
         if (itemTitle)
@@ -173,6 +167,11 @@ public sealed class ScreenProbe
                 _log.Debug("详情标题去除数量后缀：{Title}", title.FullText);
             result = title;
         }
+        result = OcrMatchFilter.Filter(result, expectedNames, slot,
+            line => SlotOcrLayout.IsCountdownText(line, roi, frame.Width, frame.Height))
+            with { SourceText = raw.FullText };
+        _log.Debug("OCR 目标筛选(匹配度>{Threshold}%)：{Text}; 倒计时未读清={Unreadable}",
+            OcrMatchFilter.MinimumMatchPercent, result.FullText.Replace('\n', '|'), result.HasUnreadableCountdown);
         if (result.HasUncertainText)
         {
             string uncertain = string.Join("、", result.Lines.Where(l =>
@@ -181,8 +180,8 @@ public sealed class ScreenProbe
             string png = Path.Combine(_shotsDir, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-fail-PaddleOCR.png");
             await _capture.SavePngAsync(frame, png);
             await File.WriteAllTextAsync(Path.ChangeExtension(png, ".txt"),
-                $"ROI={roi.X},{roi.Y},{roi.W},{roi.H}; scale={upscale}; iconMasks={iconMasks is { Count: > 0 }}\n" +
-                string.Join("\n", result.Lines.Select(l =>
+                $"ROI={roi.X},{roi.Y},{roi.W},{roi.H}; scale={upscale}; iconMasks={iconMasks is { Count: > 0 }}; match>60%; targets={string.Join("|", expectedNames)}\n" +
+                string.Join("\n", raw.Lines.Select(l =>
                     $"{l.Confidence:F3}\t{l.Text}\t{string.Join("; ", l.Words)}")));
             throw new StepFailedException("识别物品", $"PaddleOCR 识别置信度不足：{uncertain}。已停止本轮，请在画面稳定后重试。诊断截图：{png}", png, result.FullText);
         }

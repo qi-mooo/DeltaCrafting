@@ -106,6 +106,7 @@ public sealed class CraftStartFlow
         string displayName, ScreenSpec prodSpec, IReadOnlyList<CatalogItem> items, int? blkGrade, CancellationToken ct)
     {
         var listArea = prodSpec.Roi(AnchorKeys.RoiListArea);
+        string expectedName = blkGrade is not null ? BlkAmmoMatcher.GameName : searchName;
         OcrLine? line = null;
         string previousView = "";
         bool reachedBottom = false;
@@ -113,10 +114,11 @@ public sealed class CraftStartFlow
         for (int page = 0; page < MaxScrollPages; page++)
         {
             ct.ThrowIfCancellationRequested();
+            var (frame, readout) = await _probe.ReadAreaFrameAsync(hwnd, listArea, [expectedName]);
+            var lines = readout.Lines;
             string currentView;
             if (blkGrade is { } grade)
             {
-                var (frame, lines) = await _probe.ReadAreaFrameAsync(hwnd, listArea);
                 var candidate = BlkAmmoMatcher.Find(frame, lines, listArea, grade: grade);
                 if (candidate is not null)
                     line = new OcrLine(BlkAmmoMatcher.GameName, candidate.X, candidate.Y);
@@ -126,10 +128,10 @@ public sealed class CraftStartFlow
             }
             else
             {
-                var lines = await _probe.ReadAreaLinesAsync(hwnd, listArea);
                 var matches = lines.Where(l => CatalogNameResolver.Matches(items, l.Text, searchName)).ToArray();
                 line = matches.Length == 1 ? matches[0] : null;
-                currentView = ScreenProbe.Normalize(string.Concat(lines.Select(l => l.Text)));
+                // 是否到底看整页原文；不能因筛选后都为空或仅剩同一相似项就提前停翻页。
+                currentView = ScreenProbe.Normalize(readout.SourceText ?? readout.FullText);
             }
             if (line is not null) break;
 
@@ -165,14 +167,14 @@ public sealed class CraftStartFlow
             await Task.Delay(800, ct);
             if (blkGrade is { } grade)
             {
-                var (frame, lines) = await _probe.ReadAreaFrameAsync(hwnd, listArea);
-                var selected = BlkAmmoMatcher.Find(frame, lines, listArea, requireSelected: true, grade: grade);
-                string title = await _probe.ReadFrameRoiAsync(frame, prodSpec.Roi(AnchorKeys.RoiDetailTitle));
+                var (frame, readout) = await _probe.ReadAreaFrameAsync(hwnd, listArea, [expectedName]);
+                var selected = BlkAmmoMatcher.Find(frame, readout.Lines, listArea, requireSelected: true, grade: grade);
+                string title = await _probe.ReadFrameRoiAsync(frame, prodSpec.Roi(AnchorKeys.RoiDetailTitle), expectedName);
                 if (selected is not null && BlkAmmoIdentity.IsBareName(title)) return;
             }
             else
             {
-                string title = await _probe.ReadFrameRoiAsync(_probe.Capture(hwnd), prodSpec.Roi(AnchorKeys.RoiDetailTitle));
+                string title = await _probe.ReadFrameRoiAsync(_probe.Capture(hwnd), prodSpec.Roi(AnchorKeys.RoiDetailTitle), expectedName);
                 if (CatalogNameResolver.Matches(items, title, searchName)) return;
             }
         }

@@ -102,7 +102,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         var collect = new CollectFlow(probe, runner, input, this, this, Log);
         var craft = new CraftStartFlow(probe, runner, input, this, Log);
         var abort = new AbortFlow(probe, runner, input, Log);
-        var scan = new CatalogScanFlow(probe, runner, input, Log);
+        var scan = new CatalogScanFlow(probe, runner, input, this, Log);
         var shutdown = new ShutdownFlow(process, WindowBrick, probe, runner, Log);
         var engine = new ScheduleEngine(Store, Paths.StatePath, clock, Log);
 

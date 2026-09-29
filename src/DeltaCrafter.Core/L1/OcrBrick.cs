@@ -14,10 +14,15 @@ public sealed record OcrLine(string Text, double CenterX, double CenterY)
     public IReadOnlyList<OcrWordBox> Words { get; init; } = [];
 }
 
-public sealed record OcrWordBox(string Text, double Left, double Top, double Width, double Height);
+public sealed record OcrWordBox(string Text, double Left, double Top, double Width, double Height)
+{
+    public float? Confidence { get; init; }
+}
 
 public sealed record OcrReadout(string FullText, IReadOnlyList<OcrLine> Lines)
 {
+    public string? SourceText { get; init; }
+    public bool HasUnreadableCountdown { get; init; }
     public const float MinimumItemConfidence = .90f;
     public bool HasUncertainText => Lines.Any(l => !float.IsFinite(l.Confidence)
         || l.Confidence < MinimumItemConfidence);

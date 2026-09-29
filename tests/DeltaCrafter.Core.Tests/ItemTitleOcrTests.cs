@@ -22,7 +22,7 @@ public sealed class ItemTitleOcrTests
         Assert.True(BlkAmmoIdentity.IsBareName(title.FullText));
         Assert.False(title.HasUncertainText);
         Assert.Equal(.991f, Assert.Single(title.Lines).Confidence);
-        Assert.Contains(title.Lines[0].Words, w => w.Text == "120");
+        Assert.DoesNotContain(title.Lines[0].Words, w => w.Text == "120");
     }
 
     [Theory]
@@ -54,15 +54,28 @@ public sealed class ItemTitleOcrTests
     }
 
     [Theory]
-    [InlineData(.89f, .99f)]
-    [InlineData(.99f, .89f)]
-    [InlineData(float.NaN, .99f)]
-    public void Name_and_quantity_confidence_remain_strict(float nameScore, float quantityScore)
+    [InlineData(.89f, .99f, true)]
+    [InlineData(.99f, .89f, false)]
+    [InlineData(float.NaN, .99f, true)]
+    public void Only_name_confidence_is_used(float nameScore, float quantityScore, bool uncertain)
     {
         var title = ItemTitleOcr.Normalize(Readout(
             Region(".300 BLK", nameScore, 0), Region("*", .4f, 110), Region("120", quantityScore, 125)));
         Assert.Equal(".300 BLK", title.FullText);
-        Assert.True(title.HasUncertainText);
+        Assert.Equal(uncertain, title.HasUncertainText);
+    }
+
+    [Fact]
+    public void Same_baseline_quantity_cannot_lower_name_confidence()
+    {
+        var raw = OcrLineAssembler.Assemble([
+            Region(".300 BLK", .99f, 0), Region("*", .2f, 101, width: 10),
+            Region("120", .3f, 112),
+        ]);
+        Assert.True(raw.HasUncertainText);
+        var title = ItemTitleOcr.Normalize(raw);
+        Assert.Equal(".300 BLK", title.FullText);
+        Assert.False(title.HasUncertainText);
     }
 
     [Fact]

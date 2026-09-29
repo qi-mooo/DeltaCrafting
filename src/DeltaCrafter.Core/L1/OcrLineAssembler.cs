@@ -6,9 +6,11 @@ internal static class OcrLineAssembler
     internal static OcrReadout Assemble(IEnumerable<OcrLine> regions)
     {
         var lines = new List<OcrLine>();
-        foreach (var region in regions.OrderBy(r => r.CenterX))
+        foreach (var source in regions.OrderBy(r => r.CenterX))
         {
-            var word = region.Words.Single();
+            var word = source.Words.Single();
+            word = word with { Confidence = word.Confidence ?? source.Confidence };
+            var region = source with { Words = [word] };
             int index = lines.FindIndex(line =>
             {
                 var last = line.Words[^1];

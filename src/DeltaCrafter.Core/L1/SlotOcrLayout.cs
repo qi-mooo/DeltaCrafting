@@ -5,6 +5,10 @@ namespace DeltaCrafter.Core.L1;
 /// <summary>总览槽位中的固定图标区域，不参与文字识别。</summary>
 internal static class SlotOcrLayout
 {
+    internal static bool IsCountdownText(OcrLine line, NRect slot, int width, int height) =>
+        line.CenterY >= (slot.Y + slot.H * .68) * height &&
+        line.CenterX >= (slot.X + slot.W * .165) * width;
+
     internal static IReadOnlyList<NRect> IconMasks(NRect slot) =>
     [
         // 右上完成提示位于名称右侧、上方；可被读成方框、括号或数字 1。
