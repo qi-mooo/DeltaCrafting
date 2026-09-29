@@ -24,8 +24,10 @@ public sealed record OcrReadout(string FullText, IReadOnlyList<OcrLine> Lines)
     public string? SourceText { get; init; }
     public bool HasUnreadableCountdown { get; init; }
     public const float MinimumItemConfidence = .90f;
-    public bool HasUncertainText => Lines.Any(l => !float.IsFinite(l.Confidence)
-        || l.Confidence < MinimumItemConfidence);
+    public bool HasUncertainText => HasTextBelowConfidence(MinimumItemConfidence);
+
+    internal bool HasTextBelowConfidence(float minimumConfidence) =>
+        Lines.Any(l => !float.IsFinite(l.Confidence) || l.Confidence < minimumConfidence);
 }
 
 /// <summary>

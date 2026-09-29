@@ -50,7 +50,8 @@ public sealed class PaddleRuntimeTests
         var ocr = new PaddleOcrBrick();
         var kw = new StateKeywords();
         var targets = kw.ButtonProduce.Concat(kw.ButtonReplenish).Concat(kw.ButtonAbort).ToArray();
-        foreach (var (file, expected) in new[] { ("button-produce.png", "生产"), ("button-replenish.png", "一键补齐") })
+        foreach (var (file, expected) in new[] { ("button-produce.png", "生产"),
+            ("button-replenish.png", "一键补齐"), ("button-replenish-bow.png", "一键补齐") })
         {
             using var source = Cv2.ImRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", file));
             using var canvas = new Mat();
@@ -60,7 +61,8 @@ public sealed class PaddleRuntimeTests
             var raw = await ocr.ReadAsync(new CapturedFrame(canvas.Width, canvas.Height, pixels),
                 new NRect { W = 1, H = 1 });
             var filtered = OcrMatchFilter.Filter(raw, targets);
-            Assert.False(filtered.HasUncertainText);
+            Assert.False(filtered.HasTextBelowConfidence(ScreenProbe.ProductionButtonMinimumConfidence));
+            if (file == "button-replenish-bow.png") Assert.True(filtered.HasUncertainText);
             Assert.Equal(expected, ScreenProbe.Normalize(filtered.FullText));
             Assert.Equal(expected == "生产", CraftStartFlow.LabelHits(filtered.FullText, kw.ButtonProduce));
             Assert.Equal(expected == "一键补齐", CraftStartFlow.LabelHits(filtered.FullText, kw.ButtonReplenish));

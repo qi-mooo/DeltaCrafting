@@ -10,6 +10,7 @@ namespace DeltaCrafter.Core.L2;
 /// </summary>
 public sealed class ScreenProbe
 {
+    internal const float ProductionButtonMinimumConfidence = .80f;
     private readonly GameWindowBrick _window;
     private readonly ScreenCaptureBrick _capture;
     private readonly OcrBrick _ocr;
@@ -155,7 +156,8 @@ public sealed class ScreenProbe
     {
         var kw = Anchors.Keywords;
         var targets = kw.ButtonProduce.Concat(kw.ButtonReplenish).Concat(kw.ButtonAbort).ToArray();
-        var readout = await ReadItemAsync(frame, roi, targets);
+        var readout = await ReadItemAsync(frame, roi, targets,
+            minimumConfidence: ProductionButtonMinimumConfidence);
         string label = Normalize(readout.FullText);
         _log.Debug("生产操作按钮(PaddleOCR)：{Label}", label);
         return label;
@@ -164,7 +166,8 @@ public sealed class ScreenProbe
     /// <summary>物品识别使用离线模型，失败即停止，不自动切回识别率较低的路径。</summary>
     private async Task<OcrReadout> ReadItemAsync(CapturedFrame frame, NRect roi,
         IReadOnlyList<string> expectedNames, double upscale = 2.0,
-        IReadOnlyList<NRect>? iconMasks = null, bool itemTitle = false, bool slot = false)
+        IReadOnlyList<NRect>? iconMasks = null, bool itemTitle = false, bool slot = false,
+        float minimumConfidence = OcrReadout.MinimumItemConfidence)
     {
         var result = await _itemOcr.ReadAsync(frame, roi, upscale, iconMasks);
         var raw = result;
@@ -182,15 +185,15 @@ public sealed class ScreenProbe
             with { SourceText = raw.FullText };
         _log.Debug("OCR 目标筛选(匹配度>{Threshold}%)：{Text}; 倒计时未读清={Unreadable}",
             OcrMatchFilter.MinimumMatchPercent, result.FullText.Replace('\n', '|'), result.HasUnreadableCountdown);
-        if (result.HasUncertainText)
+        if (result.HasTextBelowConfidence(minimumConfidence))
         {
             string uncertain = string.Join("、", result.Lines.Where(l =>
-                !float.IsFinite(l.Confidence) || l.Confidence < OcrReadout.MinimumItemConfidence)
+                !float.IsFinite(l.Confidence) || l.Confidence < minimumConfidence)
                 .Select(l => $"{l.Text} ({l.Confidence:P0})"));
             string png = Path.Combine(_shotsDir, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-fail-PaddleOCR.png");
             await _capture.SavePngAsync(frame, png);
             await File.WriteAllTextAsync(Path.ChangeExtension(png, ".txt"),
-                $"ROI={roi.X},{roi.Y},{roi.W},{roi.H}; scale={upscale}; iconMasks={iconMasks is { Count: > 0 }}; match>60%; targets={string.Join("|", expectedNames)}\n" +
+                $"ROI={roi.X},{roi.Y},{roi.W},{roi.H}; scale={upscale}; iconMasks={iconMasks is { Count: > 0 }}; match>60%; confidence>={minimumConfidence:P0}; targets={string.Join("|", expectedNames)}\n" +
                 string.Join("\n", raw.Lines.Select(l =>
                     $"{l.Confidence:F3}\t{l.Text}\t{string.Join("; ", l.Words)}")));
             throw new StepFailedException("识别物品", $"PaddleOCR 识别置信度不足：{uncertain}。已停止本轮，请在画面稳定后重试。诊断截图：{png}", png, result.FullText);
