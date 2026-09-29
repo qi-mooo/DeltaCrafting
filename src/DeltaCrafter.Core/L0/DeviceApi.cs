@@ -20,7 +20,8 @@ public sealed class DeviceApiSettings
 public sealed record DeviceFacilityStatus(
     string Key, string Name, bool Enabled, string CraftMode, string PlannedItemName,
     string Phase, string ItemName, DateTimeOffset? ReadyAt, long? RemainingSeconds,
-    string? ManualReason, DateTimeOffset? ObservedAt, long? TotalSeconds = null);
+    string? ManualReason, DateTimeOffset? ObservedAt, long? TotalSeconds = null,
+    DeviceDataRefreshStatus? ProfitRefresh = null);
 
 public sealed record DeviceStatus(
     int ApiVersion, string AppVersion, DateTimeOffset ServerTime,
@@ -30,7 +31,11 @@ public sealed record DeviceStatus(
     IReadOnlyList<DeviceFacilityStatus> Facilities,
     DeviceGameStatus? Game = null, bool SteamDetectionEnabled = false,
     string AfterRun = "CloseGame", bool SettingsSupported = true, bool SyncSupported = true,
-    bool ItemSelectionSupported = false, bool CloseGameSupported = false);
+    bool ItemSelectionSupported = false, bool CloseGameSupported = false,
+    bool DataRefreshSupported = false, DeviceDataRefreshStatus? DataRefresh = null,
+    bool ProfitRefreshSupported = false);
+
+public sealed record DeviceDataRefreshStatus(bool IsRunning, string Detail, DateTimeOffset? CompletedAt = null);
 
 public sealed record DeviceItemList(string Facility, string SelectedItemName, IReadOnlyList<string> Items)
 {
@@ -71,5 +76,11 @@ public sealed record DeviceSettingsRequest(string? Facility = null, bool? Enable
     }
 }
 
-public sealed record DeviceActionRequest(string Action);
+[System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
+public sealed record DeviceActionRequest(string Action, string? Facility = null)
+{
+    public bool IsValid() => Action == "refresh-profit"
+        ? FacilityKeys.All.Any(k => FacilityKeys.JsonKey(k) == Facility)
+        : Facility is null && Action is ("start" or "sync" or "close-game" or "refresh-data" or "stop" or "pause" or "resume");
+}
 public sealed record DeviceActionResult(int StatusCode, string Message);

@@ -21,9 +21,11 @@ int main()
     assert(ui.home == 4);
     ui.open(UiPage::Global);
     ui.move(-1);
-    assert(ui.row == 6); // Return option, after start, sync and close-game actions.
+    assert(ui.row == 7); // Return option, after start, sync, close-game and refresh-data.
     ui.move(1);
-    assert(ui.row == 0 && ui.count() == 7);
+    assert(ui.row == 0 && ui.count() == 8);
+    ui.open(UiPage::Global, 6);
+    assert(ui.row * 29 + ui.initialScroll() == 29); // Refresh-data is visible when scrolled.
     ui.open(UiPage::Home);
     assert(ui.home == 4);
     ui.move(-1);
@@ -39,6 +41,14 @@ int main()
     ui.open(UiPage::Facility);
     ui.move(-1);
     assert(ui.row == 3 && ui.count() == 4);
+    ui.customMode = false;
+    ui.hourlyMode = true;
+    ui.open(UiPage::Facility, 2);
+    assert(ui.count() == 4); // Profit refresh replaces custom item selection.
+    ui.move(1);
+    assert(ui.row == 3);
+    ui.hourlyMode = false;
+    assert(ui.count() == 3); // Other modes have no profit-refresh action.
     std::vector<std::string> items(254);
     for (unsigned i = 0; i < items.size(); ++i) items[i] = std::to_string(i);
     ui.openItems(items, std::string("200"));
@@ -95,4 +105,12 @@ int main()
     assert(progressPixels(900, 3600, 100) == 75);
     assert(progressPixels(-1, 3600, 138) == -1);
     assert(progressPixels(1800, -1, 138) == -1);
+
+    assert(std::string(facilityDisplayPhase("Crafting", 2, 1, true)) == "Crafting");
+    assert(std::string(facilityDisplayPhase("Crafting", 2, 2, true)) == "ReadyToCollect");
+    assert(std::string(facilityDisplayPhase("Crafting", 0, 0, true)) == "ReadyToCollect");
+    assert(std::string(facilityDisplayPhase("Crafting", -1, 100, true)) == "Crafting");
+    assert(std::string(facilityDisplayPhase("Crafting", 2, 3, false)) == "Crafting");
+    for (const char *phase : {"Idle", "ReadyToCollect", "NeedsManual", "Unknown"})
+        assert(std::string(facilityDisplayPhase(phase, 0, 100, true)) == phase);
 }

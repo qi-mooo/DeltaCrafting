@@ -48,11 +48,13 @@ public sealed class ScreenProbe
         return await ReadFrameRoisAsync(frame, rois, upscale);
     }
 
-    public async Task<string[]> ReadFrameRoisAsync(CapturedFrame frame, IReadOnlyList<NRect> rois, double upscale = 2.0)
+    public async Task<string[]> ReadFrameRoisAsync(CapturedFrame frame, IReadOnlyList<NRect> rois,
+        double upscale = 2.0, bool maskSlotIcons = false)
     {
         var result = new string[rois.Count];
         for (int i = 0; i < rois.Count; i++)
-            result[i] = (await ReadItemAsync(frame, rois[i], upscale)).FullText;
+            result[i] = (await ReadItemAsync(frame, rois[i], upscale,
+                maskSlotIcons ? SlotOcrLayout.IconMasks(rois[i]) : null)).FullText;
         return result;
     }
 
@@ -157,10 +159,12 @@ public sealed class ScreenProbe
         (await ReadItemAsync(frame, roi)).FullText;
 
     /// <summary>物品识别使用离线模型，失败即停止，不自动切回识别率较低的路径。</summary>
-    private async Task<OcrReadout> ReadItemAsync(CapturedFrame frame, NRect roi, double upscale = 2.0)
+    private async Task<OcrReadout> ReadItemAsync(CapturedFrame frame, NRect roi, double upscale = 2.0,
+        IReadOnlyList<NRect>? iconMasks = null)
     {
-        var result = await _itemOcr.ReadAsync(frame, roi, upscale);
-        _log.Debug("PaddleOCR 物品读数：{Text}", result.FullText.Replace('\n', '|'));
+        var result = await _itemOcr.ReadAsync(frame, roi, upscale, iconMasks);
+        _log.Debug("PaddleOCR 物品读数(槽位图标遮罩={Masked})：{Text}",
+            iconMasks is { Count: > 0 }, result.FullText.Replace('\n', '|'));
         if (result.HasUncertainText)
         {
             string uncertain = string.Join("、", result.Lines.Where(l =>
@@ -168,8 +172,10 @@ public sealed class ScreenProbe
                 .Select(l => $"{l.Text} ({l.Confidence:P0})"));
             string png = Path.Combine(_shotsDir, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-fail-PaddleOCR.png");
             await _capture.SavePngAsync(frame, png);
-            await File.WriteAllTextAsync(Path.ChangeExtension(png, ".txt"), string.Join("\n",
-                result.Lines.Select(l => $"{l.Confidence:F3}\t{l.Text}")));
+            await File.WriteAllTextAsync(Path.ChangeExtension(png, ".txt"),
+                $"ROI={roi.X},{roi.Y},{roi.W},{roi.H}; scale={upscale}; slotMasks={iconMasks is { Count: > 0 }}\n" +
+                string.Join("\n", result.Lines.Select(l =>
+                    $"{l.Confidence:F3}\t{l.Text}\t{string.Join("; ", l.Words)}")));
             throw new StepFailedException("识别物品", $"PaddleOCR 识别置信度不足：{uncertain}。已停止本轮，请在画面稳定后重试。诊断截图：{png}", png, result.FullText);
         }
         return result;

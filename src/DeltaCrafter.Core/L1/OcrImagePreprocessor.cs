@@ -5,7 +5,8 @@ namespace DeltaCrafter.Core.L1;
 /// <summary>OCR 专用灰阶副本；保留原帧及坐标，不影响品质颜色检测。</summary>
 internal static class OcrImagePreprocessor
 {
-    internal static byte[] Prepare(CapturedFrame frame, int cx, int cy, int cw, int ch, int dw, int dh)
+    internal static byte[] Prepare(CapturedFrame frame, int cx, int cy, int cw, int ch, int dw, int dh,
+        IReadOnlyList<NRect>? iconMasks = null)
     {
         if (cw <= 0 || ch <= 0 || dw <= 0 || dh <= 0 || cx < 0 || cy < 0 ||
             cx + cw > frame.Width || cy + ch > frame.Height)
@@ -19,6 +20,17 @@ internal static class OcrImagePreprocessor
                 gray[y * cw + x] = (byte)((frame.Bgra[p + 2] * 299 +
                     frame.Bgra[p + 1] * 587 + frame.Bgra[p] * 114 + 500) / 1000);
             }
+
+        // 在 OCR 副本里遮掉固定图标，避免它们与文字合并后拉低整行置信度。
+        // 原始彩色帧仍用于 .300 BLK 的品质判断及诊断截图。
+        foreach (var mask in iconMasks ?? [])
+        {
+            var (mx, my, mw, mh) = PixelMapper.ToPixelRect(mask, frame.Width, frame.Height);
+            int left = Math.Clamp(mx - cx, 0, cw), right = Math.Clamp(mx + mw - cx, 0, cw);
+            int top = Math.Clamp(my - cy, 0, ch), bottom = Math.Clamp(my + mh - cy, 0, ch);
+            for (int y = top; y < bottom; y++)
+                gray.AsSpan(y * cw + left, right - left).Clear();
+        }
 
         // 三次插值保留细笔画的过渡；最近邻在实机上会把「甲」读作「印」。
         var horizontal = new byte[dw * ch];

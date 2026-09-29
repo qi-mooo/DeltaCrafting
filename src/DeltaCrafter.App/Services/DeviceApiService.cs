@@ -29,11 +29,24 @@ public sealed class DeviceApiService : IDisposable
 
     public void Apply() => _api.Apply(_host.Settings.DeviceApi);
 
-    private DeviceStatus Snapshot() => DeviceApiCoordinator.CreateStatus(
-        typeof(AppHost).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
-        DateTimeOffset.Now, _host.Coordinator.Status, _host.Coordinator.IsRunning,
-        _host.Settings, _host.Plan, _host.Coordinator.ScheduleSnapshot(),
-        _host.SteamStatus.Snapshot(_host.Settings.SteamActivity)) with { ItemSelectionSupported = true, CloseGameSupported = true };
+    private DeviceStatus Snapshot()
+    {
+        var status = DeviceApiCoordinator.CreateStatus(
+            typeof(AppHost).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
+            DateTimeOffset.Now, _host.Coordinator.Status, _host.Coordinator.IsRunning,
+            _host.Settings, _host.Plan, _host.Coordinator.ScheduleSnapshot(),
+            _host.SteamStatus.Snapshot(_host.Settings.SteamActivity));
+        return status with
+        {
+            ItemSelectionSupported = true, CloseGameSupported = true,
+            DataRefreshSupported = true, DataRefresh = _host.ProfitPlan.DataRefresh,
+            ProfitRefreshSupported = true,
+            Facilities = status.Facilities.Select(f => f with
+            {
+                ProfitRefresh = _host.ProfitPlan.ProfitStatus(FacilityKeys.All.Single(k => FacilityKeys.JsonKey(k) == f.Key)),
+            }).ToArray(),
+        };
+    }
 
     private async Task<DeviceActionResult> UpdateSettingsAsync(DeviceSettingsRequest update, CancellationToken ct)
     {
@@ -67,12 +80,22 @@ public sealed class DeviceApiService : IDisposable
         return result;
     }
 
-    private DeviceActionResult Execute(string action)
+    private DeviceActionResult Execute(DeviceActionRequest request)
     {
         if (!_host.Settings.DeviceApi.Enabled || !_host.Settings.DeviceApi.AllowControl)
             return new(403, "control_disabled");
+        string action = request.Action;
         switch (action)
         {
+            case "refresh-profit":
+                var key = FacilityKeys.All.Single(k => FacilityKeys.JsonKey(k) == request.Facility);
+                if (_host.Plan.For(key).Mode != CraftMode.HourlyProfit) return new(409, "hourly_profit_required");
+                if (!_host.ProfitPlan.TryRefreshProfit(key)) return new(409, "busy");
+                break;
+            case "refresh-data":
+                if (_host.Coordinator.RunsBlocked) return new(409, "update_in_progress");
+                if (!_host.ProfitPlan.TryRefreshData()) return new(409, "already_refreshing");
+                break;
             case "start":
             case "sync":
             case "close-game":
@@ -110,7 +133,7 @@ public sealed class DeviceApiService : IDisposable
                 return new(400, "invalid_action");
         }
         _host.Log.Information("设备 API 控制:{Action}", action);
-        return new(action is "start" or "sync" or "close-game" or "stop" ? 202 : 200, "accepted");
+        return new(action is "start" or "sync" or "close-game" or "refresh-data" or "refresh-profit" or "stop" ? 202 : 200, "accepted");
     }
 
     private Task<T> OnUiAsync<T>(Func<T> action, CancellationToken ct)

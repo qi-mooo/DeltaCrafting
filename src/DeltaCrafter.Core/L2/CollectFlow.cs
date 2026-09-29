@@ -58,7 +58,7 @@ public sealed class CollectFlow
             double upscale = pass % 2 == 1 ? 2.0 : 1.0;
             long capMs = Environment.TickCount64; // 截帧时刻:剩余时间读数对应的基准点
             var frame = _probe.Capture(hwnd);
-            string[] texts = await _probe.ReadFrameRoisAsync(frame, rois, upscale);
+            string[] texts = await _probe.ReadFrameRoisAsync(frame, rois, upscale, maskSlotIcons: true);
             for (int i = 0; i < FacilityKeys.All.Length; i++)
             {
                 var key = FacilityKeys.All[i];

@@ -118,6 +118,39 @@
                     </controls:SettingCard.Slot>
                 </controls:SettingCard>
 
+                <TextBlock Text="三角洲数据帝" Style="{StaticResource BodyStrongTextBlockStyle}"
+                           Margin="0,12,0,0" />
+                <controls:SettingCard Glyph="&#xE72E;" Header="数据帝 Token">
+                    <controls:SettingCard.Slot>
+                        <PasswordBox Width="280" MaxLength="32"
+                                     Password="{x:Bind Vm.ManufactureToken, Mode=TwoWay}"
+                                     AutomationProperties.Name="数据帝 Token" />
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+                <controls:SettingCard Glyph="&#xE713;" Header="设施等级"
+                                      Description="按游戏内等级设置,用于计算制造时长与每小时利润。">
+                    <controls:SettingCard.Slot>
+                        <Grid ColumnSpacing="12" RowSpacing="8">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <NumberBox Header="技术中心" Width="110" Minimum="1" Maximum="3"
+                                       SpinButtonPlacementMode="Compact" Value="{x:Bind Vm.TechLevel, Mode=TwoWay}" />
+                            <NumberBox Grid.Column="1" Header="工作台" Width="110" Minimum="1" Maximum="3"
+                                       SpinButtonPlacementMode="Compact" Value="{x:Bind Vm.WorkbenchLevel, Mode=TwoWay}" />
+                            <NumberBox Grid.Row="1" Header="制药台" Width="110" Minimum="1" Maximum="3"
+                                       SpinButtonPlacementMode="Compact" Value="{x:Bind Vm.PharmacyLevel, Mode=TwoWay}" />
+                            <NumberBox Grid.Row="1" Grid.Column="1" Header="防具台" Width="110" Minimum="1" Maximum="3"
+                                       SpinButtonPlacementMode="Compact" Value="{x:Bind Vm.ArmorLevel, Mode=TwoWay}" />
+                        </Grid>
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+                <controls:SettingCard Glyph="&#xE72C;" Header="可制造物品列表"
+                                      Description="{x:Bind Vm.ManufactureDataStatus, Mode=OneWay}">
+                    <controls:SettingCard.Slot>
+                        <Button Content="刷新数据" Command="{x:Bind Vm.RefreshManufactureDataCommand}" />
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+
                 <!-- 运行 -->
                 <TextBlock Text="运行" Style="{StaticResource BodyStrongTextBlockStyle}"
                            Margin="0,12,0,0" />

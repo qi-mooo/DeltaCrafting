@@ -34,6 +34,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     public ProfitPlanService ProfitPlan { get; }
     public DeviceApiService DeviceApi { get; }
     public SteamStatusMonitor SteamStatus { get; }
+    public CancellationToken AppStopToken => _appStop.Token;
 
     public ShellViewModel ShellVm { get; }
     public OverviewViewModel OverviewVm { get; }
@@ -106,7 +107,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
 
         Coordinator = new AutomationCoordinator(launch, nav, collect, craft, abort, scan, this,
             this, this, shutdown, engine, probe, WindowBrick, SleepGuard, () => Settings, () => Plan,
-            Notifier, clock, Log);
+            Notifier, clock, Log, prepareCraft: (plan, ct) => ProfitPlan!.PrepareCraftAsync(plan, ct));
 
         Updater = new UpdateService(this, new UpdateCoordinator(), Log);
 
@@ -114,12 +115,11 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         OverviewVm = new OverviewViewModel(Coordinator, UiSink, this);
         PlanVm = new PlanViewModel(this);
         LogVm = new LogViewModel(this);
-        // 服务在 VM 之后构造(应用推荐时要刷新 PlanVm),循环随调度循环一起启动。
-        ProfitPlan = new ProfitPlanService(this, new ProfitPlanCoordinator(), Log);
+        // 推荐仅在制造前或手动刷新时查询;构造时不访问数据帝。
+        ProfitPlan = new ProfitPlanService(this, Log);
         DeviceApi = new DeviceApiService(this);
 
         _ = Task.Run(() => Coordinator.RunSchedulerLoopAsync(_appStop.Token));
-        _ = Task.Run(() => ProfitPlan.RunLoopAsync(_appStop.Token));
         _ = Task.Run(() => RunSteamStatusLoopAsync(_appStop.Token));
     }
 
@@ -210,6 +210,20 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     public IReadOnlyList<CatalogItem> ItemsFor(FacilityKey key)
     {
         lock (_catalogGate) return Catalog.For(key).ToArray();
+    }
+
+    public void ReplaceCatalog(ItemCatalog catalog)
+    {
+        lock (_catalogGate)
+        {
+            File.Copy(Paths.ItemsPath, Paths.ItemsPath + ".before-api.bak", overwrite: true);
+            Store.Save(Paths.ItemsPath, catalog);
+            Catalog.Facilities = catalog.Facilities;
+            Catalog.Source = catalog.Source;
+            Catalog.UpdatedAt = catalog.UpdatedAt;
+            Catalog.Revision = catalog.Revision;
+        }
+        PlanVm.RebuildFromCatalog();
     }
 
     /// <summary>

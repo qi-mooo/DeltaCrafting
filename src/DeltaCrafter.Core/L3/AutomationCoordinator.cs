@@ -34,6 +34,7 @@ public sealed partial class AutomationCoordinator : IDisposable
     private readonly IClock _clock;
     private readonly ILogger _log;
     private readonly SteamActivityGuard _steamActivity;
+    private readonly Func<FacilityPlan, CancellationToken, Task>? _prepareCraft;
     private readonly SemaphoreSlim _runLock = new(1, 1);
     private CancellationTokenSource? _runCts;
     private readonly object _runCtsGate = new();
@@ -48,7 +49,8 @@ public sealed partial class AutomationCoordinator : IDisposable
         ScheduleEngine engine,
         ScreenProbe probe, GameWindowBrick windowBrick, SleepGuardBrick sleepGuard,
         Func<AppSettings> settings, Func<CraftPlanConfig> plan, INotifier notifier,
-        IClock clock, ILogger log, SteamActivityGuard? steamActivity = null)
+        IClock clock, ILogger log, SteamActivityGuard? steamActivity = null,
+        Func<FacilityPlan, CancellationToken, Task>? prepareCraft = null)
     {
         _launch = launch; _nav = nav; _collect = collect; _craft = craft; _abort = abort;
         _scan = scan; _catalogSink = catalogSink; _catalog = catalogLookup;
@@ -58,6 +60,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         _settings = settings; _plan = plan; _notifier = notifier; _clock = clock;
         _log = log.ForContext<AutomationCoordinator>();
         _steamActivity = steamActivity ?? new SteamActivityGuard(new SteamActivityClient(), clock, launch.HasAssistantStartedGame);
+        _prepareCraft = prepareCraft;
     }
 
     /// <summary>UI 读取的设施状态快照(浅拷贝,避免与执行线程共享可变对象)。</summary>
@@ -315,6 +318,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         RunReport report, HashSet<FacilityKey> blocked, CancellationToken ct)
     {
         string name = FacilityKeys.DisplayName(fp.Key);
+        await PrepareCraftAsync(fp, ct);
         if (string.IsNullOrWhiteSpace(fp.ItemName))
         {
             _engine.RecordObservation(fp.Key, FacilityPhase.NeedsManual, "", null, "未配置制造物品");
@@ -337,6 +341,15 @@ public sealed partial class AutomationCoordinator : IDisposable
             blocked.Add(fp.Key);
             report.Add($"{name}受阻:{result.BlockReason},等待人工处理");
         }
+    }
+
+    internal Task PrepareCraftAsync(FacilityPlan plan, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (plan.Mode != CraftMode.HourlyProfit) return Task.CompletedTask;
+        Publish(new(EngineMode.Running, $"查询{FacilityKeys.DisplayName(plan.Key)}每小时利润…", null));
+        return _prepareCraft?.Invoke(plan, ct)
+            ?? throw new InvalidOperationException("制造前行情查询服务未配置。");
     }
 
     private async Task<RunReport> ExecuteGuardedAsync(string trigger, bool affectsSchedule,

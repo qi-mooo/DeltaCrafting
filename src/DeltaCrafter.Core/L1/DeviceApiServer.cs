@@ -15,7 +15,7 @@ public sealed class DeviceApiServer : IDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly SemaphoreSlim _slots = new(8);
     private readonly Func<CancellationToken, Task<DeviceStatus>> _status;
-    private readonly Func<string, CancellationToken, Task<DeviceActionResult>> _action;
+    private readonly Func<DeviceActionRequest, CancellationToken, Task<DeviceActionResult>> _action;
     private readonly Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? _settings;
     private readonly Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? _items;
     private readonly ILogger _log;
@@ -27,7 +27,7 @@ public sealed class DeviceApiServer : IDisposable
 
     public DeviceApiServer(DeviceApiSettings settings,
         Func<CancellationToken, Task<DeviceStatus>> status,
-        Func<string, CancellationToken, Task<DeviceActionResult>> action, ILogger log,
+        Func<DeviceActionRequest, CancellationToken, Task<DeviceActionResult>> action, ILogger log,
         Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? updateSettings = null,
         Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? getItems = null)
     {
@@ -162,12 +162,12 @@ public sealed class DeviceApiServer : IDisposable
                     return;
                 }
                 var command = JsonSerializer.Deserialize<DeviceActionRequest>(body.AsSpan(0, count), Json);
-                if (command?.Action is not ("start" or "sync" or "close-game" or "stop" or "pause" or "resume"))
+                if (command is null || !command.IsValid())
                 {
                     await ReplyAsync(context, 400, new { error = "invalid_action" }, ct);
                     return;
                 }
-                var result = await _action(command.Action, ct).WaitAsync(ct);
+                var result = await _action(command, ct).WaitAsync(ct);
                 await ReplyAsync(context, result.StatusCode, new { message = result.Message }, ct);
             }
         }

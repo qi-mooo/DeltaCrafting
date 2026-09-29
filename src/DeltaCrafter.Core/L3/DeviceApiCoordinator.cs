@@ -7,7 +7,7 @@ namespace DeltaCrafter.Core.L3;
 public sealed class DeviceApiCoordinator : IDisposable
 {
     private readonly Func<CancellationToken, Task<DeviceStatus>> _status;
-    private readonly Func<string, CancellationToken, Task<DeviceActionResult>> _action;
+    private readonly Func<DeviceActionRequest, CancellationToken, Task<DeviceActionResult>> _action;
     private readonly Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? _settings;
     private readonly Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? _items;
     private readonly ILogger _log;
@@ -16,7 +16,7 @@ public sealed class DeviceApiCoordinator : IDisposable
     public event Action? Changed;
 
     public DeviceApiCoordinator(Func<CancellationToken, Task<DeviceStatus>> status,
-        Func<string, CancellationToken, Task<DeviceActionResult>> action, ILogger log,
+        Func<DeviceActionRequest, CancellationToken, Task<DeviceActionResult>> action, ILogger log,
         Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? updateSettings = null,
         Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? getItems = null)
     {
@@ -71,9 +71,12 @@ public sealed class DeviceApiCoordinator : IDisposable
         {
             var runtime = state.Facilities.FirstOrDefault(f => f.Key == key) ?? new FacilityRuntime { Key = key };
             var planned = plan.For(key);
+            // Project completion for the display without changing the scheduler's observation.
+            var phase = runtime.Phase == FacilityPhase.Crafting && runtime.ReadyAt is { } ready && ready <= now
+                ? FacilityPhase.ReadyToCollect : runtime.Phase;
             return new DeviceFacilityStatus(FacilityKeys.JsonKey(key), FacilityKeys.DisplayName(key),
                 planned.Enabled, planned.Mode.ToString(), planned.ItemName,
-                runtime.Phase.ToString(), runtime.ItemName, runtime.ReadyAt,
+                phase.ToString(), runtime.ItemName, runtime.ReadyAt,
                 runtime.Phase == FacilityPhase.Crafting ? Remaining(runtime.ReadyAt, now) : null,
                 runtime.ManualReason, runtime.ObservedAt,
                 runtime.Phase == FacilityPhase.Crafting && runtime.StartedAt is { } start

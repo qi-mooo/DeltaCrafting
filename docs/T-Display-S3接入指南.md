@@ -69,7 +69,10 @@ Windows 串口填写实际的 `COM5` 等端口,macOS 填 `/dev/cu.usbmodemXXXX`�
 列表读取电脑配方目录、保留已有手填物品，进入时定位到已选项；GPIO 14 循环浏览。
 仅收到保存成功才自动返回，失败留在原页。目录超过 254 项时提示在电脑选择。
 选择状态栏后按确认进入全局菜单，包括自动循环、Steam 游戏检测、收取后行为、
-开始制造、识别当前任务、关闭游戏和返回。超出一屏时菜单随焦点滚动。
+开始制造、识别当前任务、关闭游戏、刷新数据和返回。超出一屏时菜单随焦点滚动。
+「刷新数据」更新三角洲数据帝四设施物品列表,不启动游戏、不修改计划;结果显示在菜单底部。
+每小时利润最高的设施设置提供「刷新利润物品」,只更新该设施下一轮推荐。
+每小时利润最高也会在实际开工前查询一次;自定义和总利润模式不自动查询。
 关闭游戏只针对本机客户端，包含最小化窗口；不要求 Steam 空闲或已校准，执行中须先停止任务。
 开始制造按 App 的计划执行一轮；识别当前任务只观察四设施，不领取或开工。
 两者沿用 Steam 检测、校准、更新闸门和执行锁；不会自动开启循环。
@@ -77,14 +80,15 @@ Windows 串口填写实际的 `COM5` 等端口,macOS 填 `/dev/cu.usbmodemXXXX`�
 请求超时时显示结果未知,不自动重试。
 
 默认每 3 秒获取一次状态,屏幕目标 60 FPS 绘制,倒计时按设备本地单调时钟推算,无需 NTP。
-API 返回的完成时刻来自游戏 OCR。即使倒计时归零,仍保留服务器观测的阶段,
-不会凭计时将「制造中」改成「可领取」。禁用计划的设施仍显示已观测的任务。
+API 返回的完成时刻来自游戏 OCR。制造倒计时归零后,显示阶段由「制造中」变为「待收取」,
+但不修改持久化观测或直接触发领取;自动流程仍先识别画面。「空闲中」须由实际识别确认。
+禁用计划的设施仍显示已观测的任务。
 网络错误时保留四格旧数据,状态栏显示离线,停止倒计时且禁用保存。
 网络任务独立运行,重连不阻塞按键。
 
 每格底部显示制造进度条。客户端确认开工后保存起点,按实际 OCR 完成时刻计算总时长。
 填充比例为 (总时长 − 剩余时间) ÷ 总时长;未知总时长保留空框,离线冻结。
-倒计时归零可填满,但不会改变设施的观测状态。
+待收取时填满进度条,空闲时显示空框。
 状态栏右侧显示四格电池图标,不显示百分比。GPIO 4 电压估算电量,无效读数显示叉号;
 USB 充电电压可能偏高,无电池情况不一定能可靠识别。
 
@@ -116,7 +120,7 @@ Authorization: Bearer <配对密钥>
 | `key` | workbench / pharmacy-lab / armor-station / tech-center |
 | `name`, `enabled` | 中文名称、计划是否启用 |
 | `craftMode`, `plannedItemName` | Custom/HourlyProfit/TotalProfit、计划物品 |
-| `phase` | Unknown/Idle/Crafting/ReadyToCollect/NeedsManual |
+| `phase` | Unknown/Idle/Crafting/ReadyToCollect/NeedsManual;制造到期投影为 ReadyToCollect,不改持久化观测 |
 | `itemName` | 游戏中最近观测的当前物品,与计划物品分开 |
 | `readyAt`, `remainingSeconds` | OCR 完成时间和非负剩余秒数;无有效制造倒计时为 null |
 | `totalSeconds` | 本客户端确认开工后的总时长秒数;首次接管已有任务时为 null |
@@ -134,6 +138,16 @@ Invoke-RestMethod 'http://127.0.0.1:17890/api/v1/status' -Headers @{ Authorizati
 ```
 
 ### POST /api/v1/action
+
+`{"action":"refresh-data"}` 提交一次四设施物品列表刷新,立即返回 `202`。
+通过状态中的 `dataRefresh.isRunning/detail/completedAt` 查看结果;重复刷新返回 `409`。
+`dataRefreshSupported` 为 true 表示客户端支持。沿用配对鉴权和控制权限,不返回数据帝 Token。
+网络失败保留原目录;浏览物品列表与状态轮询只读本地数据。
+
+`{"action":"refresh-profit","facility":"workbench"}` 手动刷新一个设施的小时利润推荐。
+仅 HourlyProfit 模式接受,返回 `202`;模式不符、正在执行或正在刷新返回 `409`。
+`profitRefreshSupported` 表示支持此动作;设施中的 `profitRefresh` 提供执行状态和结果。
+刷新不取消当前游戏内任务、不覆盖保存的自定义选择、不替换物品目录。
 
 另需桌面允许控制,以及 `Content-Type: application/json`。请求体示例:
 

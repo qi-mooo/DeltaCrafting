@@ -55,10 +55,47 @@ public sealed partial class SettingsViewModel : ObservableObject
         try { _autostartEnabled = host.Autostart.IsEnabled(); }
         catch (Exception ex) { AutostartError = ex.Message; }
         host.DeviceApi.Changed += () => OnPropertyChanged(nameof(DeviceApiStatus));
+        host.ProfitPlan.Changed += () =>
+        {
+            OnPropertyChanged(nameof(ManufactureDataStatus));
+            RefreshManufactureDataCommand.NotifyCanExecuteChanged();
+        };
     }
 
     private AppSettings S => _host.Settings;
     private void Save() => _host.SaveSettings();
+
+    public string ManufactureToken
+    {
+        get => S.ManufactureApi.Token;
+        set
+        {
+            string token = value?.Trim() ?? "";
+            if (token == S.ManufactureApi.Token) return;
+            S.ManufactureApi.Token = token;
+            Save(); _host.ProfitPlan.SettingsChanged(); OnPropertyChanged();
+        }
+    }
+
+    public double TechLevel { get => S.ManufactureApi.LevelFor(FacilityKey.TechCenter); set => SetLevel(FacilityKey.TechCenter, value); }
+    public double WorkbenchLevel { get => S.ManufactureApi.LevelFor(FacilityKey.Workbench); set => SetLevel(FacilityKey.Workbench, value); }
+    public double PharmacyLevel { get => S.ManufactureApi.LevelFor(FacilityKey.PharmacyLab); set => SetLevel(FacilityKey.PharmacyLab, value); }
+    public double ArmorLevel { get => S.ManufactureApi.LevelFor(FacilityKey.ArmorStation); set => SetLevel(FacilityKey.ArmorStation, value); }
+
+    private void SetLevel(FacilityKey key, double value)
+    {
+        if (!double.IsFinite(value)) return;
+        int level = Math.Clamp((int)value, 1, 3);
+        if (S.ManufactureApi.LevelFor(key) == level) return;
+        S.ManufactureApi.FacilityLevels[FacilityKeys.JsonKey(key)] = level;
+        Save(); _host.ProfitPlan.SettingsChanged();
+    }
+
+    public string ManufactureDataStatus => _host.ProfitPlan.DataRefresh.Detail;
+    private bool CanRefreshManufactureData() => !_host.ProfitPlan.DataRefresh.IsRunning;
+
+    [RelayCommand(CanExecute = nameof(CanRefreshManufactureData))]
+    private void RefreshManufactureData() => _host.ProfitPlan.TryRefreshData();
 
     public string DeviceApiStatus => _host.DeviceApi.StatusText;
     public string DeviceApiKey => S.DeviceApi.ApiKey;

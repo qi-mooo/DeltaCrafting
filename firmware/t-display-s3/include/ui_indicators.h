@@ -1,5 +1,13 @@
 #pragma once
 #include <stdint.h>
+#include <string.h>
+
+inline const char *facilityDisplayPhase(const char *phase, int32_t remaining, uint32_t elapsed, bool fresh)
+{
+    if (strcmp(phase, "Crafting") == 0 && fresh && remaining >= 0 && uint32_t(remaining) <= elapsed)
+        return "ReadyToCollect";
+    return phase;
+}
 
 inline int batteryBars(uint32_t millivolts)
 {

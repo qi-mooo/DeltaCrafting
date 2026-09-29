@@ -25,6 +25,8 @@ const char *const NAMES[] = {"工作台", "制药台", "防具台", "技术中�
 struct Facility {
     String item, plannedItem, phase, reason, craftMode;
     bool enabled = false;
+    bool profitRefreshing = false;
+    String profitDetail;
     int32_t remaining = -1, total = -1;
 };
 
@@ -36,11 +38,14 @@ struct Snapshot {
     bool lastRunFailed = false;
     bool steamDetection = false, settingsSupported = false, syncSupported = false;
     bool itemSelectionSupported = false, closeGameSupported = false;
+    bool dataRefreshSupported = false, dataRefreshing = false;
+    bool profitRefreshSupported = false;
+    String dataRefreshDetail;
     int32_t nextRun = -1;
     uint32_t fetchedAt = 0, noticeAt = 0;
 };
 
-enum class Command : uint8_t { Refresh, Start, Sync, Stop, Pause, Resume, Items, CloseGame };
+enum class Command : uint8_t { Refresh, Start, Sync, Stop, Pause, Resume, Items, CloseGame, RefreshData, RefreshProfit };
 enum class Setting : uint8_t { None, FacilityEnabled, CraftMode, AutoLoop, SteamDetection, AfterRun, PlannedItem };
 struct Request {
     Command command = Command::Refresh;
@@ -158,6 +163,10 @@ bool parseStatus(JsonDocument &doc, Snapshot &next)
     next.syncSupported = doc["syncSupported"] | false;
     next.itemSelectionSupported = doc["itemSelectionSupported"] | false;
     next.closeGameSupported = doc["closeGameSupported"] | false;
+    next.dataRefreshSupported = doc["dataRefreshSupported"] | false;
+    next.profitRefreshSupported = doc["profitRefreshSupported"] | false;
+    next.dataRefreshing = doc["dataRefresh"]["isRunning"] | false;
+    next.dataRefreshDetail = doc["dataRefresh"]["detail"] | "";
     String nextAt = doc["nextRunAt"] | "";
     if (nextAt.length() >= 19 && nextAt[10] == 'T' && nextAt[13] == ':')
         next.nextRunClock = nextAt.substring(11, 16);
@@ -179,6 +188,8 @@ bool parseStatus(JsonDocument &doc, Snapshot &next)
         f.phase = row["phase"].as<String>();
         f.craftMode = row["craftMode"] | "Custom";
         f.reason = row["manualReason"] | "";
+        f.profitRefreshing = row["profitRefresh"]["isRunning"] | false;
+        f.profitDetail = row["profitRefresh"]["detail"] | "";
     }
     return seen == 15;
 }
@@ -220,28 +231,29 @@ void pollStatus()
     xSemaphoreGive(stateMutex);
 }
 
-void sendAction(Command command)
+void sendAction(Command command, uint8_t facility)
 {
     Snapshot s = readSnapshot();
-    if (!fresh(s) || !s.control || s.running) {
+    if (!fresh(s) || !s.control || (s.running && command != Command::RefreshData)) {
         setNotice(!fresh(s) ? "设备离线" : !s.control ? "电脑未允许设备控制" : "任务正在执行");
         return;
     }
-    const char *action = command == Command::CloseGame ? "close-game" : command == Command::Start ? "start" : command == Command::Stop ? "stop"
+    const char *action = command == Command::RefreshProfit ? "refresh-profit" : command == Command::RefreshData ? "refresh-data" : command == Command::CloseGame ? "close-game" : command == Command::Start ? "start" : command == Command::Stop ? "stop"
         : command == Command::Sync ? "sync" : command == Command::Pause ? "pause" : "resume";
     WiFiClient client;
     HTTPClient http;
     beginHttp(http, client, "/api/v1/action");
     http.addHeader("Content-Type", "application/json");
-    StaticJsonDocument<64> doc;
+    StaticJsonDocument<128> doc;
     doc["action"] = action;
+    if (command == Command::RefreshProfit) doc["facility"] = KEYS[facility];
     String body;
     serializeJson(doc, body);
     int code = http.POST(body);
     http.end();
     // Never retry a control request: a lost reply does not mean the action was rejected.
     setNotice(code == 200 || code == 202
-        ? (command == Command::CloseGame ? "已提交关闭游戏" : command == Command::Sync ? "已提交识别当前任务" : "已提交开始制造")
+        ? (command == Command::RefreshProfit ? "已提交刷新利润物品" : command == Command::RefreshData ? "已提交刷新数据" : command == Command::CloseGame ? "已提交关闭游戏" : command == Command::Sync ? "已提交识别当前任务" : "已提交开始制造")
         : code <= 0 ? "结果未知,正在刷新" : code == 409 ? "任务执行中或正在更新" : httpError(code));
 }
 
@@ -349,7 +361,7 @@ void networkTask(void *)
         } else {
             if (hasCommand && request.setting != Setting::None) savedItem = saveSetting(request);
             else if (hasCommand && request.command == Command::Items) fetched = fetchItems(request.facility);
-            else if (hasCommand && request.command != Command::Refresh) sendAction(request.command);
+            else if (hasCommand && request.command != Command::Refresh) sendAction(request.command, request.facility);
             if (!wasConnected || hasCommand || millis() - lastPoll >= DELTA_POLL_MS) {
                 pollStatus();
                 lastPoll = millis();
@@ -403,12 +415,18 @@ String countdown(int32_t remaining, const Snapshot &s)
     return result;
 }
 
+String displayPhase(const Facility &facility, const Snapshot &s)
+{
+    return facilityDisplayPhase(facility.phase.c_str(), facility.remaining,
+        uint32_t(millis() - s.fetchedAt) / 1000, fresh(s));
+}
+
 String phaseName(const String &phase)
 {
     if (phase == "Crafting") return "制造中";
-    if (phase == "ReadyToCollect") return "可领取";
+    if (phase == "ReadyToCollect") return "待收取";
     if (phase == "NeedsManual") return "需人工";
-    if (phase == "Idle") return "空闲";
+    if (phase == "Idle") return "空闲中";
     return "未识别";
 }
 
@@ -475,14 +493,14 @@ void positionMenu()
     settingsMenu.pointer_h_now = 29;
 }
 
-void drawProgress(int x, int y, const Facility &facility, const Snapshot &s)
+void drawProgress(int x, int y, const Facility &facility, const String &phase, const Snapshot &s)
 {
     canvas.setDrawColor(1);
     canvas.drawFrame(x, y, 140, 4);
     if (!s.valid) return;
-    if (facility.phase == "ReadyToCollect") {
+    if (phase == "ReadyToCollect") {
         canvas.drawBox(x + 1, y + 1, 138, 2);
-    } else if (facility.phase == "Crafting") {
+    } else if (phase == "Crafting") {
         int32_t remaining = facility.remaining;
         if (remaining >= 0 && fresh(s))
             remaining = max(int32_t(0), remaining - int32_t((millis() - s.fetchedAt) / 1000));
@@ -529,13 +547,20 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         constexpr uint8_t order[] = {3, 0, 1, 2};
         for (uint8_t cell = 0; cell < 4; ++cell) {
             const auto &f = s.facilities[order[cell]];
+            String phase = displayPhase(f, s);
             int x = (cell % 2) * 160, y = (cell / 2) * 72;
             border(x + 1, y + 1, 158, 70, false);
             textAt(x + 10, y + 21, 76, NAMES[order[cell]]);
-            textAt(x + 87, y + 21, 64, !s.valid ? "待连接" : !f.enabled ? "已停用" : phaseName(f.phase));
-            textAt(x + 10, y + 39, 140, !s.valid ? "等待数据" : f.item.isEmpty() ? f.plannedItem : f.item);
-            textAt(x + 10, y + 56, 140, String("剩余 ") + countdown(f.remaining, s));
-            drawProgress(x + 10, y + 61, f, s);
+            textAt(x + 87, y + 21, 64, !s.valid ? "待连接" : phaseName(phase));
+            textAt(x + 10, y + 39, 140, !s.valid ? "等待数据"
+                : phase == "Idle" ? f.plannedItem : f.item.isEmpty() ? f.plannedItem : f.item);
+            String detail = !s.valid ? "等待数据"
+                : phase == "Crafting" ? String("剩余 ") + countdown(f.remaining, s)
+                : phase == "ReadyToCollect" ? "已完成待收取"
+                : phase == "Idle" ? "暂无制造任务"
+                : phase == "NeedsManual" ? f.reason : "等待识别";
+            textAt(x + 10, y + 56, 140, detail);
+            drawProgress(x + 10, y + 61, f, phase, s);
         }
     } else {
         String title = ui.page == UiPage::Global ? "全局设置"
@@ -549,7 +574,8 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             menuRow(0, String("设施: ") + (!s.valid ? "未知" : f.enabled ? "启用" : "停用"));
             menuRow(1, String("制造模式: ") + craftModeName(f.craftMode));
             if (ui.customMode) menuRow(2, String("制造物品: ") + (f.plannedItem.isEmpty() ? "未选择" : f.plannedItem));
-            menuRow(ui.customMode ? 3 : 2, "返回主界面");
+            else if (ui.hourlyMode) menuRow(2, f.profitRefreshing ? "刷新利润物品 (刷新中)" : "刷新利润物品");
+            menuRow(ui.customMode || ui.hourlyMode ? 3 : 2, "返回主界面");
         } else if (ui.page == UiPage::Global) {
             menuRow(0, String("自动循环: ") + (s.autoLoop ? "开启" : "关闭"));
             menuRow(1, String("Steam 检测: ") + (s.steamDetection ? "开启" : "关闭"));
@@ -557,7 +583,8 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             menuRow(3, s.running ? "开始制造 (执行中)" : "开始制造");
             menuRow(4, s.running ? "识别当前任务 (执行中)" : "识别当前任务");
             menuRow(5, s.running ? "关闭游戏 (请先停止任务)" : "关闭游戏");
-            menuRow(6, "返回主界面");
+            menuRow(6, s.dataRefreshing ? "刷新数据 (刷新中)" : "刷新数据");
+            menuRow(7, "返回主界面");
         } else if (ui.page == UiPage::CraftMode) {
             for (uint8_t i = 0; i < 3; ++i)
                 menuRow(i, String(f.craftMode == CRAFT_MODES[i] ? "* " : "  ") + craftModeName(CRAFT_MODES[i]));
@@ -590,6 +617,8 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             : ui.page == UiPage::Items && !itemList.error.isEmpty() ? itemList.error
             : !fresh(s) ? "离线 / 可浏览,暂不能保存"
             : !s.control ? "只读 / 电脑未允许设备控制"
+            : ui.page == UiPage::Global && (ui.row == 6 || s.dataRefreshing) && !s.dataRefreshDetail.isEmpty() ? s.dataRefreshDetail
+            : ui.page == UiPage::Facility && ui.hourlyMode && ui.row == 2 ? f.profitDetail
             : ui.page == UiPage::Items ? (itemSaving ? "正在保存..." : "循环选择 / 长按确认保存")
             : s.running || s.mode == "WaitingSchedule" || s.mode == "Faulted" ? s.detail : gameStatus(s);
         textAt(8, 165, 304, hint);
@@ -622,6 +651,7 @@ void draw()
     UiPage before = ui.page;
     Snapshot s = readSnapshot();
     ui.customMode = s.facilities[ui.facility()].craftMode == "Custom";
+    ui.hourlyMode = s.facilities[ui.facility()].craftMode == "HourlyProfit";
     if (ui.page == UiPage::Facility && ui.row >= ui.count()) ui.row = ui.count() - 1;
     xSemaphoreTake(stateMutex, portMAX_DELAY);
     bool receivedItems = itemsReady;
@@ -699,14 +729,20 @@ bool submit(Setting setting, uint8_t value)
 void submitAction(Command command)
 {
     Snapshot s = readSnapshot();
-    if (!fresh(s) || !s.control || s.running || (command == Command::Sync && !s.syncSupported)
-        || (command == Command::CloseGame && !s.closeGameSupported)) {
+    if (!fresh(s) || !s.control || (s.running && command != Command::RefreshData) || (command == Command::Sync && !s.syncSupported)
+        || (command == Command::CloseGame && !s.closeGameSupported)
+        || (command == Command::RefreshData && !s.dataRefreshSupported)
+        || (command == Command::RefreshProfit && !s.profitRefreshSupported)) {
         setNotice(!fresh(s) ? "设备离线,请求未发送" : !s.control ? "电脑未允许设备控制"
             : s.running ? "任务正在执行" : "请更新电脑客户端");
         return;
     }
+    if (command == Command::RefreshData && s.dataRefreshing) { setNotice("正在刷新数据,请稍候"); return; }
+    if (command == Command::RefreshProfit && (s.facilities[ui.facility()].craftMode != "HourlyProfit"
+        || s.facilities[ui.facility()].profitRefreshing)) { setNotice("模式已改变或正在刷新"); return; }
     Request request;
     request.command = command;
+    request.facility = ui.facility();
     enqueueRequest(request);
 }
 
@@ -740,6 +776,7 @@ void activateSelection(bool held)
                 if (s.facilities[ui.facility()].craftMode == CRAFT_MODES[i]) selected = i;
             ui.open(UiPage::CraftMode, selected);
         } else if (ui.row == 2 && ui.customMode) loadItems();
+        else if (ui.row == 2 && ui.hourlyMode) submitAction(Command::RefreshProfit);
         else ui.open(UiPage::Home);
     } else if (ui.page == UiPage::Items) {
         if (ui.row == ui.itemCount) ui.open(UiPage::Facility, 2);
@@ -765,6 +802,7 @@ void activateSelection(bool held)
         } else if (ui.row == 3) submitAction(Command::Start);
         else if (ui.row == 4) submitAction(Command::Sync);
         else if (ui.row == 5) submitAction(Command::CloseGame);
+        else if (ui.row == 6) submitAction(Command::RefreshData);
         else ui.open(UiPage::Home);
     } else if (ui.page == UiPage::CraftMode) {
         if (ui.row == 3 || submit(Setting::CraftMode, ui.row)) ui.open(UiPage::Facility, 1);

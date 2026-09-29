@@ -7,12 +7,13 @@ struct UiState {
     UiPage page = UiPage::Home;
     uint8_t home = 0, row = 0;
     bool customMode = false;
+    bool hourlyMode = false;
     uint8_t itemCount = 0;
 
     uint8_t count() const
     {
         return page == UiPage::Home ? 5 : page == UiPage::Items ? itemCount + 1
-            : page == UiPage::Facility ? (customMode ? 4 : 3) : page == UiPage::Global ? 7 : 4;
+            : page == UiPage::Facility ? (customMode || hourlyMode ? 4 : 3) : page == UiPage::Global ? 8 : 4;
     }
 
     void move(int direction)

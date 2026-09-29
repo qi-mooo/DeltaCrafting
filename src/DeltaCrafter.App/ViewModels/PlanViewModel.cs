@@ -143,7 +143,7 @@ public sealed partial class PlanViewModel : ObservableObject
 
     /// <summary>至少一个设施启用利润模式时显示说明横幅。</summary>
     public bool IsProfitMode =>
-        _host.Plan.Facilities.Any(f => f.Mode != CraftMode.Custom);
+        _host.Plan.Facilities.Any(f => f.Mode == CraftMode.HourlyProfit);
 
     public string ProfitBannerTitle => "设施利润推荐已启用";
 
@@ -151,9 +151,8 @@ public sealed partial class PlanViewModel : ObservableObject
     {
         get
         {
-            const string baseText = "行情在应用启动后预热并于每个整点后台更新;选择利润模式时优先使用最近缓存,缓存为空则立即获取;自定义物品的设施仍可手选。";
             string status = _host.ProfitPlan.LastStatus;
-            return status.Length > 0 ? baseText + "\n" + status : baseText;
+            return status.Length > 0 ? status : "三角洲数据帝行情尚未更新";
         }
     }
 
@@ -167,7 +166,6 @@ public sealed partial class PlanViewModel : ObservableObject
         OnPropertyChanged(nameof(IsProfitMode));
         OnPropertyChanged(nameof(ProfitBannerTitle));
         OnPropertyChanged(nameof(ProfitBannerMessage));
-        _host.ProfitPlan.OnFacilityModeChanged(key, mode);
     }
 
     /// <summary>利润推荐服务每次刷新(成功或失败)后调用,更新横幅里的最近结论。</summary>

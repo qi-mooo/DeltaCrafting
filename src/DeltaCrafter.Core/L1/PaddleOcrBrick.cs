@@ -26,12 +26,13 @@ public sealed class PaddleOcrBrick
         }
     });
 
-    public async Task<OcrReadout> ReadAsync(CapturedFrame frame, NRect area, double upscale = 2)
+    public async Task<OcrReadout> ReadAsync(CapturedFrame frame, NRect area, double upscale = 2,
+        IReadOnlyList<NRect>? iconMasks = null)
     {
         if (!double.IsFinite(upscale) || upscale <= 0)
             throw new ArgumentOutOfRangeException(nameof(upscale));
         await _gate.WaitAsync();
-        try { return await Task.Run(() => Read(frame, area, upscale)); }
+        try { return await Task.Run(() => Read(frame, area, upscale, iconMasks)); }
         catch (Exception ex)
         {
             throw new InvalidOperationException("PaddleOCR 物品识别失败，请检查完整客户端、离线模型及 Visual C++ x64 运行库。已停止本轮，请重试。", ex);
@@ -39,12 +40,12 @@ public sealed class PaddleOcrBrick
         finally { _gate.Release(); }
     }
 
-    private OcrReadout Read(CapturedFrame frame, NRect area, double upscale)
+    private OcrReadout Read(CapturedFrame frame, NRect area, double upscale, IReadOnlyList<NRect>? iconMasks)
     {
         var (x, y, w, h) = PixelMapper.ToPixelRect(area, frame.Width, frame.Height);
         double scale = Math.Min(upscale, 2048.0 / Math.Max(w, h));
         int dw = Math.Max(1, (int)(w * scale)), dh = Math.Max(1, (int)(h * scale));
-        var data = OcrImagePreprocessor.Prepare(frame, x, y, w, h, dw, dh);
+        var data = OcrImagePreprocessor.Prepare(frame, x, y, w, h, dw, dh, iconMasks);
         using var bgra = new Mat(dh, dw, MatType.CV_8UC4);
         Marshal.Copy(data, 0, bgra.Data, data.Length);
         using var bgr = new Mat();

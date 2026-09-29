@@ -37,7 +37,7 @@ public sealed class DeviceApiTests
     }
 
     [Fact]
-    public void Snapshot_keeps_observed_and_planned_items_and_ocr_phase_separate()
+    public void Snapshot_keeps_observed_and_planned_items_and_projects_completion()
     {
         var status = Status();
         Assert.Equal(4, status.Facilities.Count);
@@ -48,12 +48,41 @@ public sealed class DeviceApiTests
         Assert.Equal(10, status.Facilities[0].TotalSeconds);
         Assert.Null(status.Facilities[1].TotalSeconds);
         Assert.Equal(0, status.Facilities[1].RemainingSeconds);
-        Assert.Equal("Crafting", status.Facilities[1].Phase); // 倒计时归零不能假称已领取就绪。
+        Assert.Equal("ReadyToCollect", status.Facilities[1].Phase);
         Assert.Null(status.Facilities[2].RemainingSeconds);
         Assert.Null(status.Facilities[3].RemainingSeconds);
         Assert.Equal(120, status.NextRunInSeconds);
         Assert.Null(Status(autoLoop: false).NextRunAt);
         Assert.Null(Status(autoLoop: false).NextRunInSeconds);
+    }
+
+    [Theory]
+    [InlineData(FacilityPhase.Crafting, 1, FacilityPhase.Crafting)]
+    [InlineData(FacilityPhase.Crafting, 0, FacilityPhase.ReadyToCollect)]
+    [InlineData(FacilityPhase.Crafting, -1, FacilityPhase.ReadyToCollect)]
+    [InlineData(FacilityPhase.Crafting, null, FacilityPhase.Crafting)]
+    [InlineData(FacilityPhase.Idle, -1, FacilityPhase.Idle)]
+    [InlineData(FacilityPhase.ReadyToCollect, null, FacilityPhase.ReadyToCollect)]
+    [InlineData(FacilityPhase.Unknown, -1, FacilityPhase.Unknown)]
+    [InlineData(FacilityPhase.NeedsManual, -1, FacilityPhase.NeedsManual)]
+    public void Completion_projection_preserves_observation_and_works_with_automation_disabled(
+        FacilityPhase observed, int? millisecondsLeft, FacilityPhase expected)
+    {
+        var state = ScheduleState.CreateDefault();
+        var runtime = state.For(FacilityKey.Workbench);
+        runtime.Phase = observed;
+        runtime.ReadyAt = millisecondsLeft is { } left ? Now.AddMilliseconds(left) : null;
+        runtime.ObservedAt = Now.AddHours(-1);
+        var plan = CraftPlanConfig.CreateDefault();
+        plan.For(FacilityKey.Workbench).Enabled = false;
+        var status = DeviceApiCoordinator.CreateStatus("test", Now,
+            new(EngineMode.Idle, "", null), false, new AppSettings { AutoLoopEnabled = false }, plan, state);
+
+        Assert.Equal(expected.ToString(), status.Facilities[0].Phase);
+        Assert.Equal(observed, runtime.Phase);
+        Assert.Equal(runtime.ObservedAt, status.Facilities[0].ObservedAt);
+        Assert.False(status.Facilities[0].Enabled);
+        Assert.Null(status.NextRunAt);
     }
 
     [Theory]
@@ -70,6 +99,7 @@ public sealed class DeviceApiTests
         public DeviceApiServer Api { get; }
         public HttpClient Client { get; }
         public List<string> Actions { get; } = [];
+        public List<DeviceActionRequest> ActionRequests { get; } = [];
         public List<DeviceSettingsRequest> Updates { get; } = [];
 
         public Server(bool control = false,
@@ -82,7 +112,8 @@ public sealed class DeviceApiTests
             Api = new DeviceApiServer(new DeviceApiSettings { ApiKey = Key, Port = port, AllowControl = control },
                 getStatus ?? (_ => Task.FromResult(Status())), (action, _) =>
                 {
-                    Actions.Add(action);
+                    Actions.Add(action.Action);
+                    ActionRequests.Add(action);
                     return Task.FromResult(new DeviceActionResult(202, "accepted"));
                 }, new LoggerConfiguration().CreateLogger(), (update, _) =>
                 {
@@ -133,6 +164,7 @@ public sealed class DeviceApiTests
     [InlineData("start")]
     [InlineData("sync")]
     [InlineData("close-game")]
+    [InlineData("refresh-data")]
     public async Task Read_only_mode_never_dispatches_actions(string action)
     {
         using var server = new Server();
@@ -145,6 +177,7 @@ public sealed class DeviceApiTests
     [InlineData("start")]
     [InlineData("sync")]
     [InlineData("close-game")]
+    [InlineData("refresh-data")]
     [InlineData("stop")]
     [InlineData("pause")]
     [InlineData("resume")]
@@ -168,6 +201,41 @@ public sealed class DeviceApiTests
         using var response = await server.Post(body, type);
         Assert.Equal(code, (int)response.StatusCode);
         Assert.Empty(server.Actions);
+    }
+
+    [Theory]
+    [InlineData("workbench")]
+    [InlineData("tech-center")]
+    [InlineData("pharmacy-lab")]
+    [InlineData("armor-station")]
+    public async Task Profit_refresh_dispatches_the_selected_facility_once(string facility)
+    {
+        using var server = new Server(control: true);
+        using var response = await server.Post(JsonSerializer.Serialize(new DeviceActionRequest("refresh-profit", facility)));
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Equal(new DeviceActionRequest("refresh-profit", facility), Assert.Single(server.ActionRequests));
+    }
+
+    [Theory]
+    [InlineData("{\"action\":\"refresh-profit\"}")]
+    [InlineData("{\"action\":\"refresh-profit\",\"facility\":\"other\"}")]
+    [InlineData("{\"action\":\"refresh-data\",\"facility\":\"workbench\"}")]
+    [InlineData("{\"action\":\"start\",\"unknown\":true}")]
+    public async Task Invalid_facility_requests_never_dispatch(string json)
+    {
+        using var server = new Server(control: true);
+        using var response = await server.Post(json);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(server.ActionRequests);
+    }
+
+    [Fact]
+    public async Task Profit_refresh_requires_control_permission()
+    {
+        using var server = new Server();
+        using var response = await server.Post("{\"action\":\"refresh-profit\",\"facility\":\"workbench\"}");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Empty(server.ActionRequests);
     }
 
     [Fact]
