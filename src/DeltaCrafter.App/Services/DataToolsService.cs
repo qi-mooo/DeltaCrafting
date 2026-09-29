@@ -13,7 +13,9 @@ public sealed class DataToolsService
         { Timeout = TimeSpan.FromSeconds(15), MaxResponseContentBufferSize = 2 * 1024 * 1024 };
     private readonly Dictionary<string, string> _imageUrls = new();
     private readonly Dictionary<string, DataToolImage> _images = new();
+    private readonly Dictionary<string, byte[]> _imageBytes = new();
     private readonly SemaphoreSlim _imageGate = new(1, 1);
+    private readonly SemaphoreSlim _downloadGate = new(1, 1);
     private readonly HashSet<string> _codes = new(StringComparer.Ordinal);
     private readonly object _codesLock = new();
 
@@ -37,16 +39,40 @@ public sealed class DataToolsService
         return result;
     }
 
-    public async Task<DataToolImage> ImageAsync(string id, CancellationToken ct)
+    private string ImageUrl(string id)
     {
         string? url;
         lock (_codesLock) _imageUrls.TryGetValue(id, out url);
         if (string.IsNullOrEmpty(url)) throw new InvalidOperationException("此物品暂无图片，请重新打开集市。");
+        return url;
+    }
+
+    public async Task<byte[]> ImageBytesAsync(string id, CancellationToken ct)
+    {
+        string url = ImageUrl(id);
+        await _downloadGate.WaitAsync(ct);
+        try
+        {
+            if (_imageBytes.TryGetValue(url, out var cached)) return cached;
+            byte[] bytes = await ImageHttp.GetByteArrayAsync(url, ct);
+            if (_imageBytes.Count >= 20) _imageBytes.Clear();
+            _imageBytes[url] = bytes;
+            return bytes;
+        }
+        catch (HttpRequestException) { throw new InvalidOperationException("图片加载失败，请重试。"); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        { throw new TimeoutException("图片加载超时，请重试。"); }
+        finally { _downloadGate.Release(); }
+    }
+
+    public async Task<DataToolImage> ImageAsync(string id, CancellationToken ct)
+    {
+        string url = ImageUrl(id);
         await _imageGate.WaitAsync(ct);
         try
         {
             if (_images.TryGetValue(url, out var cached)) return cached;
-            byte[] bytes = await ImageHttp.GetByteArrayAsync(url, ct);
+            byte[] bytes = await ImageBytesAsync(id, ct);
             using var source = Cv2.ImDecode(bytes, ImreadModes.Unchanged);
             if (source.Empty() || source.Width > 4096 || source.Height > 4096)
                 throw new InvalidOperationException("物品图片格式无效。");

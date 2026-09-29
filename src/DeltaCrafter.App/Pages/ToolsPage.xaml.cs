@@ -120,21 +120,13 @@ public sealed partial class ToolsPage : Page
             int generation = _generation;
             try
             {
-                var image = await _host.DataTools.ImageAsync(entry.Id, _host.AppStopToken);
+                byte[] image = await _host.DataTools.ImageBytesAsync(entry.Id, _host.AppStopToken);
                 if (generation != _generation || _entry != entry || _screen != "market") return;
-                var rgb = Convert.FromBase64String(image.Pixels);
-                byte[] bgra = new byte[image.Width * image.Height * 4];
-                for (int i = 0; i < rgb.Length / 2; i++)
-                {
-                    int color = rgb[i * 2] | rgb[i * 2 + 1] << 8;
-                    bgra[i * 4] = (byte)((color & 31) * 255 / 31);
-                    bgra[i * 4 + 1] = (byte)((color >> 5 & 63) * 255 / 63);
-                    bgra[i * 4 + 2] = (byte)((color >> 11) * 255 / 31);
-                    bgra[i * 4 + 3] = 255;
-                }
-                var bitmap = new WriteableBitmap(image.Width, image.Height);
-                using (var stream = bitmap.PixelBuffer.AsStream()) await stream.WriteAsync(bgra);
-                bitmap.Invalidate();
+                using var stream = new MemoryStream(image);
+                using var random = stream.AsRandomAccessStream();
+                var bitmap = new BitmapImage();
+                await bitmap.SetSourceAsync(random);
+                if (generation != _generation || _entry != entry || _screen != "market") return;
                 MarketImage.Source = bitmap;
                 ImageStatus.Text = "";
             }

@@ -106,13 +106,20 @@ public sealed class DataToolsClient
                     string name = Text(row.GetProperty("name")), gun = Text(row.GetProperty("objectName"));
                     string copy = Text(row.GetProperty("solutionCode"), 256);
                     string mode = Text(row.GetProperty("solutionType"), 16) == "operator" ? "大战场" : "烽火地带";
-                    double price = row.GetProperty("price").GetDouble();
-                    if (!double.IsFinite(price) || price < 0) throw new FormatException();
+                    var lines = new List<string> { gun + " · " + mode };
+                    if (row.TryGetProperty("price", out var priceValue) && priceValue.ValueKind != JsonValueKind.Null)
+                    {
+                        double price = priceValue.GetDouble();
+                        if (!double.IsFinite(price) || price < 0) throw new FormatException();
+                        lines.Add($"价格：{price:N0}");
+                    }
+                    else lines.Add("价格未知");
                     string author = row.TryGetProperty("authorNickname", out var authorValue) && authorValue.ValueKind == JsonValueKind.String
                         && !string.IsNullOrWhiteSpace(authorValue.GetString()) ? Text(authorValue) : "未署名";
+                    lines.Add("作者：" + author);
+                    lines.Add("改枪码：" + copy);
                     entries.Add(new(row.GetProperty("id").GetInt64().ToString(CultureInfo.InvariantCulture),
-                        name, [gun + " · " + mode, $"价格：{price:N0}",
-                        "作者：" + author, "改枪码：" + copy], copy, Author: author));
+                        name, lines, copy, Author: author));
                 }
                 // V2 文档示例和实测均为每页 12 条；末页不能用末页条数反推已浏览数量。
                 int count = root.GetProperty("count").GetInt32();

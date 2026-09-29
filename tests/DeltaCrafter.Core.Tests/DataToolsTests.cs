@@ -88,6 +88,18 @@ public sealed class DataToolsTests
     }
 
     [Fact]
+    public void Battlefield_schemes_without_price_keep_author_and_copy_code()
+    {
+        const string json = """{"code":0,"count":1,"data":[{"id":291,"objectName":"M7战斗步枪","name":"战场M7","solutionCode":"M7战斗步枪-全面战场-EXAMPLE","authorNickname":"作者","solutionType":"operator"}]}""";
+        var result = DataToolsClient.Parse(new("gun", Mode: "operator"), json);
+        var entry = Assert.Single(result.Entries);
+        Assert.Equal("战场M7 · 作者", entry.ListTitle);
+        Assert.Contains("价格未知", entry.Detail);
+        Assert.Equal("M7战斗步枪-全面战场-EXAMPLE", entry.CopyText);
+        Assert.False(result.HasNext);
+    }
+
+    [Fact]
     public async Task Errors_do_not_leak_tokens_or_automatically_retry()
     {
         int attempts = 0;
