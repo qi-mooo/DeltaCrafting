@@ -189,7 +189,9 @@ public sealed class CraftStartFlow
         for (int attempt = 1; attempt <= 2; attempt++)
         {
             string label = await ReadLabelOnceAsync(hwnd, prodSpec);
-            if (label.Length > 0) return label;
+            var kw = _probe.Anchors.Keywords;
+            if (LabelHits(label, kw.ButtonProduce) || LabelHits(label, kw.ButtonReplenish) ||
+                LabelHits(label, kw.ButtonAbort)) return label;
             await Task.Delay(1200, ct);
         }
         return "";
@@ -228,11 +230,11 @@ public sealed class CraftStartFlow
     }
 
     private async Task<string> ReadLabelOnceAsync(nint hwnd, ScreenSpec prodSpec) =>
-        ScreenProbe.Normalize(await _probe.ReadRoiAsync(hwnd, prodSpec.Roi(AnchorKeys.RoiActionButton)));
+        await _probe.ReadProductionButtonAsync(_probe.Capture(hwnd), prodSpec.Roi(AnchorKeys.RoiActionButton));
 
-    private static bool LabelHits(string normalizedLabel, IEnumerable<string> keywords) =>
+    internal static bool LabelHits(string normalizedLabel, IEnumerable<string> keywords) =>
         keywords.Any(k => k.Length > 0 &&
-            normalizedLabel.Contains(ScreenProbe.Normalize(k), StringComparison.Ordinal));
+            normalizedLabel.Equals(ScreenProbe.Normalize(k), StringComparison.Ordinal));
 
     private async Task<TimeSpan> ReadRemainingTimeAsync(nint hwnd, string facility,
         ScreenSpec prodSpec, CancellationToken ct)

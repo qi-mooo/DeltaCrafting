@@ -151,6 +151,16 @@ public sealed class ScreenProbe
     public async Task<string> ReadFrameRoiAsync(CapturedFrame frame, NRect roi, string expectedName) =>
         (await ReadItemAsync(frame, roi, [expectedName], itemTitle: true)).FullText;
 
+    public async Task<string> ReadProductionButtonAsync(CapturedFrame frame, NRect roi)
+    {
+        var kw = Anchors.Keywords;
+        var targets = kw.ButtonProduce.Concat(kw.ButtonReplenish).Concat(kw.ButtonAbort).ToArray();
+        var readout = await ReadItemAsync(frame, roi, targets);
+        string label = Normalize(readout.FullText);
+        _log.Debug("生产操作按钮(PaddleOCR)：{Label}", label);
+        return label;
+    }
+
     /// <summary>物品识别使用离线模型，失败即停止，不自动切回识别率较低的路径。</summary>
     private async Task<OcrReadout> ReadItemAsync(CapturedFrame frame, NRect roi,
         IReadOnlyList<string> expectedNames, double upscale = 2.0,
