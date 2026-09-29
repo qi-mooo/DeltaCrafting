@@ -17,10 +17,18 @@ public:
     void startTransition(bool forward)
     {
         memcpy(previous, pixels, sizeof(pixels));
+        previousImage = currentImage;
         offset = forward ? int(Width) : -int(Width);
     }
 
     float offset = 0;
+    void clearImage() { currentImage.visible = false; }
+    void setImage(int x, int y, const uint16_t *data)
+    {
+        currentImage.x = x; currentImage.y = y; currentImage.visible = true;
+        memcpy(currentImage.pixels, data, sizeof(currentImage.pixels));
+    }
+
 
     void readRow(unsigned y, uint16_t *row) const
     {
@@ -28,11 +36,16 @@ public:
         for (int x = 0; x < int(Width); ++x) {
             int sourceX = x - shift;
             const uint8_t *source = pixels;
+            const Image *picture = &currentImage;
             if (sourceX < 0 || sourceX >= int(Width)) {
                 source = previous;
+                picture = &previousImage;
                 sourceX += shift > 0 ? int(Width) : -int(Width);
             }
             row[x] = source[(y / 8) * Width + sourceX] & (1u << (y % 8)) ? 0xFFFF : 0;
+            if (picture->visible && sourceX >= picture->x && sourceX < picture->x + 96
+                && int(y) >= picture->y && int(y) < picture->y + 96)
+                row[x] = picture->pixels[(y - picture->y) * 96 + sourceX - picture->x];
         }
     }
 
@@ -48,6 +61,8 @@ public:
     }
 
 private:
+    struct Image { uint16_t pixels[96 * 96]{}; int x = 0, y = 0; bool visible = false; };
+    Image currentImage, previousImage;
     uint8_t pixels[Width * TileRows]{};
     uint8_t previous[Width * TileRows]{};
 

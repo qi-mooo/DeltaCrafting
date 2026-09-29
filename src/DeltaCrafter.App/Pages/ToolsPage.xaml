@@ -2,47 +2,61 @@
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:controls="using:DeltaCrafter.App.Controls">
-    <ScrollViewer>
-        <StackPanel Padding="32" Spacing="20" MaxWidth="1100" HorizontalAlignment="Stretch">
-            <controls:PageHeader Title="工具" Subtitle="三角洲数据帝" />
-            <StackPanel x:Name="ToolMenu" Spacing="12">
-                <Button Content="今日密码" Tag="password" Click="OpenTool" HorizontalAlignment="Stretch" Padding="20" />
-                <Button Content="当前集市物品" Tag="market" Click="OpenTool" HorizontalAlignment="Stretch" Padding="20" />
-                <Button Content="改枪码" Tag="gun" Click="OpenTool" HorizontalAlignment="Stretch" Padding="20" />
-            </StackPanel>
-            <StackPanel x:Name="ToolContent" Spacing="16" Visibility="Collapsed">
-                <StackPanel Orientation="Horizontal" Spacing="16">
-                    <Button Click="BackToTools" ToolTipService.ToolTip="返回工具"><FontIcon Glyph="&#xE72B;" /></Button>
-                    <TextBlock x:Name="ToolTitle" FontSize="24" VerticalAlignment="Center" />
-                    <Button x:Name="RefreshButton" Click="RefreshTool" ToolTipService.ToolTip="刷新"><FontIcon Glyph="&#xE72C;" /></Button>
-                    <ProgressRing x:Name="Loading" Width="24" Height="24" IsActive="False" />
-                </StackPanel>
-                <StackPanel x:Name="GunFilters" Orientation="Horizontal" Spacing="12" Visibility="Collapsed">
-                    <ComboBox x:Name="GunMode" SelectedIndex="0" MinWidth="130">
-                        <ComboBoxItem Content="烽火地带" /><ComboBoxItem Content="大战场" />
-                    </ComboBox>
-                    <TextBox x:Name="GunSearch" Width="260" PlaceholderText="枪械或方案名称" MaxLength="60" />
-                    <Button x:Name="SearchButton" Content="查询" Click="SearchGuns" />
-                </StackPanel>
-                <TextBlock x:Name="ToolStatus" TextWrapping="Wrap" />
-                <ItemsControl x:Name="Results">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,12">
-                                <StackPanel Spacing="10">
-                                    <TextBlock Text="{Binding Title}" FontSize="20" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
-                                    <Button Click="CopyCode" Loaded="CopyButtonLoaded" ToolTipService.ToolTip="复制改枪码"><FontIcon Glyph="&#xE8C8;" /></Button>
-                                </StackPanel>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <StackPanel x:Name="Paging" Orientation="Horizontal" Spacing="12" Visibility="Collapsed">
-                    <Button x:Name="PreviousButton" Click="PreviousPage" ToolTipService.ToolTip="上一页"><FontIcon Glyph="&#xE76B;" /></Button>
-                    <Button x:Name="NextButton" Click="NextPage" ToolTipService.ToolTip="下一页"><FontIcon Glyph="&#xE76C;" /></Button>
-                </StackPanel>
-            </StackPanel>
+    <Grid Padding="32" RowSpacing="16" MaxWidth="1100">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid ColumnSpacing="16">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock x:Name="ToolTitle" Text="工具" FontSize="28" TextWrapping="Wrap"/>
+            <TextBlock x:Name="PageNumber" Grid.Column="1" VerticalAlignment="Center"/>
+        </Grid>
+        <StackPanel x:Name="ToolMenu" Grid.Row="1" Spacing="12">
+            <Button Content="今日密码" Tag="password" Click="OpenTool" HorizontalAlignment="Stretch" Padding="20"/>
+            <Button Content="当前集市物品" Tag="market" Click="OpenTool" HorizontalAlignment="Stretch" Padding="20"/>
+            <Button Content="改枪码" Tag="gun" Click="OpenTool" HorizontalAlignment="Stretch" Padding="20"/>
         </StackPanel>
-    </ScrollViewer>
+        <StackPanel x:Name="ModeMenu" Grid.Row="1" Spacing="12" Visibility="Collapsed">
+            <Button Content="烽火地带" Tag="gun" Click="ChooseMode" HorizontalAlignment="Stretch" Padding="20"/>
+            <Button Content="大战场" Tag="operator" Click="ChooseMode" HorizontalAlignment="Stretch" Padding="20"/>
+        </StackPanel>
+        <StackPanel x:Name="QueryMenu" Grid.Row="1" Spacing="12" Visibility="Collapsed">
+            <Button Content="热门" Click="PopularGuns" HorizontalAlignment="Stretch" Padding="20"/>
+            <Button Content="按枪械查询" Click="ChooseWeapon" HorizontalAlignment="Stretch" Padding="20"/>
+        </StackPanel>
+        <ListView x:Name="Results" Grid.Row="1" Visibility="Collapsed" IsItemClickEnabled="True" ItemClick="OpenEntry" SelectionMode="None">
+            <ListView.ItemTemplate><DataTemplate>
+                <Grid Padding="12,18" HorizontalAlignment="Stretch">
+                    <TextBlock Text="{Binding ListTitle}" FontSize="20" TextWrapping="Wrap"/>
+                </Grid>
+            </DataTemplate></ListView.ItemTemplate>
+        </ListView>
+        <Grid x:Name="PasswordDetail" Grid.Row="1" Visibility="Collapsed">
+            <TextBlock x:Name="PasswordText" FontSize="96" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Grid>
+        <Grid x:Name="MarketDetail" Grid.Row="1" Visibility="Collapsed" ColumnSpacing="32">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="3*"/></Grid.ColumnDefinitions>
+            <Grid>
+                <Image x:Name="MarketImage" MaxWidth="320" MaxHeight="320" Stretch="Uniform"/>
+                <TextBlock x:Name="ImageStatus" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap"/>
+            </Grid>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="24">
+                <TextBlock x:Name="MarketName" FontSize="28" TextWrapping="Wrap"/>
+                <Button Content="返回" Click="Back"/>
+            </StackPanel>
+        </Grid>
+        <ScrollViewer x:Name="GunDetail" Grid.Row="1" Visibility="Collapsed">
+            <StackPanel Spacing="20">
+                <TextBlock x:Name="GunName" FontSize="24" TextWrapping="Wrap"/>
+                <TextBlock x:Name="GunText" FontSize="18" TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
+                <Button Content="复制改枪码" Click="CopyCode"/>
+            </StackPanel>
+        </ScrollViewer>
+        <StackPanel x:Name="Toolbar" Grid.Row="2" Orientation="Horizontal" Spacing="16" Visibility="Collapsed">
+            <Button x:Name="BackButton" Click="Back" ToolTipService.ToolTip="返回" AutomationProperties.Name="返回"><FontIcon Glyph="&#xE72B;"/></Button>
+            <Button x:Name="PreviousButton" Click="PreviousPage" ToolTipService.ToolTip="上一页" AutomationProperties.Name="上一页"><FontIcon Glyph="&#xE76B;"/></Button>
+            <Button x:Name="NextButton" Click="NextPage" ToolTipService.ToolTip="下一页" AutomationProperties.Name="下一页"><FontIcon Glyph="&#xE76C;"/></Button>
+            <Button x:Name="RefreshButton" Click="RefreshTool" ToolTipService.ToolTip="刷新" AutomationProperties.Name="刷新"><FontIcon Glyph="&#xE72C;"/></Button>
+            <ProgressRing x:Name="Loading" Width="24" Height="24" IsActive="False"/>
+        </StackPanel>
+        <TextBlock x:Name="ToolStatus" Grid.Row="3" TextWrapping="Wrap"/>
+    </Grid>
 </Page>

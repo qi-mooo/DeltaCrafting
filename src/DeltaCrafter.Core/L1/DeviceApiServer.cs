@@ -20,6 +20,7 @@ public sealed class DeviceApiServer : IDisposable
     private readonly Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? _items;
     private readonly Func<DataToolQuery, CancellationToken, Task<DataToolResult>>? _tools;
     private readonly Func<string, CancellationToken, Task<DeviceActionResult>>? _copyToolCode;
+    private readonly Func<string, CancellationToken, Task<DataToolImage>>? _toolImage;
     private readonly ILogger _log;
     private readonly byte[] _keyHash;
     private readonly bool _allowControl;
@@ -33,7 +34,8 @@ public sealed class DeviceApiServer : IDisposable
         Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? updateSettings = null,
         Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? getItems = null,
         Func<DataToolQuery, CancellationToken, Task<DataToolResult>>? getTool = null,
-        Func<string, CancellationToken, Task<DeviceActionResult>>? copyToolCode = null)
+        Func<string, CancellationToken, Task<DeviceActionResult>>? copyToolCode = null,
+        Func<string, CancellationToken, Task<DataToolImage>>? toolImage = null)
     {
         settings.Validate();
         _status = status;
@@ -42,6 +44,7 @@ public sealed class DeviceApiServer : IDisposable
         _items = getItems;
         _tools = getTool;
         _copyToolCode = copyToolCode;
+        _toolImage = toolImage;
         _log = log;
         _allowControl = settings.AllowControl;
         _keyHash = SHA256.HashData(Encoding.UTF8.GetBytes(settings.ApiKey));
@@ -94,7 +97,7 @@ public sealed class DeviceApiServer : IDisposable
     private async Task HandleAsync(HttpListenerContext context)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(context.Request.Url?.AbsolutePath == "/api/v1/tools" ? 30 : 5));
+        timeout.CancelAfter(TimeSpan.FromSeconds(context.Request.Url?.AbsolutePath is "/api/v1/tools" or "/api/v1/tool-image" ? 30 : 5));
         var ct = timeout.Token;
         try
         {
@@ -111,6 +114,7 @@ public sealed class DeviceApiServer : IDisposable
                 "/api/v1/status" => "GET",
                 "/api/v1/items" => "GET",
                 "/api/v1/tools" => "GET",
+                "/api/v1/tool-image" => "GET",
                 "/api/v1/tool-copy" => "POST",
                 "/api/v1/action" => "POST",
                 "/api/v1/settings" => "POST",
@@ -123,12 +127,27 @@ public sealed class DeviceApiServer : IDisposable
                 context.Response.Headers["Allow"] = method;
                 await ReplyAsync(context, 405, new { error = "method_not_allowed" }, ct);
             }
+            else if (path == "/api/v1/tool-image")
+            {
+                string id = request.QueryString["id"] ?? "";
+                if (id.Length is 0 or > 64 || !id.All(char.IsAsciiDigit))
+                    await ReplyAsync(context, 400, new { error = "invalid_item" }, ct);
+                else if (_toolImage is null)
+                    await ReplyAsync(context, 501, new { error = "image_not_supported" }, ct);
+                else
+                {
+                    try { await ReplyAsync(context, 200, await _toolImage(id, ct).WaitAsync(ct), ct); }
+                    catch (Exception ex) when (ex is InvalidOperationException or TimeoutException)
+                    { await ReplyAsync(context, 502, new { error = ex.Message }, ct); }
+                }
+            }
             else if (path == "/api/v1/tools")
             {
                 int page = 1;
                 bool validPage = request.QueryString["page"] is not { } value || int.TryParse(value, out page);
                 var query = new DataToolQuery(request.QueryString["tool"] ?? "", page,
-                    request.QueryString["mode"] ?? "gun", request.QueryString["search"] ?? "");
+                    request.QueryString["mode"] ?? "gun", request.QueryString["search"] ?? "",
+                    request.QueryString["category"] ?? "全部", request.QueryString["weapon"] ?? "全部");
                 if (!validPage || !query.IsValid())
                     await ReplyAsync(context, 400, new { error = "invalid_tool_query" }, ct);
                 else if (_tools is null)

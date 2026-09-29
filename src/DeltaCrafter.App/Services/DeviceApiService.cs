@@ -28,7 +28,7 @@ public sealed class DeviceApiService : IDisposable
             {
                 string token = await OnUiAsync(() => _host.Settings.ManufactureApi.Token, ct);
                 return await _host.DataTools.FetchAsync(query, token, ct);
-            }, (code, ct) => OnUiAsync(() => _host.DataTools.CopyGunCode(code), ct));
+            }, (code, ct) => OnUiAsync(() => _host.DataTools.CopyGunCode(code), ct), _host.DataTools.ImageAsync);
         _api.Changed += () => _dispatcher.TryEnqueue(() => Changed?.Invoke());
     }
 

@@ -118,6 +118,7 @@ public sealed class DeviceApiTests
         public List<DeviceSettingsRequest> Updates { get; } = [];
         public List<DataToolQuery> ToolQueries { get; } = [];
         public List<string> CopiedCodes { get; } = [];
+        public List<string> ImageIds { get; } = [];
 
         public Server(bool control = false,
             Func<CancellationToken, Task<DeviceStatus>>? getStatus = null)
@@ -145,6 +146,10 @@ public sealed class DeviceApiTests
                 {
                     CopiedCodes.Add(code);
                     return Task.FromResult(new DeviceActionResult(200, "copied"));
+                }, (id, _) =>
+                {
+                    ImageIds.Add(id);
+                    return Task.FromResult(new DataToolImage(96, 96, "AA=="));
                 });
             Api.Start();
             Client = new HttpClient(new HttpClientHandler { UseProxy = false })
@@ -185,6 +190,21 @@ public sealed class DeviceApiTests
             new StringContent("{\"code\":\"M7-ABC123\"}", Encoding.UTF8, "application/json"));
         Assert.Equal(expected, response.StatusCode);
         Assert.Equal(control ? 1 : 0, server.CopiedCodes.Count);
+        Assert.Empty(server.ToolQueries);
+        Assert.Empty(server.Actions);
+    }
+
+    [Fact]
+    public async Task Tool_images_require_authentication_and_only_accept_item_ids_without_querying_tools()
+    {
+        using var server = new Server();
+        server.Client.DefaultRequestHeaders.Authorization = null;
+        Assert.Equal(HttpStatusCode.Unauthorized, (await server.Client.GetAsync("/api/v1/tool-image?id=985")).StatusCode);
+        server.Client.DefaultRequestHeaders.Authorization = new("Bearer", Key);
+        Assert.Equal(HttpStatusCode.BadRequest, (await server.Client.GetAsync("/api/v1/tool-image?id=https://example.com")).StatusCode);
+        Assert.Empty(server.ImageIds);
+        Assert.Equal(HttpStatusCode.OK, (await server.Client.GetAsync("/api/v1/tool-image?id=985")).StatusCode);
+        Assert.Equal("985", Assert.Single(server.ImageIds));
         Assert.Empty(server.ToolQueries);
         Assert.Empty(server.Actions);
     }

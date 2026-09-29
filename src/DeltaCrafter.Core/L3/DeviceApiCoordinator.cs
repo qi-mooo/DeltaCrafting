@@ -12,6 +12,7 @@ public sealed class DeviceApiCoordinator : IDisposable
     private readonly Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? _items;
     private readonly Func<DataToolQuery, CancellationToken, Task<DataToolResult>>? _tools;
     private readonly Func<string, CancellationToken, Task<DeviceActionResult>>? _copyToolCode;
+    private readonly Func<string, CancellationToken, Task<DataToolImage>>? _toolImage;
     private readonly ILogger _log;
     private DeviceApiServer? _server;
     public string StatusText { get; private set; } = "设备 API 已关闭";
@@ -22,7 +23,8 @@ public sealed class DeviceApiCoordinator : IDisposable
         Func<DeviceSettingsRequest, CancellationToken, Task<DeviceActionResult>>? updateSettings = null,
         Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? getItems = null,
         Func<DataToolQuery, CancellationToken, Task<DataToolResult>>? getTool = null,
-        Func<string, CancellationToken, Task<DeviceActionResult>>? copyToolCode = null)
+        Func<string, CancellationToken, Task<DeviceActionResult>>? copyToolCode = null,
+        Func<string, CancellationToken, Task<DataToolImage>>? toolImage = null)
     {
         _status = status;
         _action = action;
@@ -30,6 +32,7 @@ public sealed class DeviceApiCoordinator : IDisposable
         _items = getItems;
         _tools = getTool;
         _copyToolCode = copyToolCode;
+        _toolImage = toolImage;
         _log = log;
     }
 
@@ -44,7 +47,7 @@ public sealed class DeviceApiCoordinator : IDisposable
         }
         try
         {
-            _server = new DeviceApiServer(settings, _status, _action, _log, _settings, _items, _tools, _copyToolCode);
+            _server = new DeviceApiServer(settings, _status, _action, _log, _settings, _items, _tools, _copyToolCode, _toolImage);
             var server = _server;
             server.Failed += ex =>
             {

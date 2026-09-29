@@ -56,10 +56,11 @@ public sealed class DataToolsTests
     {
         var result = DataToolsClient.Parse(new("password"), Password);
         Assert.Equal(6, result.Entries.Count);
-        Assert.Contains("0178", result.Entries[0].Detail);
-        Assert.Contains("2026-09-29", result.Entries[0].Detail);
-        Assert.Contains("暂未更新", result.Entries[1].Detail);
-        Assert.Contains("暂未更新", result.Entries[5].Detail);
+        Assert.Contains("0178", result.Entries[0].Password);
+        Assert.Equal("2026-09-29", result.Entries[0].Date);
+        Assert.Equal("零号大坝  0178", result.Entries[0].ListTitle);
+        Assert.Contains("暂未更新", result.Entries[1].Password);
+        Assert.Contains("暂未更新", result.Entries[5].Password);
     }
 
     [Fact]
@@ -80,7 +81,9 @@ public sealed class DataToolsTests
     {
         var result = DataToolsClient.Parse(new("market"), """{"code":0,"data":{"begin_date":"2026-09-25","end_date":"2026-10-02","items":[{"id":1,"name":"腕带","grade":3,"price":29095}]}}""");
         Assert.Equal("3级 腕带", result.Entries[0].Title);
-        Assert.Contains("2026-10-02", result.Entries[0].Detail);
+        Assert.Contains("2026-10-02", result.Detail);
+        Assert.Empty(result.Entries[0].Lines);
+        Assert.Equal("29,095", result.Entries[0].Price);
         Assert.Equal("", result.Entries[0].CopyText);
     }
 
@@ -95,6 +98,56 @@ public sealed class DataToolsTests
         var provider = Assert.ThrowsAny<InvalidOperationException>(() => DataToolsClient.Parse(new("gun"), "{\"code\":403,\"msg\":\"" + Token + "\"}"));
         Assert.DoesNotContain(Token, provider.ToString());
     }
+
+    [Fact]
+    public async Task Weapon_filter_uses_exact_provider_keys_and_popularity_order()
+    {
+        using var http = new HttpClient(new Handler(request =>
+        {
+            string query = Uri.UnescapeDataString(request.RequestUri!.Query);
+            Assert.Contains("key1=步枪&key2=M7战斗步枪", query);
+            Assert.Contains("top2=3", query);
+            Assert.Contains("solutionType=operator", query);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Gun) });
+        }));
+        await new DataToolsClient(http).FetchAsync(new("gun", Mode: "operator", Category: "步枪", Weapon: "M7战斗步枪"), Token, default);
+        var keys = DataToolsClient.Parse(new("gun-keys"), """{"code":0,"data":[{"label":"步枪","children":[{"label":"全部","value":2},{"label":"M7战斗步枪","value":11}]}]}""");
+        Assert.Equal("步枪", Assert.Single(keys.Entries).Category);
+        Assert.Equal("M7战斗步枪", keys.Entries[0].Title);
+    }
+
+    [Fact]
+    public async Task Market_cache_survives_restart_and_only_queries_again_after_provider_expiry()
+    {
+        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString(), "market.json");
+        var now = DateTimeOffset.FromUnixTimeSeconds(1790301601);
+        int calls = 0;
+        var fixture = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "datatools-market.json"));
+        Task<DataToolResult> Fetch(DataToolQuery q, string _, CancellationToken ct)
+        { calls++; return Task.FromResult(DataToolsClient.Parse(q, fixture)); }
+        try
+        {
+            var cache = new DataToolsCache(Fetch, path, () => now);
+            var first = await cache.FetchAsync(new("market"), Token, default);
+            Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1790906400), first.ExpiresAt);
+            Assert.StartsWith("https://playerhub.df.qq.com/", first.Entries[0].ImageUrl);
+            await cache.FetchAsync(new("market"), Token, default);
+            Assert.Equal(1, calls);
+            cache = new DataToolsCache(Fetch, path, () => now);
+            await cache.FetchAsync(new("market"), Token, default);
+            Assert.Equal(1, calls);
+            now = first.ExpiresAt!.Value;
+            await cache.FetchAsync(new("market"), Token, default);
+            Assert.Equal(2, calls);
+        }
+        finally { Directory.Delete(Path.GetDirectoryName(path)!, true); }
+    }
+
+    [Theory]
+    [InlineData("http://127.0.0.1/pic.png")]
+    [InlineData("https://playerhub.df.qq.com.attacker.com/playerhub/a.png")]
+    [InlineData("https://playerhub.df.qq.com:8000/playerhub/a.png")]
+    public void Image_urls_are_restricted_to_provider_cdn(string url) => Assert.Empty(DataToolsClient.SafeImageUrl(url));
 
     [Theory]
     [InlineData("unknown", 1, "gun", "")]

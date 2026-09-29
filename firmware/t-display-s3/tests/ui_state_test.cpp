@@ -132,10 +132,17 @@ int main()
     assert(ui.row == 2); // Labels can change; positioning and confirmation use the stable item name.
 
     ui.tool = 2; ui.toolCount = 12; ui.open(UiPage::ToolList);
-    assert(ui.count() == 17);
-    ui.move(-1); assert(ui.row == 16); // Back to tools, without reloading data.
+    assert(ui.count() == 16);
+    ui.move(-1); assert(ui.row == 15); // Back in fixed toolbar, without reloading data.
     ui.detailCount = 8; ui.open(UiPage::ToolDetail);
     assert(ui.count() == 10); // All wrapped code lines, copy, return.
     ui.tool = 0; ui.toolCount = 6; ui.open(UiPage::ToolList);
     assert(ui.count() == 8); // Password entries, refresh, return.
+    ui.open(UiPage::ToolDetail); assert(ui.count() == 1); // Password has only Return.
+    ui.tool = 1; ui.toolCount = 2; ui.open(UiPage::ToolList);
+    assert(ui.count() == 3); // Market does not refresh before expiry.
+    ui.toolFailed = true; ui.toolCount = 0;
+    assert(ui.count() == 2); // Failed query can retry or leave.
+    ui.open(UiPage::GunMode); assert(ui.count() == 3);
+    ui.open(UiPage::GunQuery); assert(ui.count() == 3);
 }

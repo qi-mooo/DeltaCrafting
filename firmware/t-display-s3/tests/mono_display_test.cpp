@@ -33,4 +33,19 @@ int main()
         screen.readRow(0, row);
         for (int x = 0; x < 320; ++x) assert(row[x] == (x >= 320 + shift ? 0xFFFF : 0));
     }
+    screen.offset = 0;
+    screen.clearBuffer();
+    uint16_t image[96 * 96];
+    for (auto &pixel : image) pixel = 0xF800;
+    screen.setImage(10, 38, image);
+    screen.readRow(38, row);
+    assert(row[9] == 0 && row[10] == 0xF800 && row[105] == 0xF800 && row[106] == 0);
+    screen.startTransition(false);
+    screen.clearImage();
+    screen.offset = -160;
+    screen.readRow(38, row);
+    assert(row[170] == 0xF800 && row[265] == 0xF800 && row[266] == 0);
+    screen.offset = 0;
+    screen.readRow(38, row);
+    for (auto pixel : row) assert(pixel == 0);
 }

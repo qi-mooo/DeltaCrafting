@@ -5,6 +5,7 @@
 #include <TFT_eSPI.h>
 #include <WiFi.h>
 #include <vector>
+#include <mbedtls/base64.h>
 #include "config.h"
 #include "lcd_init.h"
 #include "device_config.h"
@@ -45,7 +46,7 @@ struct Snapshot {
     uint32_t fetchedAt = 0, noticeAt = 0;
 };
 
-enum class Command : uint8_t { Refresh, Start, Sync, Stop, Pause, Resume, Items, CloseGame, RefreshData, RefreshProfit, Tool, CopyCode };
+enum class Command : uint8_t { Refresh, Start, Sync, Stop, Pause, Resume, Items, CloseGame, RefreshData, RefreshProfit, Tool, CopyCode, ToolImage };
 enum class Setting : uint8_t { None, FacilityEnabled, CraftMode, AutoLoop, SteamDetection, AfterRun, PlannedItem };
 struct Request {
     Command command = Command::Refresh;
@@ -55,19 +56,26 @@ struct Request {
     uint8_t tool = 0;
     uint16_t toolPage = 1;
     bool battlefield = false;
+    char category[193] = {}, weapon[193] = {};
     char code[769] = {};
 };
-const char *const TOOL_KEYS[] = {"password", "market", "gun"};
-const char *const TOOL_NAMES[] = {"今日密码", "当前集市物品", "改枪码"};
-struct ToolEntry { String title, code; std::vector<String> lines; };
+const char *const TOOL_KEYS[] = {"password", "market", "gun", "gun-keys"};
+const char *const TOOL_NAMES[] = {"今日密码", "当前集市物品", "改枪码", "选择枪械"};
+struct ToolEntry { String id, title, code, password, date, price, author, category; std::vector<String> lines; };
 struct ToolData {
     std::vector<ToolEntry> entries;
     String detail, error;
     uint8_t tool = 0;
-    uint16_t page = 1;
+    uint16_t page = 1, pages = 1;
     bool next = false, battlefield = false;
 };
-ToolData sharedTool, toolData;
+ToolData sharedTool, toolData, weaponData;
+bool gunBattlefield = false;
+String gunCategory, gunWeapon;
+String imageError, sharedImageError, imageId, sharedImageId;
+std::vector<uint16_t> toolImage, sharedImage;
+bool imageReady = false, imageLoading = false;
+float toolFocusX = 1, toolFocusY = 27, toolFocusW = 318, toolFocusH = 27, toolScroll = 0;
 bool toolReady = false, toolLoading = false;
 uint8_t toolSelected = 0;
 std::vector<String> toolLines;
@@ -334,6 +342,18 @@ ItemList fetchItems(uint8_t facility)
     return result;
 }
 
+String urlEncode(const String &value)
+{
+    String encoded;
+    const char *hex = "0123456789ABCDEF";
+    for (unsigned i = 0; i < value.length(); ++i) {
+        uint8_t c = value[i];
+        if (isalnum(c) || c == '-' || c == '_' || c == '.') encoded += char(c);
+        else { encoded += '%'; encoded += hex[c >> 4]; encoded += hex[c & 15]; }
+    }
+    return encoded;
+}
+
 ToolData fetchTool(const Request &request)
 {
     ToolData result;
@@ -344,6 +364,8 @@ ToolData fetchTool(const Request &request)
     HTTPClient http;
     String path = String("/api/v1/tools?tool=") + TOOL_KEYS[request.tool]
         + "&page=" + request.toolPage + "&mode=" + (request.battlefield ? "operator" : "gun");
+    if (request.tool == 2 && request.weapon[0])
+        path += "&category=" + urlEncode(request.category) + "&weapon=" + urlEncode(request.weapon);
     beginHttp(http, client, path.c_str());
     http.setTimeout(30000);
     int code = http.GET(), size = http.getSize();
@@ -362,18 +384,52 @@ ToolData fetchTool(const Request &request)
     }
     result.detail = doc["detail"] | "";
     result.next = doc["hasNext"] | false;
+    result.pages = doc["totalPages"] | 1;
     for (JsonObject row : doc["entries"].as<JsonArray>()) {
         if (!row["title"].is<const char *>() || !row["lines"].is<JsonArray>()) {
             result.entries.clear(); result.error = "工具条目无效"; return result;
         }
         ToolEntry entry;
+        entry.id = row["id"] | "";
         entry.title = row["title"].as<String>();
+        entry.password = row["password"] | ""; entry.date = row["date"] | "";
+        entry.price = row["price"] | ""; entry.author = row["author"] | "";
+        entry.category = row["category"] | "";
         entry.code = row["copyText"] | "";
         if (entry.code.length() >= sizeof(request.code)) { result.error = "改枪码过长"; result.entries.clear(); return result; }
         for (JsonVariant line : row["lines"].as<JsonArray>()) entry.lines.push_back(line.as<String>());
         result.entries.push_back(std::move(entry));
     }
     return result;
+}
+
+void fetchToolImage(const Request &request)
+{
+    WiFiClient client;
+    HTTPClient http;
+    String path = String("/api/v1/tool-image?id=") + urlEncode(request.item);
+    beginHttp(http, client, path.c_str()); http.setTimeout(25000);
+    int code = http.GET(), size = http.getSize();
+    String body = size > 0 && size <= 32768 ? http.getString() : "";
+    http.end();
+    DynamicJsonDocument doc(40000);
+    std::vector<uint16_t> pixels;
+    String error;
+    if (deserializeJson(doc, body)) error = "图片加载失败";
+    else if (code != 200) error = doc["error"] | "图片加载失败";
+    else if (doc["width"] != 96 || doc["height"] != 96 || !doc["pixels"].is<const char *>()) error = "图片格式无效";
+    else {
+        pixels.resize(96 * 96);
+        const char *encoded = doc["pixels"];
+        size_t written = 0;
+        if (mbedtls_base64_decode(reinterpret_cast<unsigned char *>(pixels.data()), 96 * 96 * 2,
+            &written, reinterpret_cast<const unsigned char *>(encoded), strlen(encoded)) != 0 || written != 96 * 96 * 2) {
+            pixels.clear(); error = "图片格式无效";
+        }
+    }
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    sharedImage = std::move(pixels); sharedImageError = error; sharedImageId = request.item; imageReady = true;
+    xSemaphoreGive(stateMutex);
 }
 
 void copyToolCode(const Request &request)
@@ -460,6 +516,7 @@ void networkTask(void *)
             if (hasCommand && request.setting != Setting::None) savedItem = saveSetting(request);
             else if (hasCommand && request.command == Command::Items) fetched = fetchItems(request.facility);
             else if (hasCommand && request.command == Command::Tool) fetchedTool = fetchTool(request);
+            else if (hasCommand && request.command == Command::ToolImage) fetchToolImage(request);
             else if (hasCommand && request.command == Command::CopyCode) copyToolCode(request);
             else if (hasCommand && request.command != Command::Refresh) sendAction(request.command, request.facility);
             if (!wasConnected || hasCommand || millis() - lastPoll >= DELTA_POLL_MS) {
@@ -470,6 +527,9 @@ void networkTask(void *)
         if (hasCommand) {
             xSemaphoreTake(stateMutex, portMAX_DELAY);
             requestPending = false;
+            if (request.command == Command::ToolImage && !connected) {
+                sharedImage.clear(); sharedImageError = "设备离线"; sharedImageId = request.item; imageReady = true;
+            }
             if (request.command == Command::Items) { sharedItems = std::move(fetched); itemsReady = true; }
             if (request.command == Command::Tool) { sharedTool = std::move(fetchedTool); toolReady = true; }
             if (request.setting == Setting::PlannedItem) itemSaveResult = savedItem ? 1 : 0;
@@ -588,6 +648,7 @@ void copySelectedTool();
 
 void positionMenu()
 {
+    toolScroll = max(0, (int(ui.row) - 1) * (ui.tool == 2 ? 34 : 27));
     settingsMenu.interface_text_y = ui.initialScroll();
     settingsMenu.interface_text_y_now = ui.initialScroll();
     settingsMenu.meun_number_now = ui.row;
@@ -643,9 +704,152 @@ IN_PUT_Mode readInput()
     return input;
 }
 
+String gunTitle()
+{
+    return String("改枪码·") + (gunBattlefield ? "大战场" : "烽火地带");
+}
+
+void toolFocus(int x, int y, int w, int h)
+{
+    uiEngine.animation(&toolFocusX, float(x), uiEngine.fps, 0.5f);
+    uiEngine.animation(&toolFocusY, float(y), uiEngine.fps, 0.5f);
+    uiEngine.animation(&toolFocusW, float(w), uiEngine.fps, 0.5f);
+    uiEngine.animation(&toolFocusH, float(h), uiEngine.fps, 0.5f);
+    border(lroundf(toolFocusX), lroundf(toolFocusY), lroundf(toolFocusW), lroundf(toolFocusH), true);
+}
+
+void toolbarIcon(int x, int icon, bool enabled = true)
+{
+    canvas.setDrawColor(1);
+    if (icon == 2) {
+        canvas.drawCircle(x, 155, 6);
+        canvas.drawLine(x + 5, 146, x + 5, 153);
+        canvas.drawLine(x + 5, 153, x - 1, 151);
+    } else {
+        int d = icon == 1 ? 1 : -1;
+        canvas.drawHLine(x - 6, 155, 13);
+        canvas.drawLine(x + d * 6, 155, x + d, 150);
+        canvas.drawLine(x + d * 6, 155, x + d, 160);
+        if (icon == 3) canvas.drawVLine(x + 6, 148, 7);
+    }
+    if (!enabled) canvas.drawLine(x - 9, 164, x + 9, 146);
+}
+
+void wrappedAt(int x, int y, int width, const String &text, int maxLines)
+{
+    String rest = text;
+    for (int i = 0; i < maxLines && !rest.isEmpty(); ++i) {
+        String line = clipped(rest, width);
+        textAt(x, y + i * 20, width, line);
+        rest.remove(0, line.length());
+    }
+}
+
+void drawToolPage(const Snapshot &s)
+{
+    canvas.setFont(u8g2_font_wqy16_t_gb2312);
+    bool list = ui.page == UiPage::ToolList;
+    bool detail = ui.page == UiPage::ToolDetail;
+    const ToolEntry *entry = detail && toolSelected < toolData.entries.size() ? &toolData.entries[toolSelected] : nullptr;
+    String title = ui.page == UiPage::GunMode ? "改枪码 / 选择模式"
+        : ui.page == UiPage::GunQuery || ui.tool >= 2 ? gunTitle()
+        : entry && ui.tool == 0 ? entry->title
+        : entry && ui.tool == 1 ? String("价格 ") + entry->price : TOOL_NAMES[ui.tool];
+    textAt(8, 18, list && ui.tool == 2 ? 237 : 304, title);
+    if (list && ui.tool == 2) textAt(250, 18, 65, String(toolData.page) + "/" + toolData.pages);
+    canvas.drawHLine(0, 24, 320);
+    if (ui.page == UiPage::GunMode || ui.page == UiPage::GunQuery) {
+        const char *const modes[] = {"烽火地带", "大战场", "返回工具"};
+        const char *const queries[] = {"热门", "按枪械查询", "返回模式"};
+        for (int i = 0; i < 3; ++i) textAt(16, 50 + 35 * i, 284,
+            ui.page == UiPage::GunMode ? modes[i] : queries[i]);
+        toolFocus(3, 29 + ui.row * 35, 314, 31);
+        return;
+    }
+    if (entry && ui.tool == 0) {
+        bool digits = entry->password.length() > 0 && entry->password.length() <= 6;
+        for (unsigned i = 0; i < entry->password.length(); ++i) digits &= isdigit(entry->password[i]);
+        if (digits) {
+            canvas.setFont(entry->password.length() <= 4 ? u8g2_font_logisoso78_tn : u8g2_font_logisoso46_tn);
+            int width = canvas.getStrWidth(entry->password.c_str());
+            canvas.drawStr(max(2, (320 - width) / 2), 117, entry->password.c_str());
+            canvas.setFont(u8g2_font_wqy16_t_gb2312);
+        } else textAt(110, 91, 200, entry->password);
+        textAt(16, 162, 205, entry->date);
+        textAt(259, 162, 55, "返回");
+        toolFocus(249, 143, 69, 26);
+        return;
+    }
+    if (entry && ui.tool == 1) {
+        if (toolImage.size() == 96 * 96) canvas.setImage(10, 38, toolImage.data());
+        else wrappedAt(10, 69, 100, imageLoading ? "图片加载中" : imageError.isEmpty() ? "暂无图片" : imageError, 3);
+        wrappedAt(120, 54, 187, entry->title, 3);
+        textAt(247, 127, 64, "返回");
+        toolFocus(232, 107, 85, 27);
+        canvas.setFont(u8g2_font_wqy12_t_gb2312);
+        textAt(8, 165, 305, toolData.detail);
+        canvas.setFont(u8g2_font_wqy16_t_gb2312);
+        return;
+    }
+    int rows = list ? ui.toolCount : ui.detailCount;
+    int rowHeight = list && ui.tool == 2 ? 34 : 27;
+    bool market = list && ui.tool == 1;
+    int toolbarY = market ? 124 : 144;
+    int viewport = toolbarY - 28;
+    bool inRows = ui.row < rows;
+    float target = inRows ? max(0, int(ui.row + 1) * rowHeight - viewport) : toolScroll;
+    if (inRows && ui.row == 0) target = 0;
+    uiEngine.animation(&toolScroll, target, uiEngine.fps, 0.5f);
+    canvas.setClipWindow(1, 26, 318, toolbarY - 1);
+    for (int i = 0; i < rows; ++i) {
+        int y = 27 + i * rowHeight - lroundf(toolScroll);
+        if (y + rowHeight < 26 || y >= toolbarY) continue;
+        if (list) {
+            const auto &item = toolData.entries[i];
+            if (ui.tool == 2) {
+                // One list entry keeps the author visible even for a long scheme name.
+                textAt(12, y + 15, 292, item.title);
+                canvas.setFont(u8g2_font_wqy12_t_gb2312);
+                textAt(17, y + 29, 287, String("作者 ") + item.author);
+                canvas.setFont(u8g2_font_wqy16_t_gb2312);
+            } else textAt(12, y + 19, 291, item.title + (ui.tool == 0 ? String(" ") + item.password : ""));
+        } else textAt(12, y + 19, 291, toolLines[i]);
+    }
+    if (inRows) toolFocus(2, 27 + ui.row * rowHeight - lroundf(toolScroll), 316, rowHeight - 1);
+    canvas.setMaxClipWindow();
+    if (rows == 0) wrappedAt(12, 55, 295, toolLoading ? "正在查询..." : toolData.error.isEmpty() ? "暂无结果" : toolData.error, 3);
+    canvas.drawHLine(0, toolbarY - 1, 320);
+    int actions = ui.count() - rows;
+    int selected = ui.row - rows;
+    if (detail) {
+        textAt(18, 163, 218, "复制到 Windows 剪贴板");
+        textAt(257, 163, 60, "返回");
+        if (!inRows) toolFocus(selected == 0 ? 1 : 243, 144, selected == 0 ? 240 : 76, 25);
+        if (!s.notice.isEmpty() && millis() - s.noticeAt < 5000) {
+            canvas.setDrawColor(0); canvas.drawBox(0, 120, 320, 21); textAt(8, 136, 304, s.notice);
+        }
+    } else if (market) {
+        if (ui.toolFailed) textAt(24, 141, 75, "重试");
+        textAt(256, 141, 60, "返回");
+        if (!inRows) toolFocus(ui.toolFailed && selected == 0 ? 8 : 247, 124, 71, 23);
+        canvas.setFont(u8g2_font_wqy12_t_gb2312);
+        textAt(8, 165, 305, toolData.detail);
+        canvas.setFont(u8g2_font_wqy16_t_gb2312);
+    } else {
+        int width = 320 / actions;
+        for (int i = 0; i < actions; ++i) {
+            int icon = ui.tool == 2 ? i : (ui.tool == 0 || ui.toolFailed) && i == 0 ? 2 : 3;
+            bool enabled = ui.tool != 2 || i > 1 || (i == 0 ? toolData.page > 1 : toolData.next);
+            toolbarIcon(width * i + width / 2, icon, enabled);
+        }
+        if (!inRows) toolFocus(selected * width + 1, 144, width - 2, 25);
+    }
+}
+
 void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
 {
     Snapshot s = readSnapshot();
+    if (ui.page == UiPage::ToolList || ui.page == UiPage::ToolDetail || ui.page == UiPage::GunMode || ui.page == UiPage::GunQuery) { drawToolPage(s); return; }
     if (ui.page == UiPage::Home) {
         constexpr uint8_t order[] = {3, 0, 1, 2};
         for (uint8_t cell = 0; cell < 4; ++cell) {
@@ -678,20 +882,6 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         if (ui.page == UiPage::Tools) {
             for (uint8_t i = 0; i < 3; ++i) menuRow(i, TOOL_NAMES[i]);
             menuRow(3, "返回主界面");
-        } else if (ui.page == UiPage::ToolList) {
-            for (unsigned i = 0; i < toolData.entries.size(); ++i) menuRow(i, toolData.entries[i].title);
-            uint8_t row = ui.toolCount;
-            if (ui.tool == 2) {
-                menuRow(row++, toolData.battlefield ? "切换: 烽火地带" : "切换: 大战场");
-                menuRow(row++, toolData.page > 1 ? "上一页" : "上一页 (已到首页)");
-                menuRow(row++, toolData.next ? "下一页" : "下一页 (已到末页)");
-            }
-            menuRow(row++, toolLoading ? "正在查询..." : toolData.error.isEmpty() ? "刷新" : "查询失败,重试");
-            menuRow(row, "返回工具");
-        } else if (ui.page == UiPage::ToolDetail) {
-            for (unsigned i = 0; i < toolLines.size(); ++i) menuRow(i, toolLines[i]);
-            if (ui.tool == 2) menuRow(ui.detailCount, "复制到 Windows 剪贴板");
-            menuRow(ui.detailCount + (ui.tool == 2 ? 1 : 0), "返回列表");
         } else if (ui.page == UiPage::Facility) {
             menuRow(0, String("设施: ") + (!s.valid ? "未知" : f.enabled ? "启用" : "停用"));
             menuRow(1, String("制造模式: ") + craftModeName(f.craftMode));
@@ -787,13 +977,18 @@ void draw()
     if (receivedItems) { itemList = std::move(sharedItems); itemsReady = false; }
     bool receivedTool = toolReady;
     if (receivedTool) { toolData = std::move(sharedTool); toolReady = false; }
+    if (imageReady) {
+        if (imageId == sharedImageId) { toolImage = std::move(sharedImage); imageError = sharedImageError; }
+        imageReady = false; imageLoading = false;
+    }
     int saved = itemSaveResult;
     itemSaveResult = -1;
     xSemaphoreGive(stateMutex);
     if (receivedTool) {
         toolLoading = false;
+        if (toolData.tool == 3) weaponData = toolData;
         if (ui.page == UiPage::ToolList && ui.tool == toolData.tool) {
-            ui.toolCount = toolData.entries.size(); ui.row = 0; positionMenu();
+            ui.toolCount = toolData.entries.size(); ui.toolFailed = !toolData.error.isEmpty(); ui.row = 0; positionMenu();
         }
     }
     if (receivedItems) {
@@ -826,6 +1021,7 @@ void draw()
         positionMenu();
     }
     uiEngine.animation(&canvas.offset, 0.0f, uiEngine.fps * 0.8f, 0.5f);
+    canvas.clearImage();
     canvas.clearBuffer();
     uiEngine.Panel->drawPanel(&canvas, &uiEngine, uiEngine.IN_now);
     uiEngine.StatusBar->drawStatusBar(&canvas, &uiEngine);
@@ -909,10 +1105,11 @@ void loadTool(uint8_t tool, uint16_t page, bool battlefield)
     Request request;
     request.command = Command::Tool; request.tool = tool;
     request.toolPage = page; request.battlefield = battlefield;
+    if (tool == 2) { strlcpy(request.category, gunCategory.c_str(), sizeof(request.category)); strlcpy(request.weapon, gunWeapon.c_str(), sizeof(request.weapon)); }
     if (!enqueueRequest(request)) return;
     toolLoading = true; toolData = ToolData{};
     toolData.tool = tool; toolData.page = page; toolData.battlefield = battlefield;
-    ui.tool = tool; ui.toolCount = 0; ui.open(UiPage::ToolList);
+    ui.tool = tool; ui.toolCount = 0; ui.toolFailed = false; ui.open(UiPage::ToolList);
     positionMenu();
 }
 
@@ -947,6 +1144,13 @@ void openToolDetail()
     for (const auto &line : entry.lines) wrap(line);
     ui.detailCount = toolLines.size();
     ui.open(UiPage::ToolDetail);
+    if (ui.tool == 1) {
+        toolImage.clear(); imageError = ""; imageId = entry.id;
+        Request request; request.command = Command::ToolImage;
+        strlcpy(request.item, entry.id.c_str(), sizeof(request.item));
+        imageLoading = enqueueRequest(request);
+        if (!imageLoading) imageError = "图片请求未发送,返回后重试";
+    }
     if (ui.tool == 2) copySelectedTool();
 }
 
@@ -956,21 +1160,40 @@ void activateSelection(bool held)
     if (ui.page == UiPage::Home) {
         ui.open(ui.homeDestination());
     } else if (ui.page == UiPage::Tools) {
-        if (ui.row < 3) loadTool(ui.row);
+        if (ui.row == 2) ui.open(UiPage::GunMode);
+        else if (ui.row < 2) loadTool(ui.row);
         else ui.open(UiPage::Home);
+    } else if (ui.page == UiPage::GunMode) {
+        if (ui.row < 2) { gunBattlefield = ui.row == 1; ui.open(UiPage::GunQuery); }
+        else ui.open(UiPage::Tools, 2);
+    } else if (ui.page == UiPage::GunQuery) {
+        if (ui.row == 0) { gunCategory = ""; gunWeapon = ""; loadTool(2, 1, gunBattlefield); }
+        else if (ui.row == 1) {
+            if (!weaponData.entries.empty()) { toolData = weaponData; ui.tool = 3; ui.toolFailed = false; ui.toolCount = toolData.entries.size(); ui.open(UiPage::ToolList); }
+            else loadTool(3, 1, gunBattlefield);
+        } else ui.open(UiPage::GunMode, gunBattlefield ? 1 : 0);
     } else if (ui.page == UiPage::ToolList) {
-        if (ui.row < ui.toolCount) openToolDetail();
-        else {
+        if (toolLoading) { setNotice("正在查询,请稍候"); return; }
+        if (ui.row < ui.toolCount) {
+            if (ui.tool == 3) {
+                gunCategory = toolData.entries[ui.row].category; gunWeapon = toolData.entries[ui.row].title;
+                loadTool(2, 1, gunBattlefield);
+            } else openToolDetail();
+        } else {
             uint8_t action = ui.row - ui.toolCount;
-            if (ui.tool == 2 && action == 0) loadTool(ui.tool, 1, !toolData.battlefield);
-            else if (ui.tool == 2 && action == 1) { if (toolData.page > 1) loadTool(ui.tool, toolData.page - 1, toolData.battlefield); }
-            else if (ui.tool == 2 && action == 2) { if (toolData.next && toolData.page < 1000) loadTool(ui.tool, toolData.page + 1, toolData.battlefield); }
-            else if (action == (ui.tool == 2 ? 3 : 0)) loadTool(ui.tool, toolData.page, toolData.battlefield);
+            if (ui.tool == 2 && action == 0) { if (toolData.page > 1) loadTool(2, toolData.page - 1, gunBattlefield); }
+            else if (ui.tool == 2 && action == 1) { if (toolData.next && toolData.page < 1000) loadTool(2, toolData.page + 1, gunBattlefield); }
+            else if ((ui.tool == 2 && action == 2) || (ui.tool == 0 && action == 0)
+                || (ui.tool != 2 && ui.toolFailed && action == 0)) loadTool(ui.tool, toolData.page, ui.tool >= 2 && gunBattlefield);
+            else if (ui.tool == 2 && !gunWeapon.isEmpty() && !weaponData.entries.empty()) {
+                toolData = weaponData; ui.tool = 3; ui.toolFailed = false; ui.toolCount = toolData.entries.size(); ui.open(UiPage::ToolList);
+                for (unsigned i = 0; i < toolData.entries.size(); ++i) if (toolData.entries[i].title == gunWeapon) ui.row = i;
+            } else if (ui.tool >= 2) ui.open(UiPage::GunQuery);
             else ui.open(UiPage::Tools, ui.tool);
         }
     } else if (ui.page == UiPage::ToolDetail) {
         if (ui.tool == 2 && ui.row == ui.detailCount) copySelectedTool();
-        else if (ui.row >= ui.detailCount) ui.open(UiPage::ToolList, toolSelected);
+        else if (ui.tool != 2 || ui.row >= ui.detailCount) ui.open(UiPage::ToolList, toolSelected);
     } else if (ui.page == UiPage::Facility) {
         if (ui.row == 0) submit(Setting::FacilityEnabled, !s.facilities[ui.facility()].enabled);
         else if (ui.row == 1) {
@@ -1058,6 +1281,7 @@ void setup()
     }
 #endif
     display.setRotation(1);
+    display.setSwapBytes(true);
     display.invertDisplay(true);
     pinMode(38, OUTPUT);
     digitalWrite(38, HIGH);

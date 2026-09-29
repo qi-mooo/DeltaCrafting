@@ -227,3 +227,12 @@ Windows 实机 API 已通过局域网鉴权验证并返回四设施状态。
 T-Display-S3 实机已完成烧录和 USB 配置,重启后成功连接 Wi-Fi 并持续获取四设施状态。
 串口发送一行 `{"command":"info"}` 可检查固件的 Wi-Fi 与 API 在线状态,不返回凭据。
 屏幕显示和实体按键仍需在设备上目视及实际操作确认。
+
+### 工具详情与缓存
+
+`GET /api/v1/tools` 额外支持 `tool=gun-keys` 获取枪械筛选项，`category` 和 `weapon` 按接口返回名称筛选方案。
+改枪码仍固定热门排序 `top2=3`；结果新增 `totalPages`，条目新增 `author`。
+密码条目使用 `password`、`date`；集市条目使用 `price`、`imageUrl`，有效期只在结果 `detail` 中出现一次。
+集市结果带 `expiresAt`，客户端保存到磁盘，过期前所有打开请求均复用缓存；没有后台定时查询。
+打开集市详情时调用 `GET /api/v1/tool-image?id=<条目ID>`，仅允许已查询到的物品，返回 96×96 RGB565 小端像素的 Base64。
+图片来自数据中的官方 CDN 地址，下载并转换后在本次进程内缓存；请求此接口不查询数据帝。
