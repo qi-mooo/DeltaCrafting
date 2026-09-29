@@ -121,7 +121,8 @@ public sealed class DeviceApiTests
         public List<string> ImageIds { get; } = [];
 
         public Server(bool control = false,
-            Func<CancellationToken, Task<DeviceStatus>>? getStatus = null)
+            Func<CancellationToken, Task<DeviceStatus>>? getStatus = null,
+            Func<CancellationToken, Task<QuantSnapshot>>? getQuant = null)
         {
             using var socket = new TcpListener(IPAddress.Loopback, 0);
             socket.Start();
@@ -150,7 +151,7 @@ public sealed class DeviceApiTests
                 {
                     ImageIds.Add(id);
                     return Task.FromResult(new DataToolImage(96, 96, "AA=="));
-                });
+                }, getQuant);
             Api.Start();
             Client = new HttpClient(new HttpClientHandler { UseProxy = false })
             {
@@ -164,6 +165,35 @@ public sealed class DeviceApiTests
             Client.PostAsync("/api/v1/action", new StringContent(body, Encoding.UTF8, contentType));
 
         public void Dispose() { Client.Dispose(); Api.Dispose(); }
+    }
+
+    [Fact]
+    public async Task Quant_snapshot_requires_authentication_and_never_dispatches_actions()
+    {
+        int calls = 0;
+        using var server = new Server(getQuant: _ =>
+        {
+            calls++;
+            return Task.FromResult(new QuantSnapshot(1, [], [], [], QuantAccounting.Summarize([], Now)));
+        });
+        using var response = await server.Client.GetAsync("/api/v1/quant");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("schemaVersion", await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, calls);
+        server.Client.DefaultRequestHeaders.Authorization = null;
+        using var denied = await server.Client.GetAsync("/api/v1/quant");
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        Assert.Equal(1, calls);
+        Assert.Empty(server.Actions);
+        Assert.Empty(server.ToolQueries);
+    }
+
+    [Fact]
+    public async Task Quant_endpoint_without_provider_is_explicitly_unsupported()
+    {
+        using var server = new Server();
+        using var response = await server.Client.GetAsync("/api/v1/quant");
+        Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
     }
 
     [Fact]

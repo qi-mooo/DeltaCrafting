@@ -21,6 +21,7 @@ public sealed class DeviceApiServer : IDisposable
     private readonly Func<DataToolQuery, CancellationToken, Task<DataToolResult>>? _tools;
     private readonly Func<string, CancellationToken, Task<DeviceActionResult>>? _copyToolCode;
     private readonly Func<string, CancellationToken, Task<DataToolImage>>? _toolImage;
+    private readonly Func<CancellationToken, Task<QuantSnapshot>>? _quant;
     private readonly ILogger _log;
     private readonly byte[] _keyHash;
     private readonly bool _allowControl;
@@ -35,7 +36,8 @@ public sealed class DeviceApiServer : IDisposable
         Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? getItems = null,
         Func<DataToolQuery, CancellationToken, Task<DataToolResult>>? getTool = null,
         Func<string, CancellationToken, Task<DeviceActionResult>>? copyToolCode = null,
-        Func<string, CancellationToken, Task<DataToolImage>>? toolImage = null)
+        Func<string, CancellationToken, Task<DataToolImage>>? toolImage = null,
+        Func<CancellationToken, Task<QuantSnapshot>>? getQuant = null)
     {
         settings.Validate();
         _status = status;
@@ -45,6 +47,7 @@ public sealed class DeviceApiServer : IDisposable
         _tools = getTool;
         _copyToolCode = copyToolCode;
         _toolImage = toolImage;
+        _quant = getQuant;
         _log = log;
         _allowControl = settings.AllowControl;
         _keyHash = SHA256.HashData(Encoding.UTF8.GetBytes(settings.ApiKey));
@@ -112,6 +115,7 @@ public sealed class DeviceApiServer : IDisposable
             string? method = path switch
             {
                 "/api/v1/status" => "GET",
+                "/api/v1/quant" => "GET",
                 "/api/v1/items" => "GET",
                 "/api/v1/tools" => "GET",
                 "/api/v1/tool-image" => "GET",
@@ -126,6 +130,11 @@ public sealed class DeviceApiServer : IDisposable
             {
                 context.Response.Headers["Allow"] = method;
                 await ReplyAsync(context, 405, new { error = "method_not_allowed" }, ct);
+            }
+            else if (path == "/api/v1/quant")
+            {
+                if (_quant is null) await ReplyAsync(context, 501, new { error = "quant_not_supported" }, ct);
+                else await ReplyAsync(context, 200, await _quant(ct).WaitAsync(ct), ct);
             }
             else if (path == "/api/v1/tool-image")
             {

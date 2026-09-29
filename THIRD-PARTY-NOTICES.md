@@ -1,5 +1,11 @@
 # 第三方组件声明
 
+子弹量化的均线、RSI、区间位置与波动率算法改编自
+[leitingquant](https://github.com/qi-mooo/leitingquant) 的 `WindowSpy/QuantMath.cs`，
+固定来源提交 `dbdd8fb66719f63d67d5c1bd5175fadd52c4e9a7`。
+原作者为雷霆网络开发工作室，使用 MIT 许可证，全文随包保留在
+`licenses/leitingquant-LICENSE.txt`。数据源替换为三角洲数据帝，未引入 LLM 依赖。
+
 DeltaCrafter 直接使用以下 NuGet 软件包。其版权与许可证归各自权利人所有。
 
 | 组件 | 版本 | 许可证 | 项目 |

@@ -75,6 +75,7 @@ public sealed partial class MainWindow : Window
             "plan" => typeof(PlanPage),
             "logs" => typeof(LogPage),
             "tools" => typeof(ToolsPage),
+            "quant" => typeof(QuantPage),
             "settings" => typeof(SettingsPage),
             _ => null,
         };

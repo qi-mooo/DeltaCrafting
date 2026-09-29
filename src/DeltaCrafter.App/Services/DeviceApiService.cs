@@ -28,7 +28,8 @@ public sealed class DeviceApiService : IDisposable
             {
                 string token = await OnUiAsync(() => _host.Settings.ManufactureApi.Token, ct);
                 return await _host.DataTools.FetchAsync(query, token, ct);
-            }, (code, ct) => OnUiAsync(() => _host.DataTools.CopyGunCode(code), ct), _host.DataTools.ImageAsync);
+            }, (code, ct) => OnUiAsync(() => _host.DataTools.CopyGunCode(code), ct), _host.DataTools.ImageAsync,
+            ct => OnUiAsync(() => _host.Quant.Snapshot(DateTimeOffset.Now), ct));
         _api.Changed += () => _dispatcher.TryEnqueue(() => Changed?.Invoke());
     }
 
@@ -45,7 +46,7 @@ public sealed class DeviceApiService : IDisposable
         {
             ItemSelectionSupported = true, CloseGameSupported = true,
             DataRefreshSupported = true, DataRefresh = _host.ProfitPlan.DataRefresh,
-            ProfitRefreshSupported = true, ToolsSupported = true,
+            ProfitRefreshSupported = true, ToolsSupported = true, QuantSupported = true,
             Facilities = status.Facilities.Select(f =>
             {
                 var key = FacilityKeys.All.Single(k => FacilityKeys.JsonKey(k) == f.Key);

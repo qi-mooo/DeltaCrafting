@@ -34,7 +34,7 @@ public sealed record DeviceStatus(
     string AfterRun = "CloseGame", bool SettingsSupported = true, bool SyncSupported = true,
     bool ItemSelectionSupported = false, bool CloseGameSupported = false,
     bool DataRefreshSupported = false, DeviceDataRefreshStatus? DataRefresh = null,
-    bool ProfitRefreshSupported = false, bool ToolsSupported = false);
+    bool ProfitRefreshSupported = false, bool ToolsSupported = false, bool QuantSupported = false);
 
 public sealed record DeviceDataRefreshStatus(bool IsRunning, string Detail, DateTimeOffset? CompletedAt = null);
 
