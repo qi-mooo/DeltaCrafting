@@ -157,15 +157,22 @@ public sealed class ScreenProbe
     }
 
     public async Task<string> ReadFrameRoiAsync(CapturedFrame frame, NRect roi) =>
-        (await ReadItemAsync(frame, roi)).FullText;
+        (await ReadItemAsync(frame, roi, itemTitle: true)).FullText;
 
     /// <summary>物品识别使用离线模型，失败即停止，不自动切回识别率较低的路径。</summary>
     private async Task<OcrReadout> ReadItemAsync(CapturedFrame frame, NRect roi, double upscale = 2.0,
-        IReadOnlyList<NRect>? iconMasks = null)
+        IReadOnlyList<NRect>? iconMasks = null, bool itemTitle = false)
     {
         var result = await _itemOcr.ReadAsync(frame, roi, upscale, iconMasks);
         _log.Debug("PaddleOCR 物品读数(图标遮罩={Masked})：{Text}",
             iconMasks is { Count: > 0 }, result.FullText.Replace('\n', '|'));
+        if (itemTitle)
+        {
+            var title = ItemTitleOcr.Normalize(result);
+            if (title.FullText != result.FullText)
+                _log.Debug("详情标题去除数量后缀：{Title}", title.FullText);
+            result = title;
+        }
         if (result.HasUncertainText)
         {
             string uncertain = string.Join("、", result.Lines.Where(l =>
