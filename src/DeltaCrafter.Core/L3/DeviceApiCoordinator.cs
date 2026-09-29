@@ -76,7 +76,7 @@ public sealed class DeviceApiCoordinator : IDisposable
                 ? FacilityPhase.ReadyToCollect : runtime.Phase;
             return new DeviceFacilityStatus(FacilityKeys.JsonKey(key), FacilityKeys.DisplayName(key),
                 planned.Enabled, planned.Mode.ToString(), planned.ItemName,
-                phase.ToString(), runtime.ItemName, runtime.ReadyAt,
+                phase.ToString(), phase == FacilityPhase.Idle ? "" : runtime.ItemName, runtime.ReadyAt,
                 runtime.Phase == FacilityPhase.Crafting ? Remaining(runtime.ReadyAt, now) : null,
                 runtime.ManualReason, runtime.ObservedAt,
                 runtime.Phase == FacilityPhase.Crafting && runtime.StartedAt is { } start

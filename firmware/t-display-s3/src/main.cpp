@@ -54,7 +54,7 @@ struct Request {
     char item[193] = {};
 };
 struct ItemList {
-    std::vector<String> names;
+    std::vector<String> names, labels;
     String selected, error;
 };
 constexpr uint8_t MAX_ITEMS = 254; // Axeuh uses an 8-bit row count; reserve a return row.
@@ -183,8 +183,8 @@ bool parseStatus(JsonDocument &doc, Snapshot &next)
         if (!seconds(row["totalSeconds"], f.total)) return false;
         seen |= 1 << index;
         f.enabled = row["enabled"];
-        f.item = row["itemName"].as<String>();
-        f.plannedItem = row["plannedItemName"].as<String>();
+        f.item = row["itemLabel"].is<const char *>() ? row["itemLabel"].as<String>() : row["itemName"].as<String>();
+        f.plannedItem = row["plannedItemLabel"].is<const char *>() ? row["plannedItemLabel"].as<String>() : row["plannedItemName"].as<String>();
         f.phase = row["phase"].as<String>();
         f.craftMode = row["craftMode"] | "Custom";
         f.reason = row["manualReason"] | "";
@@ -293,6 +293,23 @@ ItemList fetchItems(uint8_t facility)
             return result;
         }
         result.names.push_back(name);
+        result.labels.push_back(name);
+    }
+    if (doc.containsKey("options") && !doc["options"].isNull()) {
+        auto options = doc["options"].as<JsonArray>();
+        if (options.isNull() || options.size() != result.names.size()) {
+            result.names.clear(); result.labels.clear(); result.error = "物品等级数据无效";
+            return result;
+        }
+        for (unsigned i = 0; i < result.names.size(); ++i) {
+            String label = options[i]["label"] | "";
+            if (strcmp(options[i]["name"] | "", result.names[i].c_str()) != 0
+                || label.isEmpty() || label.length() > 224) {
+                result.names.clear(); result.labels.clear(); result.error = "物品等级数据无效";
+                return result;
+            }
+            result.labels[i] = label;
+        }
     }
     result.selected = doc["selectedItemName"].as<String>();
     return result;
@@ -553,7 +570,7 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             textAt(x + 10, y + 21, 76, NAMES[order[cell]]);
             textAt(x + 87, y + 21, 64, !s.valid ? "待连接" : phaseName(phase));
             textAt(x + 10, y + 39, 140, !s.valid ? "等待数据"
-                : phase == "Idle" ? f.plannedItem : f.item.isEmpty() ? f.plannedItem : f.item);
+                : facilityDisplayItem(phase.c_str(), f.item.c_str(), f.plannedItem.c_str()));
             String detail = !s.valid ? "等待数据"
                 : phase == "Crafting" ? String("剩余 ") + countdown(f.remaining, s)
                 : phase == "ReadyToCollect" ? "已完成待收取"
@@ -591,7 +608,7 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             menuRow(3, "返回设施设置");
         } else if (ui.page == UiPage::Items) {
             for (unsigned i = 0; i < itemList.names.size(); ++i)
-                menuRow(i, String(itemList.names[i] == itemList.selected ? "* " : "  ") + itemList.names[i]);
+                menuRow(i, String(itemList.names[i] == itemList.selected ? "* " : "  ") + itemList.labels[i]);
             if (!itemList.error.isEmpty()) menuRow(0, "读取失败,单击重试");
             menuRow(ui.itemCount, itemLoading ? "正在读取..." : "返回设施设置");
         } else {

@@ -31,7 +31,11 @@ public sealed class ManufactureDataTests
     {
         var rows = ManufactureApiClient.Parse(Fixture());
         foreach (int grade in new[] { 3, 4, 5 })
-            Assert.Equal(grade, rows.Single(i => i.Name == BlkAmmoIdentity.Name(grade)).Grade);
+        {
+            var item = rows.Single(i => i.Name == BlkAmmoIdentity.Name(grade));
+            Assert.Equal(grade, item.Grade);
+            Assert.Equal($"{grade}级 .300BLK", CatalogItemLabel.Format(item.ToCatalogItem()));
+        }
         Assert.Equal(31440, rows.Single(i => i.Grade == 3 && BlkAmmoIdentity.Grade(i.Name) == 3).Profit);
     }
 

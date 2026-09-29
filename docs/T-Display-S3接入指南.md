@@ -121,7 +121,8 @@ Authorization: Bearer <配对密钥>
 | `name`, `enabled` | 中文名称、计划是否启用 |
 | `craftMode`, `plannedItemName` | Custom/HourlyProfit/TotalProfit、计划物品 |
 | `phase` | Unknown/Idle/Crafting/ReadyToCollect/NeedsManual;制造到期投影为 ReadyToCollect,不改持久化观测 |
-| `itemName` | 游戏中最近观测的当前物品,与计划物品分开 |
+| `itemName` | 游戏中最近观测的当前物品,与计划物品分开;Idle 时为空 |
+| `itemLabel`, `plannedItemLabel` | 带等级的显示标签,如「5级 .300BLK」;保存选择仍使用原始名称 |
 | `readyAt`, `remainingSeconds` | OCR 完成时间和非负剩余秒数;无有效制造倒计时为 null |
 | `totalSeconds` | 本客户端确认开工后的总时长秒数;首次接管已有任务时为 null |
 | `manualReason`, `observedAt` | 人工处理原因和最近观测时间,可为 null |
@@ -198,6 +199,9 @@ Steam 显示状态每 30 秒独立查询,过期或失败显示不可用,不会�
 
 需要配对鉴权，只读设备也可浏览。返回 `facility`、`selectedItemName` 和 `items` 名称数组；
 设施使用与状态接口相同的 kebab 键，缺失或非法设施返回 400。列表去重并包含当前手填选择。
+新版额外返回与 `items` 同序的 `options`，每项含 `name`、`label` 和 `grade`；
+等级来自数据帝目录，未知等级为 0。`name` 用于选择及保存，`label` 仅用于显示。
+原始名称和 `items` 保持兼容旧固件；当前制造接口无产出数量字段，因此不显示数量。
 S3 进入列表时单独请求目录，不放进每 3 秒的状态轮询。
 
 状态字段 `closeGameSupported` 表示支持 `POST /api/v1/action {"action":"close-game"}`。

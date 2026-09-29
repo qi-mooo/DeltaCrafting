@@ -50,7 +50,7 @@ void processLine(const String &line)
     if (strcmp(command, "info") == 0) {
         doc.clear();
         doc["ok"] = true;
-        doc["firmware"] = "axeuh-data-v7";
+        doc["firmware"] = "axeuh-items-v8";
         doc["build"] = __DATE__ " " __TIME__;
         doc["controls"] = "GPIO0=confirm,GPIO14=cycle";
         doc["configured"] = valid();

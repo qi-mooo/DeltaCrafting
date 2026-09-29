@@ -39,11 +39,11 @@ public sealed partial class FacilityCardModel : ObservableObject
     [RelayCommand]
     private Task CancelAsync() => _cancel(this);
 
-    public void Update(FacilityRuntime rt)
+    public void Update(FacilityRuntime rt, IReadOnlyList<CatalogItem> catalog)
     {
         _phase = rt.Phase;
         _readyAt = rt.ReadyAt;
-        ItemName = string.IsNullOrEmpty(rt.ItemName) ? "—" : rt.ItemName;
+        ItemName = rt.Phase == FacilityPhase.Idle ? "" : CatalogItemLabel.ForName(catalog, rt.ItemName);
         CanCancel = rt.Phase == FacilityPhase.Crafting;
 
         (PhaseText, BadgeLevel) = rt.Phase switch

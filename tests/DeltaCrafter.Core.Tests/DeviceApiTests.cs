@@ -85,6 +85,21 @@ public sealed class DeviceApiTests
         Assert.Null(status.NextRunAt);
     }
 
+    [Fact]
+    public void Idle_facility_clears_current_item_without_losing_the_next_plan()
+    {
+        var state = ScheduleState.CreateDefault();
+        state.For(FacilityKey.Workbench).Phase = FacilityPhase.Idle;
+        state.For(FacilityKey.Workbench).ItemName = "之前制造的物品";
+        var plan = CraftPlanConfig.CreateDefault();
+        plan.For(FacilityKey.Workbench).ItemName = ".300BLK五级弹";
+        var status = DeviceApiCoordinator.CreateStatus("test", Now,
+            new(EngineMode.Idle, "", null), false, new AppSettings(), plan, state);
+        Assert.Equal("", status.Facilities[0].ItemName);
+        Assert.Equal(".300BLK五级弹", status.Facilities[0].PlannedItemName);
+        Assert.Equal("之前制造的物品", state.For(FacilityKey.Workbench).ItemName);
+    }
+
     [Theory]
     [InlineData(1023, Key)]
     [InlineData(65536, Key)]

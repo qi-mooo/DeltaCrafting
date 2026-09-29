@@ -23,7 +23,7 @@ public sealed class DeviceApiService : IDisposable
         _api = new DeviceApiCoordinator(
             ct => OnUiAsync(Snapshot, ct),
             (action, ct) => OnUiAsync(() => Execute(action), ct), host.Log, UpdateSettingsAsync,
-            (key, ct) => OnUiAsync(() => DeviceItemList.Create(_host.Plan.For(key), _host.CatalogNamesFor(key)), ct));
+            (key, ct) => OnUiAsync(() => DeviceItemList.CreateWithMetadata(_host.Plan.For(key), _host.ItemsFor(key)), ct));
         _api.Changed += () => _dispatcher.TryEnqueue(() => Changed?.Invoke());
     }
 
@@ -41,9 +41,16 @@ public sealed class DeviceApiService : IDisposable
             ItemSelectionSupported = true, CloseGameSupported = true,
             DataRefreshSupported = true, DataRefresh = _host.ProfitPlan.DataRefresh,
             ProfitRefreshSupported = true,
-            Facilities = status.Facilities.Select(f => f with
+            Facilities = status.Facilities.Select(f =>
             {
-                ProfitRefresh = _host.ProfitPlan.ProfitStatus(FacilityKeys.All.Single(k => FacilityKeys.JsonKey(k) == f.Key)),
+                var key = FacilityKeys.All.Single(k => FacilityKeys.JsonKey(k) == f.Key);
+                var items = _host.ItemsFor(key);
+                return f with
+                {
+                    ProfitRefresh = _host.ProfitPlan.ProfitStatus(key),
+                    ItemLabel = CatalogItemLabel.ForName(items, f.ItemName),
+                    PlannedItemLabel = CatalogItemLabel.ForName(items, f.PlannedItemName),
+                };
             }).ToArray(),
         };
     }

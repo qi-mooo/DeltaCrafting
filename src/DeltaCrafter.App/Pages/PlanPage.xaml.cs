@@ -22,7 +22,7 @@ public sealed partial class PlanPage : Page
     private void OnItemBoxDataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
     {
         if (sender is AutoSuggestBox box && args.NewValue is PlanFacilityModel model)
-            box.Text = model.ItemName;
+            box.Text = model.ItemDisplayName;
     }
 
     /// <summary>聚焦即展开候选列表(按当前文本过滤;空文本 = 全部),保留“浏览全目录”体验。</summary>
@@ -46,8 +46,8 @@ public sealed partial class PlanPage : Page
     private void OnItemQuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
     {
         if (sender.DataContext is not PlanFacilityModel model) return;
-        model.ItemName = (args.ChosenSuggestion as string) ?? args.QueryText?.Trim() ?? "";
-        sender.Text = model.ItemName;
+        model.ItemDisplayName = (args.ChosenSuggestion as string) ?? args.QueryText?.Trim() ?? "";
+        sender.Text = model.ItemDisplayName;
     }
 
     /// <summary>
@@ -60,8 +60,7 @@ public sealed partial class PlanPage : Page
         if (sender is not AutoSuggestBox box || box.DataContext is not PlanFacilityModel model) return;
         string text = box.Text?.Trim() ?? "";
         if (text.Length > 0)
-            model.ItemName = text;
-        else if (model.ItemName.Length > 0)
-            box.Text = model.ItemName;
+            model.ItemDisplayName = text;
+        box.Text = model.ItemDisplayName;
     }
 }

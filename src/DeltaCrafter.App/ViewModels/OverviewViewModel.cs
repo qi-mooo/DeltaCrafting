@@ -75,7 +75,7 @@ public sealed partial class OverviewViewModel : ObservableObject
         foreach (var model in Facilities)
         {
             var rt = snapshot.FirstOrDefault(f => f.Key == model.Key);
-            if (rt is not null) model.Update(rt);
+            if (rt is not null) model.Update(rt, _host.ItemsFor(model.Key));
         }
 
         var (lastAt, summary, failed) = _coordinator.LastRunInfo();

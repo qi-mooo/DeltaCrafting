@@ -2,6 +2,12 @@
 #include <stdint.h>
 #include <string.h>
 
+inline const char *facilityDisplayItem(const char *phase, const char *current, const char *planned)
+{
+    if (strcmp(phase, "Idle") == 0) return "";
+    return current[0] ? current : planned;
+}
+
 inline const char *facilityDisplayPhase(const char *phase, int32_t remaining, uint32_t elapsed, bool fresh)
 {
     if (strcmp(phase, "Crafting") == 0 && fresh && remaining >= 0 && uint32_t(remaining) <= elapsed)

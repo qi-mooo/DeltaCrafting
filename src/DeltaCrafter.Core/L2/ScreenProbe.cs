@@ -144,15 +144,16 @@ public sealed class ScreenProbe
         return readout.Lines.FirstOrDefault(l => TextMatch.LineContains(l.Text, target));
     }
 
-    /// <summary>读取区域内全部 OCR 行(配方目录扫描用)。</summary>
+    /// <summary>读取生产列表名称，遮掉左侧插画/数量列(配方目录扫描用)。</summary>
     public async Task<IReadOnlyList<OcrLine>> ReadAreaLinesAsync(nint hwnd, NRect area) =>
-        (await ReadItemAsync(Capture(hwnd), area)).Lines;
+        (await ReadItemAsync(Capture(hwnd), area, iconMasks: ProductionListOcrLayout.IconMasks(area))).Lines;
 
     /// <summary>.300 BLK 专用识别保留 OCR 对应原帧,避免文字与品质颜色来自不同画面。</summary>
     public async Task<(CapturedFrame Frame, IReadOnlyList<OcrLine> Lines)> ReadAreaFrameAsync(nint hwnd, NRect area)
     {
         var frame = Capture(hwnd);
-        return (frame, (await ReadItemAsync(frame, area)).Lines);
+        return (frame, (await ReadItemAsync(frame, area,
+            iconMasks: ProductionListOcrLayout.IconMasks(area))).Lines);
     }
 
     public async Task<string> ReadFrameRoiAsync(CapturedFrame frame, NRect roi) =>
@@ -163,7 +164,7 @@ public sealed class ScreenProbe
         IReadOnlyList<NRect>? iconMasks = null)
     {
         var result = await _itemOcr.ReadAsync(frame, roi, upscale, iconMasks);
-        _log.Debug("PaddleOCR 物品读数(槽位图标遮罩={Masked})：{Text}",
+        _log.Debug("PaddleOCR 物品读数(图标遮罩={Masked})：{Text}",
             iconMasks is { Count: > 0 }, result.FullText.Replace('\n', '|'));
         if (result.HasUncertainText)
         {
@@ -173,7 +174,7 @@ public sealed class ScreenProbe
             string png = Path.Combine(_shotsDir, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-fail-PaddleOCR.png");
             await _capture.SavePngAsync(frame, png);
             await File.WriteAllTextAsync(Path.ChangeExtension(png, ".txt"),
-                $"ROI={roi.X},{roi.Y},{roi.W},{roi.H}; scale={upscale}; slotMasks={iconMasks is { Count: > 0 }}\n" +
+                $"ROI={roi.X},{roi.Y},{roi.W},{roi.H}; scale={upscale}; iconMasks={iconMasks is { Count: > 0 }}\n" +
                 string.Join("\n", result.Lines.Select(l =>
                     $"{l.Confidence:F3}\t{l.Text}\t{string.Join("; ", l.Words)}")));
             throw new StepFailedException("识别物品", $"PaddleOCR 识别置信度不足：{uncertain}。已停止本轮，请在画面稳定后重试。诊断截图：{png}", png, result.FullText);

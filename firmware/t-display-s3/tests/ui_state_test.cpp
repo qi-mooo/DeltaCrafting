@@ -113,4 +113,12 @@ int main()
     assert(std::string(facilityDisplayPhase("Crafting", 2, 3, false)) == "Crafting");
     for (const char *phase : {"Idle", "ReadyToCollect", "NeedsManual", "Unknown"})
         assert(std::string(facilityDisplayPhase(phase, 0, 100, true)) == phase);
+
+    assert(std::string(facilityDisplayItem("Idle", "previous", "planned")).empty());
+    assert(std::string(facilityDisplayItem("Idle", "", "planned")).empty());
+    assert(std::string(facilityDisplayItem("Crafting", "current", "planned")) == "current");
+    assert(std::string(facilityDisplayItem("ReadyToCollect", "current", "planned")) == "current");
+    std::vector<std::string> ammoNames = {".300BLK三级弹", ".300BLK四级弹", ".300BLK五级弹"};
+    ui.openItems(ammoNames, std::string(".300BLK五级弹"));
+    assert(ui.row == 2); // Labels can change; positioning and confirmation use the stable item name.
 }

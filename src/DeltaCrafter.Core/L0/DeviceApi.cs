@@ -21,7 +21,8 @@ public sealed record DeviceFacilityStatus(
     string Key, string Name, bool Enabled, string CraftMode, string PlannedItemName,
     string Phase, string ItemName, DateTimeOffset? ReadyAt, long? RemainingSeconds,
     string? ManualReason, DateTimeOffset? ObservedAt, long? TotalSeconds = null,
-    DeviceDataRefreshStatus? ProfitRefresh = null);
+    DeviceDataRefreshStatus? ProfitRefresh = null,
+    string? ItemLabel = null, string? PlannedItemLabel = null);
 
 public sealed record DeviceStatus(
     int ApiVersion, string AppVersion, DateTimeOffset ServerTime,
@@ -39,12 +40,28 @@ public sealed record DeviceDataRefreshStatus(bool IsRunning, string Detail, Date
 
 public sealed record DeviceItemList(string Facility, string SelectedItemName, IReadOnlyList<string> Items)
 {
+    public IReadOnlyList<DeviceItemOption>? Options { get; init; }
+
     public static bool ValidName(string name) => !string.IsNullOrWhiteSpace(name)
         && System.Text.Encoding.UTF8.GetByteCount(name) <= 192 && !name.Any(char.IsControl);
 
     public static DeviceItemList Create(FacilityPlan plan, IEnumerable<string> catalog) => new(
         FacilityKeys.JsonKey(plan.Key), plan.ItemName,
         catalog.Append(plan.ItemName).Where(ValidName).Distinct(StringComparer.Ordinal).ToArray());
+
+    public static DeviceItemList CreateWithMetadata(FacilityPlan plan, IReadOnlyList<CatalogItem> catalog)
+    {
+        var list = Create(plan, catalog.Select(i => i.Name));
+        return list with
+        {
+            Options = list.Items.Select(name =>
+            {
+                int grade = catalog.FirstOrDefault(i => i.Name == name)?.Grade ?? 0;
+                return new DeviceItemOption(name, CatalogItemLabel.ForName(catalog, name),
+                    grade is >= 1 and <= 6 ? grade : BlkAmmoIdentity.Grade(name) ?? 0);
+            }).ToArray(),
+        };
+    }
 
     public static DeviceActionResult? ValidateSelection(FacilityPlan plan, IEnumerable<string> catalog, string name)
     {
@@ -53,6 +70,8 @@ public sealed record DeviceItemList(string Facility, string SelectedItemName, IR
             ? null : new(400, "unknown_item");
     }
 }
+
+public sealed record DeviceItemOption(string Name, string Label, int Grade);
 
 public sealed record DeviceGameStatus(string State, string Detail, DateTimeOffset? CheckedAt);
 

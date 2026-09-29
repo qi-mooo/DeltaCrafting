@@ -12,6 +12,7 @@ public sealed class PlanFacilityModel : ObservableObject
     private readonly Action _save;
     private readonly Func<string, string?> _resolveMatchName;
     private readonly Action<FacilityKey, CraftMode> _modeChanged;
+    private readonly IReadOnlyList<CatalogItem> _items;
 
     public string Name { get; }
     public IReadOnlyList<string> Suggestions { get; }
@@ -19,7 +20,7 @@ public sealed class PlanFacilityModel : ObservableObject
     /// <summary>只有当前设施的自定义模式允许手选物品。</summary>
     public bool ItemEditable => _plan.Mode == CraftMode.Custom;
 
-    public PlanFacilityModel(FacilityPlan plan, IReadOnlyList<string> suggestions,
+    public PlanFacilityModel(FacilityPlan plan, IReadOnlyList<CatalogItem> items,
         Func<string, string?> resolveMatchName, Action save,
         Action<FacilityKey, CraftMode> modeChanged)
     {
@@ -28,7 +29,8 @@ public sealed class PlanFacilityModel : ObservableObject
         _resolveMatchName = resolveMatchName;
         _modeChanged = modeChanged;
         Name = FacilityKeys.DisplayName(plan.Key);
-        Suggestions = suggestions;
+        _items = items;
+        Suggestions = items.Select(CatalogItemLabel.Format).ToArray();
     }
 
     public bool Enabled
@@ -52,7 +54,18 @@ public sealed class PlanFacilityModel : ObservableObject
                 return;
             _plan.SetCustomSelection(itemName, matchName);
             OnPropertyChanged();
+            OnPropertyChanged(nameof(ItemDisplayName));
             _save();
+        }
+    }
+
+    public string ItemDisplayName
+    {
+        get => CatalogItemLabel.ForName(_items, ItemName);
+        set
+        {
+            if (value == ItemDisplayName) return;
+            ItemName = CatalogItemLabel.ResolveSelection(_items, value ?? "");
         }
     }
 
@@ -73,6 +86,7 @@ public sealed class PlanFacilityModel : ObservableObject
             OnPropertyChanged();
             OnPropertyChanged(nameof(ItemEditable));
             OnPropertyChanged(nameof(ItemName));
+            OnPropertyChanged(nameof(ItemDisplayName));
             _save();
             _modeChanged(_plan.Key, mode);
         }
@@ -137,7 +151,7 @@ public sealed partial class PlanViewModel : ObservableObject
     }
 
     private PlanFacilityModel CreateModel(FacilityKey key) =>
-        new(_host.Plan.For(key), _host.CatalogNamesFor(key),
+        new(_host.Plan.For(key), _host.ItemsFor(key),
             display => _host.ResolveCatalogMatchKey(key, display), _host.SavePlan,
             OnFacilityModeChanged);
 
