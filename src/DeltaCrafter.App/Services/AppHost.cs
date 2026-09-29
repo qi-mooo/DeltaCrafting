@@ -34,8 +34,6 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     public ProfitPlanService ProfitPlan { get; }
     public DeviceApiService DeviceApi { get; }
     public DataToolsService DataTools { get; } = new();
-    private QuantCoordinator? _quant;
-    public QuantCoordinator Quant => _quant ??= new(new AmmoMarketClient(), Store, Path.Combine(Paths.Root, "quant.json"));
     public SteamStatusMonitor SteamStatus { get; }
     public CancellationToken AppStopToken => _appStop.Token;
 
