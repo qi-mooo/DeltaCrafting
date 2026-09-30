@@ -95,7 +95,7 @@ public sealed class ItemTitleOcrTests
         var area = ItemTitleOcr.AreaFor(name, configured);
         Assert.Equal(640, (int)Math.Round(area.X * 1920));
         Assert.Equal(853, (int)Math.Round(area.X * 2560));
-        Assert.Equal(configured.X + configured.W, area.X + area.W, 10);
+        Assert.Equal(1280, (int)Math.Round((area.X + area.W) * 1920));
         Assert.Equal(configured.Y, area.Y);
         Assert.Equal(configured.H, area.H);
         Assert.Equal(.347, configured.X);
@@ -108,16 +108,22 @@ public sealed class ItemTitleOcrTests
     [InlineData("特里克MAS2.0装甲")]
     [InlineData("骨架狙击枪托")]
     [InlineData("M4A1突击步枪长枪管")]
-    public void Accessories_ammo_and_armor_keep_their_calibrated_area(string name)
+    [InlineData("OLIGHT WARRIOR 3S战术手电")]
+    public void Titles_preserve_left_and_vertical_calibration_while_extending_right_for_long_names(string name)
     {
         var configured = new NRect { X = .347, Y = .1472, W = .126, H = .0426 };
-        Assert.Same(configured, ItemTitleOcr.AreaFor(name, configured));
+        var area = ItemTitleOcr.AreaFor(name, configured);
+        Assert.Equal(configured.X, area.X);
+        Assert.Equal(configured.Y, area.Y);
+        Assert.Equal(configured.H, area.H);
+        Assert.Equal(1280, (int)Math.Round((area.X + area.W) * 1920));
+        Assert.Equal(1707, (int)Math.Round((area.X + area.W) * 2560));
     }
 
     [Fact]
     public void An_already_wider_weapon_calibration_is_not_shrunk()
     {
-        var configured = new NRect { X = .30, Y = .2, W = .2, H = .04 };
+        var configured = new NRect { X = .30, Y = .2, W = .40, H = .04 };
         var area = ItemTitleOcr.AreaFor("复合弓", configured);
         Assert.Same(configured, area);
     }

@@ -9,19 +9,18 @@ internal static class ItemTitleOcr
     private static readonly string[] WeaponSuffixes = ["步枪", "机枪", "冲锋枪", "霰弹枪", "散弹枪", "手枪", "狙击枪"];
 
     /// <summary>
-    /// 武器详情标题的左边缘在游戏中比其它物品更靠左，旧 ROI 会裁掉首字。
-    /// 坐标按 1920×1080 的实机标定向左扩展到 x=640；右边缘和垂直范围保持不变。
+    /// 标题带必须容纳完整长名称：旧右边缘 x=908 会裁断 OLIGHT WARRIOR 3S 战术手电。
+    /// 按 1920×1080 扩展右边缘到 x=1280；武器额外向左扩展到 x=640。
+    /// 保留原垂直范围及用户更宽的标定，不把价格/材料区域带入标题。
     /// </summary>
     internal static NRect AreaFor(string itemName, NRect configured)
     {
         string name = CatalogNameResolver.Canonical(itemName);
         bool weapon = name == "复合弓" ||
             WeaponSuffixes.Any(suffix => name.EndsWith(suffix, StringComparison.Ordinal));
-        if (!weapon) return configured;
-
-        double left = Math.Min(configured.X, 640.0 / 1920.0);
-        if (left == configured.X) return configured;
-        double right = configured.X + configured.W;
+        double left = weapon ? Math.Min(configured.X, 640.0 / 1920.0) : configured.X;
+        double right = Math.Max(configured.X + configured.W, 1280.0 / 1920.0);
+        if (left == configured.X && right == configured.X + configured.W) return configured;
         return new NRect { X = left, Y = configured.Y, W = right - left, H = configured.H };
     }
 

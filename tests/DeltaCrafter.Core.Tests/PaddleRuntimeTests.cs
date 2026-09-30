@@ -18,6 +18,40 @@ public sealed class WindowsOcrFactAttribute : FactAttribute
 public sealed class PaddleRuntimeTests
 {
     [WindowsOcrFact]
+    public async Task Actual_long_flashlight_title_is_not_truncated_or_confused_with_other_flashlights()
+    {
+        const string expected = "OLIGHT WARRIOR 3S战术手电";
+        CatalogItem[] catalog = [new() { Name = expected }, new() { Name = "OLIGHT Odin S战术手电" },
+            new() { Name = "OLIGHT Baldr Pro R多功能手电" }];
+        // 183 在 2026-10-01 01:36 的失败截图，只保存标题带，不包含账号或其它区域。
+        using var crop = Cv2.ImRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", "title-warrior-flashlight.png"));
+        using var original = new Mat(1080, 1920, MatType.CV_8UC3, Scalar.Black);
+        using (var destination = new Mat(original, new Rect(624, 144, crop.Width, crop.Height)))
+            crop.CopyTo(destination);
+        var configured = new NRect { X = .347, Y = .1472, W = .126, H = .0426 };
+        var ocr = new PaddleOcrBrick();
+        foreach (int width in new[] { 1920, 2560 })
+        {
+            using var scaled = new Mat();
+            Cv2.Resize(original, scaled, new Size(width, width * 9 / 16));
+            using var canvas = new Mat();
+            Cv2.CvtColor(scaled, canvas, ColorConversionCodes.BGR2BGRA);
+            var pixels = new byte[canvas.Width * canvas.Height * 4];
+            Marshal.Copy(canvas.Data, pixels, 0, pixels.Length);
+            var frame = new CapturedFrame(canvas.Width, canvas.Height, pixels);
+            var truncated = await ocr.ReadAsync(frame, configured);
+            Assert.False(CatalogNameResolver.Matches(catalog, truncated.FullText, expected));
+            var title = OcrMatchFilter.Filter(ItemTitleOcr.Normalize(await ocr.ReadAsync(frame,
+                ItemTitleOcr.AreaFor(expected, configured))), [expected]);
+            Assert.False(title.HasUncertainText);
+            Assert.True(CatalogNameResolver.Matches(catalog, title.FullText, expected));
+            Assert.False(CatalogNameResolver.Matches(catalog, title.FullText, catalog[1].Name));
+            Assert.False(CatalogNameResolver.Matches(catalog, "OLIGHT WARRIOR3", expected));
+            Assert.False(CatalogNameResolver.Matches(catalog, "OLIGHT WARRI0R3S战术手电", expected));
+        }
+    }
+
+    [WindowsOcrFact]
     public async Task Actual_compound_bow_title_is_complete_in_weapon_area_at_both_resolutions()
     {
         // 183 失败截图只保留标题区域；还原其位置以验证生产流程所用的 ROI。
