@@ -13,14 +13,13 @@ public sealed class ScreenProbe
     internal const float ProductionButtonMinimumConfidence = .80f;
     private readonly GameWindowBrick _window;
     private readonly ScreenCaptureBrick _capture;
-    private readonly OcrBrick _ocr;
-    private readonly PaddleOcrBrick _itemOcr = new();
+    private readonly PaddleOcrBrick _ocr;
     private readonly InputBrick _input;
     private readonly Func<AnchorTable> _anchors;
     private readonly string _shotsDir;
     private readonly ILogger _log;
 
-    public ScreenProbe(GameWindowBrick window, ScreenCaptureBrick capture, OcrBrick ocr,
+    public ScreenProbe(GameWindowBrick window, ScreenCaptureBrick capture, PaddleOcrBrick ocr,
         InputBrick input, Func<AnchorTable> anchors, string shotsDir, ILogger log)
     {
         _window = window;
@@ -38,8 +37,13 @@ public sealed class ScreenProbe
 
     public CapturedFrame Capture(nint hwnd) => _capture.CaptureClient(_window.ClientRectOnScreen(hwnd));
 
-    public async Task<string> ReadRoiAsync(nint hwnd, NRect roi) =>
-        (await _ocr.ReadAsync(Capture(hwnd), roi)).FullText;
+    public async Task<OcrReadout> ReadCountdownAsync(CapturedFrame frame, NRect roi, double upscale)
+    {
+        var result = await _ocr.ReadAsync(frame, roi, upscale);
+        _log.Debug("生产倒计时(PaddleOCR {Scale}x)：{Readings}", upscale,
+            string.Join(" | ", OcrEvidence.Candidates(result).Select(l => $"{l.Text} ({l.Confidence:P0})")));
+        return result;
+    }
 
     /// <summary>一次捕获、多区域识别,保证多个读数来自同一帧。
     /// upscale 可指定识别倍率:2x 适合小字号;1x 适合低对比大字(见 CollectFlow 交替倍率观察)。</summary>
@@ -77,12 +81,20 @@ public sealed class ScreenProbe
         return on;
     }
 
-    private async Task<IReadOnlyList<string>> ReadScreenTextsAsync(CapturedFrame frame, ScreenSpec spec)
+    public async Task<IReadOnlyList<string>> ReadScreenTextsAsync(CapturedFrame frame, ScreenSpec spec)
     {
         var probes = new[] { spec.Probe }.Concat(spec.AdditionalProbes);
         var texts = new List<string>();
         foreach (var probe in probes)
-            texts.Add((await _ocr.ReadAsync(frame, probe.Roi, probe.Upscale)).FullText);
+        {
+            var reading = await _ocr.ReadAsync(frame, probe.Roi, probe.Upscale);
+            string text = OcrEvidence.FindTarget(reading, probe.MustContain)?.Text ?? "";
+            _log.Debug("界面探针(PaddleOCR)：目标={Target}; 可信匹配={Matched}; 原文={Readings}",
+                probe.MustContain, text.Length > 0,
+                string.Join(" | ", reading.Lines.Select(l => $"{l.Text} ({l.Confidence:P0})")));
+            texts.Add(text);
+            if (text.Length == 0) break; // 首探针不成立时无需识别同屏附加探针。
+        }
         return texts;
     }
 
@@ -132,12 +144,12 @@ public sealed class ScreenProbe
         _input.ScrollAt(x, y, notches);
     }
 
-    /// <summary>在区域内按文本找行(TextMatch 规范形包含匹配,抗 0/O、1/I 同形误读)。
+    /// <summary>在区域内按完整目标文字找行，并检查该文字框的置信度。
     /// 找不到返回 null,由调用方决定翻页或失败。</summary>
     public async Task<OcrLine?> FindLineAsync(nint hwnd, NRect area, string target)
     {
         var readout = await _ocr.ReadAsync(Capture(hwnd), area);
-        return readout.Lines.FirstOrDefault(l => TextMatch.LineContains(l.Text, target));
+        return OcrEvidence.FindTarget(readout, target);
     }
 
     /// <summary>.300 BLK 专用识别保留 OCR 对应原帧,避免文字与品质颜色来自不同画面。</summary>
@@ -169,7 +181,7 @@ public sealed class ScreenProbe
         IReadOnlyList<NRect>? iconMasks = null, bool itemTitle = false, bool slot = false,
         float minimumConfidence = OcrReadout.MinimumItemConfidence)
     {
-        var result = await _itemOcr.ReadAsync(frame, roi, upscale, iconMasks);
+        var result = await _ocr.ReadAsync(frame, roi, upscale, iconMasks);
         var raw = result;
         _log.Debug("PaddleOCR 物品读数(图标遮罩={Masked})：{Text}",
             iconMasks is { Count: > 0 }, result.FullText.Replace('\n', '|'));
@@ -208,7 +220,7 @@ public sealed class ScreenProbe
         string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
         string png = Path.Combine(_shotsDir, $"{stamp}-{tag}.png");
         await _capture.SavePngAsync(frame, png);
-        var readout = await _ocr.ReadAsync(frame, roi: null, upscale: 1.0);
+        var readout = await _ocr.ReadAsync(frame, upscale: 1.0);
         await File.WriteAllTextAsync(Path.ChangeExtension(png, ".txt"), readout.FullText);
         _log.Information("已保存诊断截图:{Png}", png);
         return (png, readout.FullText);

@@ -7,6 +7,22 @@ namespace DeltaCrafter.Core.Tests;
 
 public sealed class ScreenProbeTests
 {
+    [Fact]
+    public void Navigation_uses_confidence_of_target_region_not_nearby_symbol()
+    {
+        var line = new OcrLine("0 升级制造", 100, 20)
+        {
+            Confidence = .3f,
+            Words = [new("0", 0, 0, 10, 20) { Confidence = .3f },
+                new("升级制造", 20, 0, 60, 20) { Confidence = .98f }],
+        };
+        Assert.NotNull(OcrEvidence.FindTarget(new(line.Text, [line]), "升级制造"));
+        Assert.Null(OcrEvidence.FindTarget(new(line.Text, [line]), "0"));
+        Assert.Null(OcrEvidence.FindTarget(new(line.Text, [line]), ""));
+        Assert.Null(OcrEvidence.FindTarget(new(line.Text, [line]), "制造完成"));
+        Assert.Null(OcrEvidence.FindTarget(new("", [new("开始游戏", 0, 0) { Confidence = .89f }]), "开始游戏"));
+    }
+
     private static AnchorTable Anchors => new JsonStoreBrick().Load<AnchorTable>(
         Path.Combine(AppContext.BaseDirectory, "Data", "anchors.json"));
 

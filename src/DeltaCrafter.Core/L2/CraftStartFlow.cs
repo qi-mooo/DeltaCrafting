@@ -240,17 +240,21 @@ public sealed class CraftStartFlow
     private async Task<TimeSpan> ReadRemainingTimeAsync(nint hwnd, string facility,
         ScreenSpec prodSpec, CancellationToken ct)
     {
-        long deadline = Environment.TickCount64 + 8000;
+        long deadline = Environment.TickCount64 + 15000;
+        var consensus = new CountdownOcr();
+        int attempt = 0;
         while (Environment.TickCount64 < deadline)
         {
             ct.ThrowIfCancellationRequested();
-            string text = await _probe.ReadRoiAsync(hwnd, prodSpec.Roi(AnchorKeys.RoiRemainingTime));
-            if (CountdownParser.TryParse(text, out var remaining)) return remaining;
-            await Task.Delay(1000, ct);
+            long capturedAt = Environment.TickCount64;
+            var reading = await _probe.ReadCountdownAsync(_probe.Capture(hwnd),
+                prodSpec.Roi(AnchorKeys.RoiRemainingTime), ++attempt % 2 == 1 ? 1 : 2);
+            if (consensus.Observe(reading, capturedAt, Environment.TickCount64, out var remaining)) return remaining;
+            await Task.Delay(700, ct);
         }
         var (png, dumpText) = await _probe.DumpAsync(hwnd, "fail-读取剩余时间");
         throw new StepFailedException($"读取{facility}剩余时间",
-            $"开工后读不到剩余时间,无法调度下一轮。诊断截图:{png}", png, dumpText);
+            $"开工后未读到两次一致且置信度足够的剩余时间,无法调度下一轮。诊断截图:{png}", png, dumpText);
     }
 
     private Task EscBackToHomeAsync(nint hwnd, CancellationToken ct) =>

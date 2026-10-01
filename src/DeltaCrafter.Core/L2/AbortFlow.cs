@@ -89,9 +89,9 @@ public sealed class AbortFlow
             if (screen == AnchorKeys.Production)
             {
                 // 仍在生产界面:若按钮不再是「中止」(变为 生产/一键补齐),即已中止成功。
-                string label = ScreenProbe.Normalize(
-                    await _probe.ReadRoiAsync(hwnd, prodSpec.Roi(AnchorKeys.RoiActionButton)));
-                if (label.Length > 0 && !LabelHits(label, kw.ButtonAbort)) return;
+                string label = await _probe.ReadProductionButtonAsync(_probe.Capture(hwnd),
+                    prodSpec.Roi(AnchorKeys.RoiActionButton));
+                if (LabelHits(label, kw.ButtonProduce) || LabelHits(label, kw.ButtonReplenish)) return;
             }
         }
 
@@ -104,8 +104,8 @@ public sealed class AbortFlow
     {
         for (int attempt = 1; attempt <= 2; attempt++)
         {
-            string label = ScreenProbe.Normalize(
-                await _probe.ReadRoiAsync(hwnd, prodSpec.Roi(AnchorKeys.RoiActionButton)));
+            string label = await _probe.ReadProductionButtonAsync(_probe.Capture(hwnd),
+                prodSpec.Roi(AnchorKeys.RoiActionButton));
             if (label.Length > 0) return label;
             await Task.Delay(1000, ct);
         }
@@ -114,7 +114,7 @@ public sealed class AbortFlow
 
     private static bool LabelHits(string normalizedLabel, IEnumerable<string> keywords) =>
         keywords.Any(k => k.Length > 0 &&
-            normalizedLabel.Contains(ScreenProbe.Normalize(k), StringComparison.Ordinal));
+            normalizedLabel.Equals(ScreenProbe.Normalize(k), StringComparison.Ordinal));
 
     private async Task EnsureBackHomeAsync(nint hwnd, CancellationToken ct)
     {

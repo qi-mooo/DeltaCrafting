@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- 自动化核心(L0-L3)。约束:不得引用 WindowsAppSDK/UI 框架;WinRT 能力仅限
-       Windows SDK 投影(OCR、图像编码),保证核心可独立于 UI 演进与测试。 -->
+       Windows SDK 投影(图像编码),保证核心可独立于 UI 演进与测试。 -->
   <PropertyGroup>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
@@ -13,7 +13,7 @@
     <!-- schtasks 输出走 OEM 中文代码页(936);该 Provider 不在共享框架内,需显式引入,
          否则 Encoding.GetEncoding(936) 运行时抛异常、CodePagesEncodingProvider 编译不过。 -->
     <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
-    <!-- PaddleOCR V5 本地中文模型:列表文字与拉丁型号(如 DICH-9)共用同一识别器。 -->
+    <!-- PaddleOCR V5 本地中文模型:导航、按钮、物品和倒计时共用同一识别器。 -->
     <PackageReference Include="Sdcb.PaddleOCR" Version="3.3.1" />
     <PackageReference Include="Sdcb.PaddleOCR.Models.Local" Version="3.3.1" />
     <PackageReference Include="Sdcb.PaddleInference.runtime.win64.mkl" Version="3.3.1.70" />

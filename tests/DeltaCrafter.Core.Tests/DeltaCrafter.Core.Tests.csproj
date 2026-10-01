@@ -18,6 +18,8 @@
     <Content Include="Fixtures\datatools-*.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Fixtures\button-*.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Fixtures\title-*.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Fixtures\countdown-*.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Fixtures\navigation-*.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Fixtures\item-metadata.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

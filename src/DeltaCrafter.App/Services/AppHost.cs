@@ -93,7 +93,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
 
         var clock = new SystemClock();
         SteamStatus = new SteamStatusMonitor(new SteamActivityClient(), clock);
-        var ocr = OcrBrick.CreateSimplifiedChinese(); // 缺中文包在此抛出,由 App 弹窗给指引
+        var ocr = new PaddleOcrBrick();
         WindowBrick = new GameWindowBrick();
         var capture = new ScreenCaptureBrick();
         var input = new InputBrick();

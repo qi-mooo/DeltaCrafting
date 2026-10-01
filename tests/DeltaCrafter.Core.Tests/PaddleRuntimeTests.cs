@@ -3,6 +3,7 @@ using DeltaCrafter.Core.L0;
 using DeltaCrafter.Core.L1;
 using DeltaCrafter.Core.L2;
 using OpenCvSharp;
+using Serilog;
 using Xunit;
 
 namespace DeltaCrafter.Core.Tests;
@@ -17,6 +18,61 @@ public sealed class WindowsOcrFactAttribute : FactAttribute
 
 public sealed class PaddleRuntimeTests
 {
+    [WindowsOcrFact]
+    public async Task Production_countdown_uses_paddle_and_retains_confidence_at_both_resolutions()
+    {
+        // 183 在 2026-10-01 14:35 的失败画面，仅保留倒计时区域。
+        using var crop = Cv2.ImRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", "countdown-started-blk.png"));
+        using var original = new Mat(1080, 1920, MatType.CV_8UC3, Scalar.Black);
+        using (var destination = new Mat(original, new Rect(1526, 851, crop.Width, crop.Height)))
+            crop.CopyTo(destination);
+        var anchors = new JsonStoreBrick().Load<AnchorTable>(Path.Combine(AppContext.BaseDirectory, "Data", "anchors.json"));
+        using var log = new LoggerConfiguration().CreateLogger();
+        var probe = new ScreenProbe(new(), new(), new PaddleOcrBrick(), new(), () => anchors, "", log);
+        foreach (int width in new[] { 1920, 2560 })
+        {
+            var frame = FrameAt(original, width);
+            foreach (double scale in new[] { 1.0, 2.0 })
+            {
+                var reading = await probe.ReadCountdownAsync(frame,
+                    anchors.Screen(AnchorKeys.Production).Roi(AnchorKeys.RoiRemainingTime), scale);
+                Assert.True(CountdownOcr.TryRead(reading, out var time));
+                Assert.Equal(new TimeSpan(7, 59, 48), time);
+            }
+        }
+    }
+
+    [WindowsOcrFact]
+    public async Task Navigation_probes_use_paddle_on_actual_screen_regions()
+    {
+        var anchors = new JsonStoreBrick().Load<AnchorTable>(Path.Combine(AppContext.BaseDirectory, "Data", "anchors.json"));
+        using var log = new LoggerConfiguration().CreateLogger();
+        var probe = new ScreenProbe(new(), new(), new PaddleOcrBrick(), new(), () => anchors, "", log);
+        foreach (string name in new[] { AnchorKeys.ModeSelectPlay, AnchorKeys.ModeExitMenu, AnchorKeys.Lobby,
+                     AnchorKeys.Safehouse, AnchorKeys.PromoAnnounce, AnchorKeys.SpecOpsHome, AnchorKeys.Production })
+        {
+            // 只保留原帧里的锚点区域，其余画面置黑，不保存账号或用户桌面。
+            using var original = Cv2.ImRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", $"navigation-{name}.png"));
+            foreach (int width in new[] { 1920, 2560 })
+            {
+                var texts = await probe.ReadScreenTextsAsync(FrameAt(original, width), anchors.Screen(name));
+                Assert.True(ScreenProbe.MatchesScreenTexts(anchors.Screen(name), texts),
+                    $"{name} {width}px: {string.Join(" | ", texts)}");
+            }
+        }
+    }
+
+    private static CapturedFrame FrameAt(Mat original, int width)
+    {
+        using var scaled = new Mat();
+        Cv2.Resize(original, scaled, new Size(width, width * 9 / 16));
+        using var bgra = new Mat();
+        Cv2.CvtColor(scaled, bgra, ColorConversionCodes.BGR2BGRA);
+        var pixels = new byte[bgra.Width * bgra.Height * 4];
+        Marshal.Copy(bgra.Data, pixels, 0, pixels.Length);
+        return new(bgra.Width, bgra.Height, pixels);
+    }
+
     [WindowsOcrFact]
     public async Task Actual_long_flashlight_title_is_not_truncated_or_confused_with_other_flashlights()
     {

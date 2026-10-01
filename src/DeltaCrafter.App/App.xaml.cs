@@ -23,7 +23,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            // 启动失败(缺中文 OCR 包/配置损坏/构建产物不完整)必须把原因亮给用户,不能无声退出。
+            // 启动失败(配置损坏/构建产物不完整)必须把原因亮给用户,不能无声退出。
             Win32Dialogs.FatalError("三角洲特勤助手无法启动", ex.Message);
             Environment.Exit(1);
             return;

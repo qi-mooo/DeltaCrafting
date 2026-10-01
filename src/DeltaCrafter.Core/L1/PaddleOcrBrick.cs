@@ -7,7 +7,7 @@ using Sdcb.PaddleOCR.Models.Local;
 
 namespace DeltaCrafter.Core.L1;
 
-/// <summary>离线中文/拉丁混排物品识别。模型按需加载，共享实例串行访问。</summary>
+/// <summary>全流程离线中文/拉丁文字识别。模型按需加载，共享实例串行访问。</summary>
 public sealed class PaddleOcrBrick
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -22,20 +22,20 @@ public sealed class PaddleOcrBrick
         }
         catch (Exception ex)
         {
-            throw new InvalidOperationException("PaddleOCR 离线模型加载失败，请检查完整客户端文件和 Visual C++ x64 运行库。已停止物品识别。", ex);
+            throw new InvalidOperationException("PaddleOCR 离线模型加载失败，请检查完整客户端文件和 Visual C++ x64 运行库。已停止文字识别。", ex);
         }
     });
 
-    public async Task<OcrReadout> ReadAsync(CapturedFrame frame, NRect area, double upscale = 2,
+    public async Task<OcrReadout> ReadAsync(CapturedFrame frame, NRect? area = null, double upscale = 2,
         IReadOnlyList<NRect>? iconMasks = null)
     {
         if (!double.IsFinite(upscale) || upscale <= 0)
             throw new ArgumentOutOfRangeException(nameof(upscale));
         await _gate.WaitAsync();
-        try { return await Task.Run(() => Read(frame, area, upscale, iconMasks)); }
+        try { return await Task.Run(() => Read(frame, area ?? new NRect { W = 1, H = 1 }, upscale, iconMasks)); }
         catch (Exception ex)
         {
-            throw new InvalidOperationException("PaddleOCR 物品识别失败，请检查完整客户端、离线模型及 Visual C++ x64 运行库。已停止本轮，请重试。", ex);
+            throw new InvalidOperationException("PaddleOCR 文字识别失败，请检查完整客户端、离线模型及 Visual C++ x64 运行库。已停止本轮，请重试。", ex);
         }
         finally { _gate.Release(); }
     }
