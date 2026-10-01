@@ -9,7 +9,8 @@ public sealed record LaunchOutcome(nint Hwnd, bool LaunchedByUs);
 /// <summary>
 /// 「确保游戏就绪并到达大厅」流程。通过原有启动器或本机 Steam 启动:
 /// 可选启动器(OCR 找「开始游戏」点击)→ 游戏客户端(16:9 大窗,Steam 模式还校验进程路径)→
-/// 模式选择(点烽火地带)→ 3D 基地(Tab)→ 大厅。活动公告页即时 ESC 跳过(≤8 页);未知画面有界 ESC(≤3 次)关弹窗。
+/// 模式选择(点烽火地带)→ 3D 基地(Tab)→ 大厅。公告和退出菜单重读确认后 ESC;
+/// 未知画面连续等待 60 秒后才允许 ESC 兜底(≤3 次),每次重新等待。
 /// </summary>
 public sealed class LaunchFlow
 {
@@ -120,7 +121,8 @@ public sealed class LaunchFlow
                 _log.Information("游戏客户端窗口已出现:{Title}", game.Title);
                 if (_assistantGame.Record(GameProcessBrick.ReadIdentity(game.ProcessId), launchRequestedUtc))
                     _log.Information("已记录助手启动的游戏进程 {Pid},后续任务不受该进程的 Steam 游戏状态阻拦。", game.ProcessId);
-                await Task.Delay(2000, ct); // 等渲染器就绪,后续交给画面判定
+                _log.Information("等待游戏客户端加载 30 秒,之后按实际画面继续导航。");
+                await Task.Delay(TimeSpan.FromSeconds(30), ct);
                 return game;
             }
 
@@ -162,7 +164,9 @@ public sealed class LaunchFlow
     private async Task NavigateToLobbyAsync(nint hwnd, AppSettings s, CancellationToken ct)
     {
         long deadline = Environment.TickCount64 + s.LobbyTimeoutSeconds * 1000L;
-        int escUsed = 0, unknownStreak = 0, promoEscs = 0;
+        var escapeFallback = new LaunchEscapeFallback();
+        int promoEscs = 0;
+        long nextLoadingLogAt = 0;
         while (Environment.TickCount64 < deadline)
         {
             ct.ThrowIfCancellationRequested();
@@ -170,7 +174,49 @@ public sealed class LaunchFlow
                 throw new StepFailedException("等待大厅", "游戏窗口中途消失(游戏崩溃或被手动关闭)。");
 
             _window.TryEnsureForeground(hwnd, TimeSpan.FromSeconds(1));
+            long observedAt = Environment.TickCount64;
             string? screen = await _probe.WhichScreenAsync(hwnd, KnownScreens);
+            if (escapeFallback.Observe(screen, observedAt))
+            {
+                // 完整 OCR 一轮需要数秒,触发兜底前必须重新截帧,
+                // 避免判断的是加载画面,按键时却已经进入模式选择。
+                ct.ThrowIfCancellationRequested();
+                if (Environment.TickCount64 >= deadline) break;
+                observedAt = Environment.TickCount64;
+                screen = await _probe.WhichScreenAsync(hwnd, KnownScreens);
+                bool stillUnknown = escapeFallback.Observe(screen, observedAt);
+                ct.ThrowIfCancellationRequested();
+                if (Environment.TickCount64 >= deadline) break;
+                if (stillUnknown && _window.IsAlive(hwnd)
+                    && _window.TryEnsureForeground(hwnd, TimeSpan.FromSeconds(1)))
+                {
+                    _input.PressEscape();
+                    escapeFallback.RecordEscape(Environment.TickCount64);
+                    _log.Information("画面连续 60 秒未识别,重新检查仍未就绪,按 ESC 兜底({N}/3);再等待 60 秒。",
+                        escapeFallback.Attempts);
+                    await Task.Delay(3000, ct);
+                    continue;
+                }
+            }
+            if (screen is not null) nextLoadingLogAt = 0;
+
+            // 识别期间页面可能还在切换。明确可关闭的页面也要间隔两秒
+            // 重新截帧确认,避免根据已经消失的公告或菜单发送 ESC。
+            if (screen is AnchorKeys.ModeExitMenu or AnchorKeys.PromoAnnounce)
+            {
+                await Task.Delay(2000, ct);
+                if (Environment.TickCount64 >= deadline) break;
+                if (!_window.IsAlive(hwnd))
+                    throw new StepFailedException("等待大厅", "游戏窗口中途消失(游戏崩溃或被手动关闭)。");
+                if (!_window.TryEnsureForeground(hwnd, TimeSpan.FromSeconds(1))
+                    || !await _probe.IsOnAsync(hwnd, screen))
+                {
+                    _log.Information("公告或菜单画面已变化,继续等待页面就绪。");
+                    continue;
+                }
+                ct.ThrowIfCancellationRequested();
+                if (Environment.TickCount64 >= deadline) break;
+            }
             switch (screen)
             {
                 case AnchorKeys.Lobby:
@@ -180,7 +226,6 @@ public sealed class LaunchFlow
                 case AnchorKeys.ModeSelect:
                     _log.Information("模式选择界面,点击「烽火地带」。");
                     _probe.ClickPoint(hwnd, AnchorKeys.ModeSelect, AnchorKeys.PointModeEntry);
-                    unknownStreak = 0;
                     await Task.Delay(2500, ct);
                     break;
                 case AnchorKeys.ModeSelectPlay:
@@ -191,7 +236,6 @@ public sealed class LaunchFlow
                         async () => await _probe.WhichScreenAsync(hwnd, ModeDestinations) is not null,
                         TimeSpan.FromMilliseconds(Math.Max(1, deadline - Environment.TickCount64)),
                         RetryOnce: false), ct);
-                    unknownStreak = 0;
                     break;
                 case AnchorKeys.ModeExitMenu:
                     _log.Information("检测到退出游戏菜单,按 ESC 返回模式选择。");
@@ -201,16 +245,14 @@ public sealed class LaunchFlow
                         async () => await _probe.WhichScreenAsync(hwnd, ExitMenuDestinations) is not null,
                         TimeSpan.FromMilliseconds(Math.Min(10_000, Math.Max(1, deadline - Environment.TickCount64))),
                         RetryOnce: false), ct);
-                    unknownStreak = 0;
                     break;
                 case AnchorKeys.Safehouse:
                     _log.Information("特勤基地界面,按 Tab 进入大厅。");
                     _input.PressTab();
-                    unknownStreak = 0;
                     await Task.Delay(2500, ct);
                     break;
                 case AnchorKeys.PromoAnnounce:
-                    // 公告可多页:识别到就 ESC(专用预算,与兜底 3 次分离);8 页关不掉即 ESC 失效/样式已变,留现场明确失败,不耗完大厅超时。
+                    // 公告可多页:每页都重新确认,8 页关不掉则留现场明确失败。
                     if (++promoEscs > 8)
                     {
                         var (promoPng, promoDump) = await _probe.DumpAsync(hwnd, "fail-活动公告");
@@ -219,16 +261,13 @@ public sealed class LaunchFlow
                     }
                     _log.Information("活动公告页,按 ESC 跳过({N}/8)。", promoEscs);
                     _input.PressEscape();
-                    unknownStreak = 0;
                     await Task.Delay(1500, ct);
                     break;
                 default:
-                    unknownStreak++;
-                    if (unknownStreak % 4 == 0 && escUsed < 3)
+                    if (Environment.TickCount64 >= nextLoadingLogAt)
                     {
-                        escUsed++;
-                        _log.Information("画面未识别,按 ESC 尝试关闭弹窗({N}/3)。", escUsed);
-                        _input.PressEscape();
+                        _log.Information("等待登录/加载完成,尚未识别到可操作页面,继续等待。");
+                        nextLoadingLogAt = Environment.TickCount64 + 30_000;
                     }
                     await Task.Delay(3000, ct);
                     break;
