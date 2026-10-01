@@ -1,4 +1,5 @@
 using DeltaCrafter.Core.L0;
+using DeltaCrafter.Core.L1;
 using DeltaCrafter.Core.L3;
 using Microsoft.UI.Dispatching;
 
@@ -13,6 +14,8 @@ public sealed class DeviceApiService : IDisposable
     private readonly DeviceApiCoordinator _api;
     private CancellationTokenSource? _remoteStop;
     private Task? _remoteRun;
+    private readonly DeviceFirmwareStore _firmware;
+    public string FirmwareStatus { get; private set; } = "尚未准备 S3 固件包";
 
     public string StatusText => _api.StatusText;
     public event Action? Changed;
@@ -20,6 +23,8 @@ public sealed class DeviceApiService : IDisposable
     public DeviceApiService(AppHost host)
     {
         _host = host;
+        _firmware = new DeviceFirmwareStore(Path.Combine(host.Paths.Root, "firmware"));
+        if (_firmware.Current is { } current) FirmwareStatus = "可供更新: " + current.FirmwareVersion;
         _api = new DeviceApiCoordinator(
             ct => OnUiAsync(Snapshot, ct),
             (action, ct) => OnUiAsync(() => Execute(action), ct), host.Log, UpdateSettingsAsync,
@@ -28,8 +33,26 @@ public sealed class DeviceApiService : IDisposable
             {
                 string token = await OnUiAsync(() => _host.Settings.ManufactureApi.Token, ct);
                 return await _host.DataTools.FetchAsync(query, token, ct);
-            }, (code, ct) => OnUiAsync(() => _host.DataTools.CopyGunCode(code), ct), _host.DataTools.ImageAsync);
+            }, (code, ct) => OnUiAsync(() => _host.DataTools.CopyGunCode(code), ct), _host.DataTools.ImageAsync, _firmware);
         _api.Changed += () => _dispatcher.TryEnqueue(() => Changed?.Invoke());
+        string bundle = Path.Combine(AppContext.BaseDirectory, "Firmware", "DeltaCrafter-esp32s3.zip");
+        if (File.Exists(bundle)) _ = ImportFirmwareAsync(bundle, onlyNewer: true);
+    }
+
+    public async Task ImportFirmwareAsync(string path, bool onlyNewer = false)
+    {
+        try
+        {
+            var manifest = await Task.Run(() => _firmware.Import(path, onlyNewer));
+            FirmwareStatus = "可供更新: " + manifest.FirmwareVersion;
+            _host.Log.Information("S3 在线固件已准备: {Version}", manifest.FirmwareVersion);
+        }
+        catch (Exception ex)
+        {
+            FirmwareStatus = "固件导入失败: " + ex.Message;
+            _host.Log.Warning(ex, "S3 固件导入失败。");
+        }
+        _dispatcher.TryEnqueue(() => Changed?.Invoke());
     }
 
     public void Apply() => _api.Apply(_host.Settings.DeviceApi);

@@ -5,6 +5,7 @@ namespace DeviceConfig {
 void load();
 void handleSerial();
 void setScreenCapture(void (*capture)());
+void setFirmwareControl(bool (*control)(bool install));
 void setHealth(bool online, const String &error, int facilityCount);
 void setStackHealth(uint32_t loopBytes, uint32_t networkBytes);
 bool valid();

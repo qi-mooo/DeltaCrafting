@@ -6,6 +6,7 @@
 #include "AudioBridge.h"
 #include "config.h"
 #include "program_switch.h"
+#include <DeltaOta.h>
 
 namespace {
 
@@ -80,6 +81,7 @@ bool muted = false;
 bool requestInProgress = false;
 bool screenOn = true;
 bool audioBridgeStarted = false;
+bool firmwareRecovery = false;
 int volumePercent = 0;
 int lastHttpStatus = 0;
 int batteryMillivolts = 0;
@@ -604,13 +606,51 @@ void initializeDisplay()
     drawScreen();
 }
 
+void updateProgress(const char *, int percent, const String &detail)
+{
+    display.fillScreen(TFT_BLACK);
+    display.setTextColor(TFT_WHITE, TFT_BLACK);
+    display.drawString("Firmware update (2/2)", 10, 16, 2);
+    display.drawString(detail.isEmpty() ? "Updating monitor" : detail, 10, 50, 2);
+    display.drawRect(10, 82, 300, 16, TFT_WHITE);
+    if (percent > 0) display.fillRect(12, 84, 296 * percent / 100, 12, TFT_WHITE);
+    display.drawString("Keep power on", 10, 118, 2);
+}
+
+void recoverFirmware(void *)
+{
+    WiFi.mode(WIFI_STA); WiFi.persistent(false); WiFi.setAutoReconnect(true);
+    for (;;) {
+        DeltaOta::Config config;
+        String error;
+        auto job = DeltaOta::loadJob();
+        if (DeltaOta::loadConfig(config, error)) {
+            if (WiFi.status() != WL_CONNECTED) {
+                updateProgress("", 0, "Connecting Wi-Fi");
+                WiFi.begin(config.ssid.c_str(), config.password.c_str());
+                uint32_t start = millis();
+                while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) delay(100);
+            }
+            if (WiFi.status() != WL_CONNECTED) error = "Wi-Fi unavailable";
+            else if (DeltaOta::installMonitor(config, job, updateProgress, error)) {
+                updateProgress("", 100, "Complete; restarting");
+                delay(400); ESP.restart();
+            }
+        }
+        updateProgress("", 0, error);
+        display.drawString("Retry in 20 seconds", 10, 145, 2);
+        delay(20000);
+    }
+}
+
 } // namespace
 
 void setup()
 {
     // Return selection is committed before audio initialization. No button or
     // menu exits this program; RESET (or a power cycle) starts the monitor.
-    esp_err_t returnStatus = DevicePrograms::returnToMonitorOnReset();
+    firmwareRecovery = DeltaOta::loadJob().stage != DeltaOta::Stage::None;
+    esp_err_t returnStatus = firmwareRecovery ? DevicePrograms::enterAudio() : DevicePrograms::returnToMonitorOnReset();
     Serial.begin(115200);
 
     analogReadResolution(12);
@@ -623,6 +663,12 @@ void setup()
     gpio14Button.rawLevel = gpio14Button.stableLevel = digitalRead(PIN_BUTTON_RIGHT);
 
     initializeDisplay();
+    if (firmwareRecovery) {
+        updateProgress("", 0, "Preparing recovery");
+        if (returnStatus != ESP_OK || xTaskCreate(recoverFirmware, "delta-ota", 12288, nullptr, 1, nullptr) != pdPASS)
+            updateProgress("", 0, "Recovery init failed");
+        return;
+    }
     if (returnStatus != ESP_OK || !AudioMode::loadWifi()) {
         display.fillScreen(TFT_BLACK);
         display.setTextColor(TFT_WHITE, TFT_BLACK);

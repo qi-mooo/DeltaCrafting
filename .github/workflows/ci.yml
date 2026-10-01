@@ -16,6 +16,7 @@ permissions:
 
 jobs:
   build-and-test:
+    needs: firmware
     runs-on: windows-latest
 
     steps:
@@ -27,9 +28,15 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Download matching S3 firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: DeltaCrafter-esp32s3-${{ github.sha }}
+          path: ${{ runner.temp }}/s3-firmware
+
       - name: Build, test and package Windows app
         shell: pwsh
-        run: .\scripts\build-release.ps1
+        run: .\scripts\build-release.ps1 -FirmwareBundle '${{ runner.temp }}\s3-firmware\DeltaCrafter-esp32s3.zip'
 
       - name: Upload Windows app
         uses: actions/upload-artifact@v4
@@ -42,51 +49,4 @@ jobs:
           retention-days: 14
 
   firmware:
-    runs-on: ubuntu-latest
-    env:
-      TDISPLAY_S3_DIR: ${{ github.workspace }}/.firmware-sdk
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Checkout pinned LILYGO board and display drivers
-        uses: actions/checkout@v4
-        with:
-          repository: Xinyuan-LilyGO/T-Display-S3
-          ref: 5c7b97a42e6ed4ec299004f0578c097ece412d6f
-          path: .firmware-sdk
-          sparse-checkout: |
-            boards
-            lib/TFT_eSPI
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install PlatformIO
-        run: python -m pip install platformio==6.1.19
-
-      - name: Verify S3 menu navigation
-        run: |
-          c++ -std=c++17 -Ifirmware/t-display-s3/include firmware/t-display-s3/tests/ui_state_test.cpp -o /tmp/s3-ui-test
-          /tmp/s3-ui-test
-
-      - name: Build and package generic ESP32-S3 firmware
-        run: |
-          pio run -d firmware/t-display-s3/audio
-          pio run -d firmware/t-display-s3
-
-      - name: Verify U8g2 display bridge and animated transitions
-        run: python firmware/t-display-s3/tests/run_native.py
-
-      - name: Upload ESP32-S3 firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: DeltaCrafter-esp32s3-${{ github.sha }}
-          include-hidden-files: true
-          path: |
-            firmware/t-display-s3/.pio/build/deltacrafter-monitor/DeltaCrafter-esp32s3.zip
-            firmware/t-display-s3/.pio/build/deltacrafter-monitor/DeltaCrafter-esp32s3.zip.sha256
-          if-no-files-found: error
-          retention-days: 14
+    uses: ./.github/workflows/firmware.yml

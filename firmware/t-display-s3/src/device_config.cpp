@@ -1,8 +1,10 @@
 #include "device_config.h"
 #include "config.h"
+#include "firmware_version.h"
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <WiFi.h>
+#include <DeltaOta.h>
 
 namespace DeviceConfig {
 namespace {
@@ -14,6 +16,7 @@ String apiError;
 int facilities = 0;
 uint32_t loopMinFreeStack = 0, networkMinFreeStack = 0;
 void (*screenCapture)() = nullptr;
+bool (*firmwareControl)(bool) = nullptr;
 
 bool validKey(const String &value)
 {
@@ -44,6 +47,11 @@ void processLine(const String &line)
         return;
     }
     const char *command = doc["command"] | "";
+    if ((strcmp(command, "firmware-check") == 0 || strcmp(command, "firmware-install") == 0) && firmwareControl) {
+        bool accepted = firmwareControl(strcmp(command, "firmware-install") == 0);
+        Serial.println(accepted ? "{\"ok\":true,\"queued\":true}" : "{\"ok\":false,\"error\":\"check_first_or_busy\"}");
+        return;
+    }
     if (strcmp(command, "screen") == 0 && screenCapture) {
         screenCapture();
         return;
@@ -51,7 +59,9 @@ void processLine(const String &line)
     if (strcmp(command, "info") == 0) {
         doc.clear();
         doc["ok"] = true;
-        doc["firmware"] = "axeuh-tools-v15";
+        doc["firmware"] = DELTA_FIRMWARE_VERSION;
+        doc["updaterAbi"] = DELTA_UPDATER_ABI;
+        doc["otaPending"] = DeltaOta::loadJob().stage != DeltaOta::Stage::None;
         doc["build"] = __DATE__ " " __TIME__;
         doc["controls"] = "GPIO0=confirm,GPIO14=cycle";
         doc["configured"] = valid();
@@ -144,6 +154,7 @@ void handleSerial()
 
 // Called and read only from the Arduino loop task.
 void setScreenCapture(void (*capture)()) { screenCapture = capture; }
+void setFirmwareControl(bool (*control)(bool)) { firmwareControl = control; }
 
 void setHealth(bool online, const String &error, int facilityCount)
 {

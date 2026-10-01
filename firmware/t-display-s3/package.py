@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import zipfile
 
@@ -27,9 +28,22 @@ def package(source, target, env):
     images = list(env.get("FLASH_EXTRA_IMAGES", []))
     images.append((env.subst("$ESP32_APP_OFFSET"), str(build / "firmware.bin")))
     images.append(("0x650000", str(audio / "firmware.bin")))
+    version_header = (project / "include/firmware_version.h").read_text()
+    version = re.search(r'#define DELTA_FIRMWARE_VERSION "([^"]+)"', version_header).group(1)
+    revision = int(re.search(r'#define DELTA_FIRMWARE_REVISION (\d+)', version_header).group(1))
+    updater = int(re.search(r'#define DELTA_UPDATER_ABI (\d+)', version_header).group(1))
+    ota_manifest = {"schemaVersion": 1, "board": "lilygo-t-display-s3", "layout": "dual-16mb-v1",
+                    "firmwareVersion": version, "revision": revision, "minimumUpdater": updater, "images": []}
+    for role, path, address, name in (("monitor", build / "firmware.bin", 0x10000, "firmware.bin"),
+                                     ("audio", audio / "firmware.bin", 0x650000, "audio-firmware.bin")):
+        data = path.read_bytes()
+        if data[0] != 0xe9 or int.from_bytes(data[12:14], "little") != 9:
+            raise RuntimeError("Not an ESP32-S3 image: " + str(path))
+        ota_manifest["images"].append({"role": role, "file": name, "address": address,
+                                       "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
     manifest = {
         "chip": "esp32s3",
-        "firmwareVersion": "axeuh-tools-v15",
+        "firmwareVersion": version,
         "flashMode": env.subst("${__get_board_flash_mode(__env__)}"),
         "flashFreq": env.subst("${__get_board_f_flash(__env__)}"),
         "flashSize": env.BoardConfig().get("upload.flash_size"),
@@ -45,12 +59,13 @@ def package(source, target, env):
                                        "sha256": hashlib.sha256(data).hexdigest()})
             bundle.writestr(name, data)
         bundle.writestr("flash-manifest.json", json.dumps(manifest, indent=2) + "\n")
+        bundle.writestr("ota-manifest.json", json.dumps(ota_manifest, separators=(",", ":")) + "\n")
         bundle.write(build / "firmware.elf", "firmware.elf")
         bundle.write(audio / "firmware.elf", "audio-firmware.elf")
         for name in ("flash.py", "configure.py", "README.md", "THIRD_PARTY_NOTICES.md"):
             bundle.write(project / name, name)
             bundle.write(project / name, "source/" + name)
-        for folder in ("src", "include", "tests", "audio/src"):
+        for folder in ("src", "include", "lib", "tests", "audio/src"):
             for path in sorted((project / folder).rglob("*")):
                 if path.is_file():
                     bundle.write(path, "source/" + str(path.relative_to(project)))
@@ -79,6 +94,6 @@ def package(source, target, env):
 
 
 env.Depends("$BUILD_DIR/${PROGNAME}.bin", [str(project / name) for name in
-    ("package.py", "flash.py", "configure.py", "README.md", "THIRD_PARTY_NOTICES.md",
+    ("package.py", "flash.py", "configure.py", "README.md", "THIRD_PARTY_NOTICES.md", "include/firmware_version.h",
      "audio/.pio/build/windows-audio/firmware.bin", "audio/.pio/build/windows-audio/partitions.bin")])
 env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", package)

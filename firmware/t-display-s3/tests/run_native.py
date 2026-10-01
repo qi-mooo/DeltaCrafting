@@ -21,6 +21,9 @@ with tempfile.TemporaryDirectory(prefix="s3-ui-test-") as temporary:
          "-I" + str(project / "include"), project / "tests/program_switch_test.cpp",
          "-o", build / "program-switch"])
     run([build / "program-switch"])
+    run([cxx, "-std=c++17", "-I" + str(project / "lib/DeltaOta/src"),
+         project / "tests/ota_transaction_test.cpp", "-o", build / "ota-transaction"])
+    run([build / "ota-transaction"])
 
     sources = sorted((u8g2 / "clib").glob("*.c"))
     sources = [s for s in sources if s.name != "u8x8_fonts.c"]
@@ -35,4 +38,4 @@ with tempfile.TemporaryDirectory(prefix="s3-ui-test-") as temporary:
          "-I" + str(project / "tests/stubs"), "-I" + str(project / "include"),
          project / "tests/mono_display_test.cpp", build / "u8g2.a", "-o", build / "display"])
     run([build / "display"])
-print("Navigation, buttons, program switching/RESET, display bounds and both transition directions passed.")
+print("Navigation, buttons, program switching/RESET, interrupted OTA recovery, display bounds and transitions passed.")

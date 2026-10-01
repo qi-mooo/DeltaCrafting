@@ -15,6 +15,8 @@
 #include "ui_marquee.h"
 #include "mono_display.h"
 #include "program_switch.h"
+#include "firmware_version.h"
+#include <DeltaOta.h>
 
 #if TFT_WIDTH != 170 || TFT_HEIGHT != 320 || TFT_WR != 8 || TFT_RD != 9 || TFT_BL != 38
 #error "Select TFT_eSPI Setup206_LilyGo_T_Display_S3.h for this firmware"
@@ -48,7 +50,7 @@ struct Snapshot {
     uint32_t fetchedAt = 0, noticeAt = 0;
 };
 
-enum class Command : uint8_t { Refresh, Start, Sync, Stop, Pause, Resume, Items, CloseGame, RefreshData, RefreshProfit, Tool, CopyCode, ToolImage };
+enum class Command : uint8_t { Refresh, Start, Sync, Stop, Pause, Resume, Items, CloseGame, RefreshData, RefreshProfit, Tool, CopyCode, ToolImage, CheckFirmware, InstallFirmware };
 enum class Setting : uint8_t { None, FacilityEnabled, CraftMode, AutoLoop, SteamDetection, AfterRun, PlannedItem };
 struct Request {
     Command command = Command::Refresh;
@@ -110,6 +112,42 @@ UiState ui;
 UiMarquee itemMarquees[4];
 bool requestPending = false;
 uint32_t batteryMv = 0;
+struct FirmwareView { String version, detail; bool ready = false, busy = false; int percent = 0; };
+FirmwareView firmwareView;
+DeltaOta::Manifest firmwareManifest;
+
+FirmwareView readFirmware()
+{
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    auto value = firmwareView;
+    xSemaphoreGive(stateMutex);
+    return value;
+}
+
+void firmwareProgress(const char *, int percent, const String &)
+{
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    firmwareView.detail = "更新静音程序 (1/2)";
+    firmwareView.percent = percent;
+    xSemaphoreGive(stateMutex);
+}
+
+__attribute__((noinline)) void updateFirmware(bool install)
+{
+    String error;
+    DeltaOta::Config config;
+    bool ok = DeltaOta::loadConfig(config, error);
+    if (ok && install) {
+        ok = DeltaOta::installAudio(config, firmwareManifest, firmwareProgress, error);
+        if (ok) { delay(200); ESP.restart(); }
+    } else if (ok) ok = DeltaOta::check(config, firmwareManifest, error);
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    firmwareView.busy = false;
+    firmwareView.ready = ok && !install;
+    firmwareView.version = ok ? firmwareManifest.version : "";
+    firmwareView.detail = ok ? "当前 " DELTA_FIRMWARE_VERSION : error;
+    xSemaphoreGive(stateMutex);
+}
 
 bool fresh(const Snapshot &s)
 {
@@ -524,6 +562,8 @@ void networkTask(void *)
             else if (hasCommand && request.command == Command::Tool) fetchedTool = fetchTool(request);
             else if (hasCommand && request.command == Command::ToolImage) fetchToolImage(request);
             else if (hasCommand && request.command == Command::CopyCode) copyToolCode(request);
+            else if (hasCommand && (request.command == Command::CheckFirmware || request.command == Command::InstallFirmware))
+                updateFirmware(request.command == Command::InstallFirmware);
             else if (hasCommand && request.command != Command::Refresh) sendAction(request.command, request.facility);
             if (!wasConnected || hasCommand || millis() - lastPoll >= DELTA_POLL_MS) {
                 pollStatus();
@@ -533,6 +573,9 @@ void networkTask(void *)
         if (hasCommand) {
             xSemaphoreTake(stateMutex, portMAX_DELAY);
             requestPending = false;
+            if ((!connected || !DeviceConfig::valid()) && (request.command == Command::CheckFirmware || request.command == Command::InstallFirmware)) {
+                firmwareView.busy = false; firmwareView.ready = false; firmwareView.detail = "设备离线,请重试";
+            }
             if (request.command == Command::ToolImage && !connected) {
                 sharedImage.clear(); sharedImageError = "设备离线"; sharedImageId = request.item; imageReady = true;
             }
@@ -858,6 +901,24 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
     if (ui.page != UiPage::Home)
         for (auto &marquee : itemMarquees) marquee.reset();
     if (ui.page == UiPage::ToolList || ui.page == UiPage::ToolDetail || ui.page == UiPage::GunMode || ui.page == UiPage::GunQuery) { drawToolPage(s); return; }
+    if (ui.page == UiPage::Firmware) {
+        auto f = readFirmware();
+        textAt(8, 18, 304, "固件更新"); canvas.drawHLine(0, 24, 320);
+        textAt(8, 46, 304, String("当前 ") + DELTA_FIRMWARE_VERSION);
+        if (f.busy) {
+            textAt(8, 80, 304, f.detail);
+            border(8, 98, 304, 14, false);
+            if (f.percent > 0) canvas.drawBox(10, 100, 300 * f.percent / 100, 10);
+            textAt(8, 143, 304, "更新期间保持供电");
+        } else {
+            textAt(12, 77, 293, f.ready ? String("安装 ") + f.version : "检查更新");
+            textAt(12, 106, 293, "重新检查");
+            textAt(12, 135, 293, "返回全局设置");
+            border(4, 56 + ui.row * 29, 312, 28, true);
+            textAt(8, 165, 304, f.detail);
+        }
+        return;
+    }
     if (ui.page == UiPage::Home) {
         constexpr uint8_t order[] = {3, 0, 1, 2};
         for (uint8_t cell = 0; cell < 4; ++cell) {
@@ -907,7 +968,8 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             menuRow(4, s.running ? "识别当前任务 (执行中)" : "识别当前任务");
             menuRow(5, s.running ? "关闭游戏 (请先停止任务)" : "关闭游戏");
             menuRow(6, s.dataRefreshing ? "刷新数据 (刷新中)" : "刷新数据");
-            menuRow(7, "返回主界面");
+            menuRow(7, "固件更新");
+            menuRow(8, "返回主界面");
         } else if (ui.page == UiPage::CraftMode) {
             for (uint8_t i = 0; i < 3; ++i)
                 menuRow(i, String(f.craftMode == CRAFT_MODES[i] ? "* " : "  ") + craftModeName(CRAFT_MODES[i]));
@@ -1015,7 +1077,8 @@ void draw()
         if (saved == 1 && ui.page == UiPage::Items) ui.open(UiPage::Facility, 2);
     }
     if (canvas.offset == 0 && !receivedItems && !receivedTool && saved < 0) {
-        bool blocked = ui.page == UiPage::Items && (itemLoading || itemSaving);
+        bool blocked = (ui.page == UiPage::Items && (itemLoading || itemSaving))
+            || (ui.page == UiPage::Firmware && readFirmware().busy);
         if (!blocked) {
             if (pendingHold) activateSelection(true);
             else if (uiEngine.IN_now == DOWN) ui.move(1);
@@ -1165,15 +1228,51 @@ void openToolDetail()
     if (ui.tool == 2) copySelectedTool();
 }
 
+bool requestFirmware(bool install)
+{
+    Request request;
+    request.command = install ? Command::InstallFirmware : Command::CheckFirmware;
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    firmwareView.busy = true; firmwareView.percent = 0;
+    firmwareView.detail = install ? "准备更新静音程序 (1/2)" : "正在检查固件版本";
+    xSemaphoreGive(stateMutex);
+    if (!enqueueRequest(request)) {
+        xSemaphoreTake(stateMutex, portMAX_DELAY);
+        firmwareView.busy = false; firmwareView.detail = "请求处理中,请稍后重试";
+        xSemaphoreGive(stateMutex);
+        return false;
+    }
+    return true;
+}
+
+bool serialFirmwareControl(bool install)
+{
+    auto state = readFirmware();
+    if (state.busy || (install && !state.ready)) return false;
+    ui.open(UiPage::Firmware);
+    return requestFirmware(install);
+}
+
 void activateSelection(bool held)
 {
     Snapshot s = readSnapshot();
+    if (ui.page == UiPage::Firmware) {
+        auto f = readFirmware();
+        if (f.busy) return;
+        if (ui.row == 2) ui.open(UiPage::Global, 7);
+        else requestFirmware(ui.row == 0 && f.ready);
+        return;
+    }
     if (ui.page == UiPage::Home) {
         ui.open(ui.homeDestination());
     } else if (ui.page == UiPage::Tools) {
         if (ui.row == 2) ui.open(UiPage::GunMode);
         else if (ui.row < 2) loadTool(ui.row);
         else if (ui.row == 3) {
+            if (DeltaOta::loadJob().stage != DeltaOta::Stage::None) {
+                setNotice("请先在全局设置完成固件更新");
+                return;
+            }
             if (DevicePrograms::enterAudio() != ESP_OK) {
                 setNotice("静音程序不可用,请烧录完整固件包");
                 return;
@@ -1247,6 +1346,7 @@ void activateSelection(bool held)
         else if (ui.row == 4) submitAction(Command::Sync);
         else if (ui.row == 5) submitAction(Command::CloseGame);
         else if (ui.row == 6) submitAction(Command::RefreshData);
+        else if (ui.row == 7) { ui.open(UiPage::Firmware); requestFirmware(false); }
         else ui.open(UiPage::Home);
     } else if (ui.page == UiPage::CraftMode) {
         if (ui.row == 3 || submit(Setting::CraftMode, ui.row)) ui.open(UiPage::Facility, 1);
@@ -1282,6 +1382,8 @@ void captureScreen()
 void setup()
 {
     Serial.begin(115200);
+    String firmwareBootError;
+    DeltaOta::monitorBoot(firmwareBootError);
     DeviceConfig::load();
     pinMode(15, OUTPUT);
     digitalWrite(15, HIGH);
@@ -1343,6 +1445,8 @@ void setup()
     uiEngine.set(&statusBar);
     uiEngine.set(readInput);
     DeviceConfig::setScreenCapture(captureScreen);
+    DeviceConfig::setFirmwareControl(serialFirmwareControl);
+    if (!firmwareBootError.isEmpty()) setNotice(firmwareBootError);
     draw();
     if (xTaskCreate(networkTask, "delta-http", 12288, nullptr, 1, &networkTaskHandle) != pdPASS)
         setError("Network task init failed");

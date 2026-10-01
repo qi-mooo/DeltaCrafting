@@ -22,6 +22,7 @@ public sealed class DeviceApiServer : IDisposable
     private readonly Func<string, CancellationToken, Task<DeviceActionResult>>? _copyToolCode;
     private readonly Func<string, CancellationToken, Task<DataToolImage>>? _toolImage;
     private readonly ILogger _log;
+    private readonly DeviceFirmwareStore? _firmware;
     private readonly byte[] _keyHash;
     private readonly bool _allowControl;
     private Task? _loop;
@@ -35,7 +36,8 @@ public sealed class DeviceApiServer : IDisposable
         Func<FacilityKey, CancellationToken, Task<DeviceItemList>>? getItems = null,
         Func<DataToolQuery, CancellationToken, Task<DataToolResult>>? getTool = null,
         Func<string, CancellationToken, Task<DeviceActionResult>>? copyToolCode = null,
-        Func<string, CancellationToken, Task<DataToolImage>>? toolImage = null)
+        Func<string, CancellationToken, Task<DataToolImage>>? toolImage = null,
+        DeviceFirmwareStore? firmware = null)
     {
         settings.Validate();
         _status = status;
@@ -45,6 +47,7 @@ public sealed class DeviceApiServer : IDisposable
         _tools = getTool;
         _copyToolCode = copyToolCode;
         _toolImage = toolImage;
+        _firmware = firmware;
         _log = log;
         _allowControl = settings.AllowControl;
         _keyHash = SHA256.HashData(Encoding.UTF8.GetBytes(settings.ApiKey));
@@ -97,7 +100,8 @@ public sealed class DeviceApiServer : IDisposable
     private async Task HandleAsync(HttpListenerContext context)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(context.Request.Url?.AbsolutePath is "/api/v1/tools" or "/api/v1/tool-image" ? 30 : 5));
+        timeout.CancelAfter(TimeSpan.FromSeconds(context.Request.Url?.AbsolutePath == "/api/v1/firmware-image" ? 180
+            : context.Request.Url?.AbsolutePath is "/api/v1/tools" or "/api/v1/tool-image" ? 30 : 5));
         var ct = timeout.Token;
         try
         {
@@ -118,6 +122,7 @@ public sealed class DeviceApiServer : IDisposable
                 "/api/v1/tool-copy" => "POST",
                 "/api/v1/action" => "POST",
                 "/api/v1/settings" => "POST",
+                "/api/v1/firmware" or "/api/v1/firmware-image" => "GET",
                 _ => null,
             };
             if (method is null)
@@ -126,6 +131,24 @@ public sealed class DeviceApiServer : IDisposable
             {
                 context.Response.Headers["Allow"] = method;
                 await ReplyAsync(context, 405, new { error = "method_not_allowed" }, ct);
+            }
+            else if (path == "/api/v1/firmware")
+            {
+                if (!_allowControl) await ReplyAsync(context, 403, new { error = "control_disabled" }, ct);
+                else if (_firmware?.Current is not { } firmware)
+                    await ReplyAsync(context, 404, new { error = "firmware_unavailable" }, ct);
+                else await ReplyAsync(context, 200, firmware, ct);
+            }
+            else if (path == "/api/v1/firmware-image")
+            {
+                if (!_allowControl) { await ReplyAsync(context, 403, new { error = "control_disabled" }, ct); return; }
+                using var image = _firmware?.OpenImage(request.QueryString["bundle"] ?? "", request.QueryString["role"] ?? "");
+                if (image is null) { await ReplyAsync(context, 404, new { error = "firmware_unavailable" }, ct); return; }
+                context.Response.ContentType = "application/octet-stream";
+                context.Response.ContentLength64 = image.Length;
+                context.Response.Headers["Cache-Control"] = "no-store";
+                context.Response.KeepAlive = false;
+                await image.CopyToAsync(context.Response.OutputStream, 65536, ct).WaitAsync(ct);
             }
             else if (path == "/api/v1/tool-image")
             {

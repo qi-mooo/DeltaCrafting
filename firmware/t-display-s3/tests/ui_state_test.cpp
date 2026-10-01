@@ -57,9 +57,12 @@ int main()
     assert(ui.home == 4);
     ui.open(UiPage::Global);
     ui.move(-1);
-    assert(ui.row == 7); // Return option, after start, sync, close-game and refresh-data.
+    assert(ui.row == 8); // Return option follows firmware update.
     ui.move(1);
-    assert(ui.row == 0 && ui.count() == 8);
+    assert(ui.row == 0 && ui.count() == 9);
+    ui.open(UiPage::Firmware);
+    assert(ui.count() == 3);
+    ui.move(-1); assert(ui.row == 2);
     ui.open(UiPage::Global, 6);
     assert(ui.row * 29 + ui.initialScroll() == 29); // Refresh-data is visible when scrolled.
     ui.open(UiPage::Home);

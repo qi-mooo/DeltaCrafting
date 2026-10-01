@@ -54,7 +54,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         windowRuleText = DescribeRule();
         try { _autostartEnabled = host.Autostart.IsEnabled(); }
         catch (Exception ex) { AutostartError = ex.Message; }
-        host.DeviceApi.Changed += () => OnPropertyChanged(nameof(DeviceApiStatus));
+        host.DeviceApi.Changed += () =>
+        {
+            OnPropertyChanged(nameof(DeviceApiStatus));
+            OnPropertyChanged(nameof(DeviceFirmwareStatus));
+        };
         host.ProfitPlan.Changed += () =>
         {
             OnPropertyChanged(nameof(ManufactureDataStatus));
@@ -98,6 +102,15 @@ public sealed partial class SettingsViewModel : ObservableObject
     private void RefreshManufactureData() => _host.ProfitPlan.TryRefreshData();
 
     public string DeviceApiStatus => _host.DeviceApi.StatusText;
+    public string DeviceFirmwareStatus => _host.DeviceApi.FirmwareStatus;
+
+    [RelayCommand]
+    private async Task ImportDeviceFirmwareAsync()
+    {
+        nint hwnd = App.MainWindowRef is { } w ? WinRT.Interop.WindowNative.GetWindowHandle(w) : 0;
+        string? file = Win32Dialogs.PickFirmwareFile(hwnd);
+        if (file is not null) await _host.DeviceApi.ImportFirmwareAsync(file);
+    }
     public string DeviceApiKey => S.DeviceApi.ApiKey;
 
     public bool DeviceApiEnabled
