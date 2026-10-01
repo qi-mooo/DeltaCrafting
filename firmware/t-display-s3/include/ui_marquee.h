@@ -17,8 +17,10 @@ public:
             active = true;
         }
         if (textWidth <= viewportWidth) return 0;
-        constexpr uint32_t msPerPixel = 40;
-        return int(uint32_t(now - startedAt) / msPerPixel % uint32_t(textWidth + GapPixels));
+        constexpr uint32_t pauseMs = 2000, msPerPixel = 40;
+        uint32_t cycleMs = pauseMs + uint32_t(textWidth + GapPixels) * msPerPixel;
+        uint32_t phase = uint32_t(now - startedAt) % cycleMs;
+        return phase < pauseMs ? 0 : int((phase - pauseMs) / msPerPixel);
     }
 
 private:
