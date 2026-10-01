@@ -123,7 +123,8 @@ API 在线状态、设施数量、固件标识 `axeuh-tools-v15`、按键映射�
 在「工具 → 静音控制」按确认，设备自动重启切换到完整的 WindowsMuteController 程序。
 保留原程序的彩色界面、电平历史、音量和 USB UAC1 单声道麦克风功能。此时四宫格程序
 已经退出，其 API 轮询和按键菜单均停止；无需电脑助手在线即可进入。
-静音程序读取已有 Wi-Fi 配置，通过局域网自动发现原有 `TDisplayAudioBridge.exe` 服务。
+静音程序读取已有 Wi-Fi 配置，通过局域网自动发现 DeltaCrafter 0.4.11 起内置的音频桥。
+Windows 助手首页右上角显示当前静音状态并可直接切换；不再需要单独启动 `TDisplayAudioBridge.exe`。
 电脑仍需运行该服务（HTTP 8765、发现 UDP 40100、音频 TCP 40101），无需更改 DeltaCrafter API。
 
 | 按键 | 静音程序中的功能 |

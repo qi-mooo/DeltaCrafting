@@ -35,6 +35,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     public DeviceApiService DeviceApi { get; }
     public DataToolsService DataTools { get; } = new();
     public SteamStatusMonitor SteamStatus { get; }
+    public AudioBridgeCoordinator AudioBridge { get; }
     public CancellationToken AppStopToken => _appStop.Token;
 
     public ShellViewModel ShellVm { get; }
@@ -48,6 +49,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     private ThemeService? _theme;
     private MainWindow? _mainWindow;
     private bool _isShutdown;
+    private readonly Task _audioTask;
 
     public static void Initialize() => Current = new AppHost();
 
@@ -119,6 +121,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
             Notifier, clock, Log, prepareCraft: (plan, ct) => ProfitPlan!.PrepareCraftAsync(plan, ct));
 
         Updater = new UpdateService(this, new UpdateCoordinator(), Log);
+        AudioBridge = new AudioBridgeCoordinator(Paths.Root, Log);
 
         ShellVm = new ShellViewModel(Coordinator);
         OverviewVm = new OverviewViewModel(Coordinator, UiSink, this);
@@ -130,6 +133,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
 
         _ = Task.Run(() => Coordinator.RunSchedulerLoopAsync(_appStop.Token));
         _ = Task.Run(() => RunSteamStatusLoopAsync(_appStop.Token));
+        _audioTask = Task.Run(() => AudioBridge.RunAsync(_appStop.Token));
     }
 
     private void ApplyCachedItemMetadata()
@@ -376,6 +380,8 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         _isShutdown = true;
         Log.Information("应用退出。");
         _appStop.Cancel();
+        try { _audioTask.Wait(TimeSpan.FromSeconds(5)); }
+        catch (Exception ex) { Log.Warning(ex, "音频桥退出时发生异常。"); }
         DeviceApi.Dispose();
         _tray?.Dispose();
         SleepGuard.Dispose();

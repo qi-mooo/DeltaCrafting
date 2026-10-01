@@ -34,11 +34,17 @@ public sealed partial class OverviewViewModel : ObservableObject
     [ObservableProperty] private bool isRunning;
     [ObservableProperty] private bool lastRunFailed;
     [ObservableProperty] private string lastRunSummary = "";
+    [ObservableProperty] private string muteLabel = "声音不可用";
+    [ObservableProperty] private string muteGlyph = "\uE7BA";
+    [ObservableProperty] private string muteHint = "正在读取声音状态";
+    [ObservableProperty] private bool canToggleMute;
 
     public OverviewViewModel(AutomationCoordinator coordinator, UiLogSink sink, AppHost host)
     {
         _coordinator = coordinator;
         _host = host;
+        host.AudioBridge.Changed += () => _dq.TryEnqueue(RefreshAudio);
+        RefreshAudio();
         // Match the game and S3: tech/workbench, pharmacy/armor.
         foreach (var key in new[] { FacilityKey.TechCenter, FacilityKey.Workbench,
                      FacilityKey.PharmacyLab, FacilityKey.ArmorStation })
@@ -58,6 +64,18 @@ public sealed partial class OverviewViewModel : ObservableObject
         };
         _ticker.Start();
     }
+
+    private void RefreshAudio()
+    {
+        var status = _host.AudioBridge.Status;
+        MuteLabel = status.Label;
+        MuteGlyph = status.Glyph;
+        MuteHint = status.Hint;
+        CanToggleMute = status.Audio is not null;
+    }
+
+    [RelayCommand]
+    private Task ToggleMuteAsync() => _host.AudioBridge.ToggleMuteAsync();
 
     private void RefreshAll()
     {
