@@ -207,7 +207,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
 
     private bool _restoreWindowAfterRun;
 
-    /// <summary>IAppWindowGuard:执行期间最小化助手窗口(仅当此刻可见),结束后恢复。
+    /// <summary>IAppWindowGuard:执行期间最小化助手窗口(仅当此刻可见),结束后最大化。
     /// 可在一轮执行中被反复调用(观察每遍都会再压一次,防用户中途唤起窗口盖住游戏):
     /// 恢复意愿只置位不清零(闩锁),窗口已最小化时为无操作,结束时恢复到「曾可见」状态。</summary>
     public void MinimizeForRun()
@@ -230,7 +230,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
             if (!_restoreWindowAfterRun) return;
             _restoreWindowAfterRun = false;
             if (window.AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter p)
-                p.Restore();
+                p.Maximize();
         });
     }
 

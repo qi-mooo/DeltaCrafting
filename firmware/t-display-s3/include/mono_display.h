@@ -22,6 +22,15 @@ public:
     }
 
     float offset = 0;
+
+    void drawScrollingText(int x, int baseline, int width, const char *text, int scroll)
+    {
+        setDrawColor(1);
+        setClipWindow(x, baseline - 16, x + width, baseline + 2);
+        drawUTF8(x - scroll, baseline, text);
+        setMaxClipWindow();
+    }
+
     void clearImage() { currentImage.visible = false; }
     void setImage(int x, int y, const uint16_t *data)
     {

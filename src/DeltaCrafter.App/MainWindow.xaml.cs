@@ -45,6 +45,8 @@ public sealed partial class MainWindow : Window
     public void RestoreFromTray()
     {
         AppWindow.Show();
+        if (AppWindow.Presenter is OverlappedPresenter presenter)
+            presenter.Maximize();
         Activate();
     }
 

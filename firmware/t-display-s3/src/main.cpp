@@ -12,6 +12,7 @@
 #include "ui_state.h"
 #include "ui_button.h"
 #include "ui_indicators.h"
+#include "ui_marquee.h"
 #include "mono_display.h"
 
 #if TFT_WIDTH != 170 || TFT_HEIGHT != 320 || TFT_WR != 8 || TFT_RD != 9 || TFT_BL != 38
@@ -105,6 +106,7 @@ UiButton cycleButton, confirmButton;
 UiHoldConfirm itemHold;
 bool pendingHold = false;
 UiState ui;
+UiMarquee itemMarquees[4];
 bool requestPending = false;
 uint32_t batteryMv = 0;
 
@@ -852,6 +854,8 @@ void drawToolPage(const Snapshot &s)
 void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
 {
     Snapshot s = readSnapshot();
+    if (ui.page != UiPage::Home)
+        for (auto &marquee : itemMarquees) marquee.reset();
     if (ui.page == UiPage::ToolList || ui.page == UiPage::ToolDetail || ui.page == UiPage::GunMode || ui.page == UiPage::GunQuery) { drawToolPage(s); return; }
     if (ui.page == UiPage::Home) {
         constexpr uint8_t order[] = {3, 0, 1, 2};
@@ -862,8 +866,10 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             border(x + 1, y + 1, 158, 70, false);
             textAt(x + 10, y + 21, 76, NAMES[order[cell]]);
             textAt(x + 87, y + 21, 64, !s.valid ? "待连接" : phaseName(phase));
-            textAt(x + 10, y + 39, 140, !s.valid ? "等待数据"
-                : facilityDisplayItem(phase.c_str(), f.item.c_str(), f.plannedItem.c_str()));
+            const char *item = !s.valid ? "等待数据"
+                : facilityDisplayItem(phase.c_str(), f.item.c_str(), f.plannedItem.c_str());
+            int scroll = itemMarquees[cell].offset(item, canvas.getUTF8Width(item), 140, millis());
+            canvas.drawScrollingText(x + 10, y + 39, 140, item, scroll);
             String detail = !s.valid ? "等待数据"
                 : phase == "Crafting" ? String("剩余 ") + countdown(f.remaining, s)
                 : phase == "ReadyToCollect" ? "已完成待收取"

@@ -10,7 +10,7 @@
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="999*" MaxWidth="{StaticResource TokenContentMaxWidth}" />
+                <ColumnDefinition Width="999*" MaxWidth="{StaticResource TokenOverviewMaxWidth}" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="1" Padding="{StaticResource TokenPagePadding}"
@@ -91,7 +91,8 @@
                 <!-- 四设施卡 -->
                 <ItemsRepeater ItemsSource="{x:Bind Vm.Facilities}">
                     <ItemsRepeater.Layout>
-                        <UniformGridLayout MinItemWidth="252" MinItemHeight="168"
+                        <UniformGridLayout MinItemWidth="240" MinItemHeight="{StaticResource TokenFacilityCardHeight}"
+                                           MaximumRowsOrColumns="2" ItemsStretch="Fill"
                                            MinColumnSpacing="16" MinRowSpacing="16" />
                     </ItemsRepeater.Layout>
                     <ItemsRepeater.ItemTemplate>

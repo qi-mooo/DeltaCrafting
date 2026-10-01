@@ -39,7 +39,9 @@ public sealed partial class OverviewViewModel : ObservableObject
     {
         _coordinator = coordinator;
         _host = host;
-        foreach (var key in FacilityKeys.All)
+        // Match the game and S3: tech/workbench, pharmacy/armor.
+        foreach (var key in new[] { FacilityKey.TechCenter, FacilityKey.Workbench,
+                     FacilityKey.PharmacyLab, FacilityKey.ArmorStation })
             Facilities.Add(new FacilityCardModel(key, FacilityKeys.DisplayName(key), HandleCancelAsync));
 
         coordinator.StatusChanged += s => _dq.TryEnqueue(RefreshAll);

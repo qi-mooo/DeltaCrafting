@@ -19,10 +19,10 @@ with tempfile.TemporaryDirectory(prefix="s3-ui-test-") as temporary:
     run([build / "navigation"])
 
     sources = sorted((u8g2 / "clib").glob("*.c"))
-    sources = [s for s in sources if s.name not in ("u8g2_fonts.c", "u8x8_fonts.c")]
+    sources = [s for s in sources if s.name != "u8x8_fonts.c"]
     def compile_source(source):
         target = build / (source.stem + ".o")
-        run([cc, "-w", "-c", source, "-o", target])
+        run([cc, "-w", "-DU8G2_USE_LARGE_FONTS", "-c", source, "-o", target])
         return target
     with ThreadPoolExecutor(max_workers=4) as pool:
         objects = list(pool.map(compile_source, sources))
