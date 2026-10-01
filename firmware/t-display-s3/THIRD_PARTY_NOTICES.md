@@ -21,5 +21,13 @@ components with their respective licenses. Corresponding source and notices:
 https://github.com/espressif/arduino-esp32/tree/2.0.14
 https://github.com/platformio/platform-espressif32/tree/v6.5.0
 
-The bundle includes monitor source and an ELF for debugging. Build instructions and
-the pinned dependencies are in README.md and source/platformio.ini.
+The audio program is adapted from the local T-Display-S3 WindowsMuteController
+example (AudioBridge.cpp, AudioBridge.h, AudioProtocol.h and its sketch).
+It uses Arduino-ESP32 3.3.9 (LGPL-2.1), including USB Audio/TinyUSB and ESP-IDF
+components under their respective licenses:
+https://github.com/espressif/arduino-esp32/tree/3.3.9
+https://github.com/pioarduino/platform-espressif32/releases/tag/55.03.39
+
+The bundle includes both programs' source and ELFs for debugging. Build instructions
+and pinned dependencies are in README.md, source/platformio.ini and
+source/audio/platformio.ini.

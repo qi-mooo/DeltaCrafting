@@ -46,7 +46,12 @@ int main()
     ui.move(-1);
     assert(ui.home == 5);
     ui.open(ui.homeDestination());
-    assert(ui.page == UiPage::Tools && ui.count() == 4 && !ui.settingsHint());
+    assert(ui.page == UiPage::Tools && ui.count() == 5 && !ui.settingsHint());
+    ui.open(UiPage::Tools, 3); // Dedicated audio program, followed by return.
+    ui.move(1);
+    assert(ui.row == 4);
+    ui.move(1);
+    assert(ui.row == 0);
     ui.open(UiPage::Home);
     ui.move(-1);
     assert(ui.home == 4);

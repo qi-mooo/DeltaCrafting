@@ -17,7 +17,7 @@ struct UiState {
 
     uint8_t count() const
     {
-        return page == UiPage::Home ? 6 : page == UiPage::Tools ? 4
+        return page == UiPage::Home ? 6 : page == UiPage::Tools ? 5
             : page == UiPage::GunMode || page == UiPage::GunQuery ? 3
             : page == UiPage::ToolList ? toolCount + (tool == 2 ? 4 : tool == 0 || toolFailed ? 2 : 1)
             : page == UiPage::ToolDetail ? (tool == 2 ? detailCount + 2 : 1)

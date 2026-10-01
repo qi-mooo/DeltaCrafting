@@ -14,10 +14,22 @@ if (project / "include/config.local.h").exists():
 
 def package(source, target, env):
     build = Path(env.subst("$BUILD_DIR"))
+    audio = project / "audio/.pio/build/windows-audio"
+    if not (audio / "firmware.bin").exists():
+        raise RuntimeError("Build the audio program first: pio run -d firmware/t-display-s3/audio")
+    if (audio / "partitions.bin").read_bytes() != (build / "partitions.bin").read_bytes():
+        raise RuntimeError("Monitor and audio partition tables must match to preserve NVS and RESET behavior")
+    if int(env.subst("$ESP32_APP_OFFSET"), 0) != 0x10000:
+        raise RuntimeError("Monitor must be installed in app0 at 0x10000")
+    for image in (build / "firmware.bin", audio / "firmware.bin"):
+        if image.stat().st_size > 0x640000:
+            raise RuntimeError("Firmware exceeds its application partition: " + str(image))
     images = list(env.get("FLASH_EXTRA_IMAGES", []))
     images.append((env.subst("$ESP32_APP_OFFSET"), str(build / "firmware.bin")))
+    images.append(("0x650000", str(audio / "firmware.bin")))
     manifest = {
         "chip": "esp32s3",
+        "firmwareVersion": "axeuh-tools-v15",
         "flashMode": env.subst("${__get_board_flash_mode(__env__)}"),
         "flashFreq": env.subst("${__get_board_f_flash(__env__)}"),
         "flashSize": env.BoardConfig().get("upload.flash_size"),
@@ -28,19 +40,21 @@ def package(source, target, env):
         for offset, filename in images:
             path = Path(env.subst(str(filename)))
             data = path.read_bytes()
-            manifest["images"].append({"offset": str(offset), "file": path.name,
+            name = "audio-firmware.bin" if path == audio / "firmware.bin" else path.name
+            manifest["images"].append({"offset": str(offset), "file": name,
                                        "sha256": hashlib.sha256(data).hexdigest()})
-            bundle.writestr(path.name, data)
+            bundle.writestr(name, data)
         bundle.writestr("flash-manifest.json", json.dumps(manifest, indent=2) + "\n")
         bundle.write(build / "firmware.elf", "firmware.elf")
+        bundle.write(audio / "firmware.elf", "audio-firmware.elf")
         for name in ("flash.py", "configure.py", "README.md", "THIRD_PARTY_NOTICES.md"):
             bundle.write(project / name, name)
             bundle.write(project / name, "source/" + name)
-        for folder in ("src", "include", "tests"):
+        for folder in ("src", "include", "tests", "audio/src"):
             for path in sorted((project / folder).rglob("*")):
                 if path.is_file():
                     bundle.write(path, "source/" + str(path.relative_to(project)))
-        for name in ("platformio.ini", "package.py"):
+        for name in ("platformio.ini", "package.py", "audio/platformio.ini"):
             bundle.write(project / name, "source/" + name)
         sdk = Path(os.environ["TDISPLAY_S3_DIR"])
         libdeps = Path(env.subst("$PROJECT_LIBDEPS_DIR")) / env.subst("$PIOENV")
@@ -65,5 +79,6 @@ def package(source, target, env):
 
 
 env.Depends("$BUILD_DIR/${PROGNAME}.bin", [str(project / name) for name in
-    ("package.py", "flash.py", "configure.py", "README.md", "THIRD_PARTY_NOTICES.md")])
+    ("package.py", "flash.py", "configure.py", "README.md", "THIRD_PARTY_NOTICES.md",
+     "audio/.pio/build/windows-audio/firmware.bin", "audio/.pio/build/windows-audio/partitions.bin")])
 env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", package)

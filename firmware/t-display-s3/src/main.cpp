@@ -14,6 +14,7 @@
 #include "ui_indicators.h"
 #include "ui_marquee.h"
 #include "mono_display.h"
+#include "program_switch.h"
 
 #if TFT_WIDTH != 170 || TFT_HEIGHT != 320 || TFT_WR != 8 || TFT_RD != 9 || TFT_BL != 38
 #error "Select TFT_eSPI Setup206_LilyGo_T_Display_S3.h for this firmware"
@@ -880,7 +881,7 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         }
     } else {
         String title = ui.page == UiPage::Global ? "全局设置"
-            : ui.page == UiPage::Tools ? "工具 / 数据帝"
+            : ui.page == UiPage::Tools ? "工具"
             : ui.page == UiPage::ToolList || ui.page == UiPage::ToolDetail ? TOOL_NAMES[ui.tool]
             : ui.page == UiPage::Items ? String(NAMES[ui.facility()]) + " / 制造物品"
             : ui.page == UiPage::CraftMode ? String(NAMES[ui.facility()]) + " / 制造模式"
@@ -890,7 +891,8 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         const auto &f = s.facilities[ui.facility()];
         if (ui.page == UiPage::Tools) {
             for (uint8_t i = 0; i < 3; ++i) menuRow(i, TOOL_NAMES[i]);
-            menuRow(3, "返回主界面");
+            menuRow(3, "静音控制 (RESET退出)");
+            menuRow(4, "返回主界面");
         } else if (ui.page == UiPage::Facility) {
             menuRow(0, String("设施: ") + (!s.valid ? "未知" : f.enabled ? "启用" : "停用"));
             menuRow(1, String("制造模式: ") + craftModeName(f.craftMode));
@@ -1171,6 +1173,13 @@ void activateSelection(bool held)
     } else if (ui.page == UiPage::Tools) {
         if (ui.row == 2) ui.open(UiPage::GunMode);
         else if (ui.row < 2) loadTool(ui.row);
+        else if (ui.row == 3) {
+            if (DevicePrograms::enterAudio() != ESP_OK) {
+                setNotice("静音程序不可用,请烧录完整固件包");
+                return;
+            }
+            ESP.restart();
+        }
         else ui.open(UiPage::Home);
     } else if (ui.page == UiPage::GunMode) {
         if (ui.row < 2) { gunBattlefield = ui.row == 1; ui.open(UiPage::GunQuery); }

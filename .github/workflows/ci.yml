@@ -73,7 +73,9 @@ jobs:
           /tmp/s3-ui-test
 
       - name: Build and package generic ESP32-S3 firmware
-        run: pio run -d firmware/t-display-s3
+        run: |
+          pio run -d firmware/t-display-s3/audio
+          pio run -d firmware/t-display-s3
 
       - name: Verify U8g2 display bridge and animated transitions
         run: python firmware/t-display-s3/tests/run_native.py

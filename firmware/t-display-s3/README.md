@@ -8,6 +8,7 @@ LILYGO T-Display-S3 固件，通过 Wi-Fi 显示 DeltaCrafter 四个制造设施
 在 GitHub Actions 的 CI 页面下载 `DeltaCrafter-esp32s3-<提交哈希>` artifact，
 解压其中的 `DeltaCrafter-esp32s3.zip`。包内包括各分区镜像、烧录地址与 SHA-256 清单、
 烧录和配置工具、ELF 及固件源码。固件不包含个人 Wi-Fi 密码或配对密钥。
+完整包同时包含四宫格监控和静音/音频桥两个程序，必须按清单一起烧录。
 
 安装 Python 3 后，在解压目录执行：
 
@@ -36,6 +37,7 @@ Windows 端口使用实际的 `COM` 名称；macOS 使用 `/dev/cu.usbmodemXXXX`
 git clone https://github.com/Xinyuan-LilyGO/T-Display-S3.git .firmware-sdk
 git -C .firmware-sdk checkout 5c7b97a42e6ed4ec299004f0578c097ece412d6f
 export TDISPLAY_S3_DIR="$PWD/.firmware-sdk"
+pio run -d firmware/t-display-s3/audio
 pio run -d firmware/t-display-s3
 python firmware/t-display-s3/tests/run_native.py
 ```
@@ -43,7 +45,7 @@ python firmware/t-display-s3/tests/run_native.py
 命令在 DeltaCrafting 仓库根目录执行。也可将 `TDISPLAY_S3_DIR` 指向已有的同版本
 T-Display-S3 仓库。Windows PowerShell 使用 `$env:TDISPLAY_S3_DIR = '板级仓库绝对路径'`。
 打包文件位于工程的 `.pio/build/deltacrafter-monitor/DeltaCrafter-esp32s3.zip`。
-在发布包的 `source` 目录重建时，使用 `pio run -d .`。
+在发布包的 `source` 目录重建时，先运行 `pio run -d audio`，再运行 `pio run -d .`。
 工程拒绝带 `include/config.local.h` 的发布构建；请使用 USB 配置凭据。
 默认使用新版 LCD 初始化，早期面板可在编译参数加入 `-DDELTA_LCD_NEW_PANEL=0`。
 构建会检查项目源码的单函数栈帧，超过 3072 字节即失败；`.su` 文件保留编译器栈占用报告。
@@ -51,7 +53,7 @@ T-Display-S3 仓库。Windows PowerShell 使用 `$env:TDISPLAY_S3_DIR = '板级�
 
 ## 屏幕与按键
 
-所有页面使用黑底白字。主界面按游戏中的位置排列：左上技术中心、右上工作台、
+监控程序所有页面使用黑底白字。主界面按游戏中的位置排列：左上技术中心、右上工作台、
 左下制药台、右下防具台，底部是游戏状态和电池图标。选中项使用粗双框和角标。
 UI 使用固定版本 Axeuh_UI，焦点平滑移动和伸缩，进入/返回页面有滑动过渡，目标刷新率 60 FPS。
 主界面长物品名在名称行内向左循环滚动，尾部留 24 像素空隙后接回开头；每圈回到开头停留 2 秒再滚动，首次显示也停留 2 秒。短名称保持静止。
@@ -75,7 +77,7 @@ UI 使用固定版本 Axeuh_UI，焦点平滑移动和伸缩，进入/返回页�
 
 主页选择顺序：技术中心 → 工作台 → 制药台 → 防具台 → 状态栏左侧 → 工具与电量。
 选中状态栏左侧时临时显示「进入设置」，移开恢复游戏状态与下次时间。
-右侧「工具」和电量共用一个选择区域，确认进入数据帝工具菜单。
+右侧「工具」和电量共用一个选择区域，确认进入工具菜单。
 选中设施后按确认打开启用/停用和制造模式菜单；自定义模式额外显示「制造物品」。
 每小时利润最高模式额外显示「刷新利润物品」：仅查询该设施行情并更新下一轮推荐，
 不领取、不取消正在制造的任务。菜单底部显示刷新结果；失败保留原选择。
@@ -101,10 +103,10 @@ UI 使用固定版本 Axeuh_UI，焦点平滑移动和伸缩，进入/返回页�
 HTTP 在独立任务中运行，游戏查询失败或过期不会显示为未在游戏。
 
 串口 115200 波特率发送一行 `{"command":"info"}` 可读取配置状态、Wi-Fi IP、
-API 在线状态、设施数量、固件标识 `axeuh-tools-v14`、按键映射和可用内存，不会返回密码或密钥。
+API 在线状态、设施数量、固件标识 `axeuh-tools-v15`、按键映射和可用内存，不会返回密码或密钥。
 `loopMinFreeStack` 和 `networkMinFreeStack` 是两个任务运行以来的最小剩余栈空间，单位为字节。
 
-工具菜单提供今日密码、当前集市物品和改枪码。进入选择菜单不请求数据。
+工具菜单提供今日密码、当前集市物品、改枪码和静音控制。进入选择菜单不请求数据。
 今日密码一次返回所有地图，列表显示地图名和密码；详情顶部地图名、中央大号密码、底部日期。
 集市使用客户端磁盘缓存，有效期内反复进入或重启客户端不重复查询数据帝；过期后下次进入才更新。
 集市详情左侧显示物品图片，右侧名称和返回，顶部价格、底部有效期；图片仅打开详情时下载并缓存。
@@ -115,3 +117,25 @@ API 在线状态、设施数量、固件标识 `axeuh-tools-v14`、按键映射�
 复制需要电脑开启允许设备控制；查询与复制失败均显示原因，用户手动重试。
 发送 `{"command":"screen"}` 可读取当前画面：一行 JSON 头后紧跟 108800 字节 RGB565 小端数据。
 明文 HTTP 仅用于可信局域网，不要做公网端口转发。
+
+## 静音控制 / 音频桥
+
+在「工具 → 静音控制」按确认，设备自动重启切换到完整的 WindowsMuteController 程序。
+保留原程序的彩色界面、电平历史、音量和 USB UAC1 单声道麦克风功能。此时四宫格程序
+已经退出，其 API 轮询和按键菜单均停止；无需电脑助手在线即可进入。
+静音程序读取已有 Wi-Fi 配置，通过局域网自动发现原有 `TDisplayAudioBridge.exe` 服务。
+电脑仍需运行该服务（HTTP 8765、发现 UDP 40100、音频 TCP 40101），无需更改 DeltaCrafter API。
+
+| 按键 | 静音程序中的功能 |
+| --- | --- |
+| GPIO 0 短按 | 切换电脑静音 |
+| GPIO 0 长按 | 连续降低音量 |
+| GPIO 14 短按 | 开关屏幕 |
+| GPIO 14 长按 | 连续增加音量 |
+| RESET | 重启返回四宫格 |
+
+静音程序没有返回菜单或按键组合；重启/断电再上电回到四宫格。进入时恢复下一次启动的
+监控分区，当前静音程序继续运行。两者使用相同的 16 MB 分区表：监控位于 `0x10000`，
+静音位于 `0x650000`，NVS 保持在原地址。静音程序使用 Arduino-ESP32 3.3.9 提供 USB Audio，
+监控程序保持 Arduino-ESP32 2.0.14；打包时核对两个分区表完全一致。
+静音固件缺失或校验失败时留在工具菜单并提示重刷完整包。

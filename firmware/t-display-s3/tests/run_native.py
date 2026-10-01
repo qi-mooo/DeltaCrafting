@@ -17,6 +17,10 @@ with tempfile.TemporaryDirectory(prefix="s3-ui-test-") as temporary:
     run([cxx, "-std=c++17", "-I" + str(project / "include"),
          project / "tests/ui_state_test.cpp", "-o", build / "navigation"])
     run([build / "navigation"])
+    run([cxx, "-std=c++17", "-I" + str(project / "tests/stubs"),
+         "-I" + str(project / "include"), project / "tests/program_switch_test.cpp",
+         "-o", build / "program-switch"])
+    run([build / "program-switch"])
 
     sources = sorted((u8g2 / "clib").glob("*.c"))
     sources = [s for s in sources if s.name != "u8x8_fonts.c"]
@@ -31,4 +35,4 @@ with tempfile.TemporaryDirectory(prefix="s3-ui-test-") as temporary:
          "-I" + str(project / "tests/stubs"), "-I" + str(project / "include"),
          project / "tests/mono_display_test.cpp", build / "u8g2.a", "-o", build / "display"])
     run([build / "display"])
-print("Navigation, buttons, display bounds and both transition directions passed.")
+print("Navigation, buttons, program switching/RESET, display bounds and both transition directions passed.")
