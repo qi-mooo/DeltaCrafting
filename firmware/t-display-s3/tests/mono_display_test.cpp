@@ -53,6 +53,7 @@ int main()
     const char *title = u8"5\u7ea7 OLIGHT WARRIOR 3S \u6218\u672f\u624b\u7535";
     int overflow = screen.getUTF8Width(title) - 140;
     assert(overflow > 10);
+    int cycle = screen.getUTF8Width(title) + UiMarquee::GapPixels;
     uint16_t before[170][320];
     uint16_t first[18][140];
     for (int cell = 0; cell < 4; ++cell) {
@@ -63,7 +64,7 @@ int main()
         screen.drawUTF8(x + 10, y + 56, "08:00:00");
         screen.drawBox(x + 10, y + 61, 70, 4);
         for (int line = 0; line < 170; ++line) screen.readRow(line, before[line]);
-        for (int scroll : {0, overflow / 2, overflow}) {
+        for (int scroll : {0, overflow / 2, overflow, cycle - 80, cycle - 1, cycle}) {
             screen.setDrawColor(0);
             screen.drawBox(x + 10, y + 23, 140, 18);
             screen.drawScrollingText(x + 10, y + 39, 140, title, scroll);
@@ -75,12 +76,15 @@ int main()
                         auto &initial = first[line - y - 23][col - x - 10];
                         if (scroll == 0) initial = row[col];
                         else changed += initial != row[col];
+                        if (scroll == cycle) assert(initial == row[col]);
+                        if (scroll == cycle - 1 && col > x + 10)
+                            assert(first[line - y - 23][col - x - 11] == row[col]);
                         lit += row[col] != 0;
                     } else assert(row[col] == before[line][col]);
                 }
             }
             assert(lit > 50);
-            if (scroll != 0) assert(changed > 50);
+            if (scroll != 0 && scroll != cycle) assert(changed > 50);
         }
         screen.drawPixel(319, 169); // The item clip must not leak to later drawing.
         screen.readRow(169, row);

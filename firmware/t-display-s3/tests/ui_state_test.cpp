@@ -10,21 +10,18 @@ int main()
 {
     UiMarquee marquee;
     assert(marquee.offset("long item", 200, 140, 100) == 0);
-    assert(marquee.offset("long item", 200, 140, 1299) == 0);
-    assert(marquee.offset("long item", 200, 140, 2500) == 30);
-    assert(marquee.offset("long item", 200, 140, 3700) == 60);
-    assert(marquee.offset("long item", 200, 140, 4899) == 60);
-    assert(marquee.offset("long item", 200, 140, 6100) == 30);
-    assert(marquee.offset("long item", 200, 140, 7300) == 0);
-    assert(marquee.offset("new item", 200, 140, 8000) == 0);
-    assert(marquee.offset("new item", 200, 140, 10400) == 30);
+    int cycle = 200 + UiMarquee::GapPixels;
+    for (int pixel = 0; pixel < cycle * 3; ++pixel)
+        assert(marquee.offset("long item", 200, 140, 100 + pixel * 40) == pixel % cycle);
+    assert(marquee.offset("new item", 200, 140, 30000) == 0);
+    assert(marquee.offset("new item", 200, 140, 32400) == 60);
     marquee.reset();
-    assert(marquee.offset("new item", 200, 140, 11000) == 0);
-    assert(marquee.offset("short", 140, 140, 12000) == 0);
-    assert(marquee.offset("short", 140, 140, 18000) == 0);
-    assert(marquee.offset("", 0, 140, 19000) == 0);
+    assert(marquee.offset("new item", 200, 140, 33000) == 0);
+    assert(marquee.offset("short", 140, 140, 34000) == 0);
+    assert(marquee.offset("short", 140, 140, 40000) == 0);
+    assert(marquee.offset("", 0, 140, 41000) == 0);
     assert(marquee.offset("wrap clock", 200, 140, UINT32_MAX - 999) == 0);
-    assert(marquee.offset("wrap clock", 200, 140, 1400) == 30);
+    assert(marquee.offset("wrap clock", 200, 140, 1400) == 60);
 
     static_assert(UI_CONFIRM_PIN == 0 && UI_CYCLE_PIN == 14, "Button roles must match the device labels");
     UiState ui;

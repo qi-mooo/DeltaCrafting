@@ -2,6 +2,7 @@
 #include <U8g2lib.h>
 #include <TFT_eSPI.h>
 #include <string.h>
+#include "ui_marquee.h"
 
 // Axeuh_UI renders into U8g2's vertical-bit tiles; TFT_eSPI owns the LCD bus.
 class MonoDisplay : public U8G2 {
@@ -28,6 +29,12 @@ public:
         setDrawColor(1);
         setClipWindow(x, baseline - 16, x + width, baseline + 2);
         drawUTF8(x - scroll, baseline, text);
+        int textWidth = getUTF8Width(text);
+        if (textWidth > width) {
+            // A second copy follows the tail, so wrapping never reverses or jumps.
+            int nextX = x - scroll + textWidth + UiMarquee::GapPixels;
+            if (nextX < x + width) drawUTF8(nextX, baseline, text);
+        }
         setMaxClipWindow();
     }
 

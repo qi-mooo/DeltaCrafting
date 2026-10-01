@@ -4,6 +4,7 @@
 
 class UiMarquee {
 public:
+    static constexpr int GapPixels = 24;
     void reset() { active = false; }
 
     int offset(const char *value, int textWidth, int viewportWidth, uint32_t now)
@@ -15,17 +16,9 @@ public:
             startedAt = now;
             active = true;
         }
-        int overflow = textWidth - viewportWidth;
-        if (overflow <= 0) return 0;
-        constexpr uint32_t pause = 1200, msPerPixel = 40;
-        uint32_t travel = uint32_t(overflow) * msPerPixel;
-        uint32_t phase = uint32_t(now - startedAt) % (2 * (pause + travel));
-        if (phase < pause) return 0;
-        phase -= pause;
-        if (phase < travel) return int(phase / msPerPixel);
-        phase -= travel;
-        if (phase < pause) return overflow;
-        return overflow - int((phase - pause) / msPerPixel);
+        if (textWidth <= viewportWidth) return 0;
+        constexpr uint32_t msPerPixel = 40;
+        return int(uint32_t(now - startedAt) / msPerPixel % uint32_t(textWidth + GapPixels));
     }
 
 private:
