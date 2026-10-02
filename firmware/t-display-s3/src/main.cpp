@@ -729,7 +729,13 @@ void copySelectedTool();
 
 void positionMenu()
 {
-    toolScroll = max(0, (int(ui.row) - 1) * (ui.tool == 2 ? 34 : 27));
+    bool list = ui.page == UiPage::ToolList;
+    int rows = list ? ui.toolCount : ui.detailCount;
+    int rowHeight = list && ui.tool == 2 ? 34 : 27;
+    int viewport = list && ui.tool == 1 ? 96 : 116;
+    toolScroll = UiListLayout::scroll(min(int(ui.row), max(0, rows - 1)), rows, rowHeight, viewport);
+    if ((list || ui.page == UiPage::ToolDetail) && ui.row < rows && rows * rowHeight > viewport)
+        toolFocusY = 27 + ui.row * rowHeight - toolScroll;
     settingsMenu.interface_text_y = ui.initialScroll();
     settingsMenu.interface_text_y_now = ui.initialScroll();
     settingsMenu.meun_number_now = ui.row;
@@ -742,6 +748,7 @@ void drawSettingsMenu()
 {
     settingsMenu.menuOptions_index = ui.count();
     settingsMenu.set_munber(ui.row);
+    settingsMenu.interface_text_y = ui.initialScroll();
     // Keep Axeuh's native moving/resizing focus and scrolling. Repaint its
     // XOR highlight as an outline to retain white text on black throughout.
     int px = settingsPanel.x_now + settingsMenu.pointer_x_now + 1;
@@ -753,6 +760,16 @@ void drawSettingsMenu()
     canvas.drawBox(px, py, pw, ph);
     canvas.setDrawColor(1);
     border(px, py, pw + 7, ph, true);
+    // Axeuh's scrollbar assumes a non-positive offset. Centered end rows need
+    // padding, so show the selected position without letting its thumb escape.
+    canvas.setDrawColor(0);
+    canvas.drawBox(308, 28, 7, 120);
+    if (ui.count() * 29 > 121) {
+        int thumb = max(6, 116 * 121 / (ui.count() * 29));
+        int y = 30 + int(ui.row) * (116 - thumb) / (ui.count() - 1);
+        canvas.setDrawColor(1);
+        canvas.drawBox(310, y, 2, thumb);
+    }
     canvas.setMaxClipWindow();
 }
 
@@ -894,8 +911,7 @@ void drawToolPage(const Snapshot &s)
     int toolbarY = market ? 124 : 144;
     int viewport = toolbarY - 28;
     bool inRows = ui.row < rows;
-    float target = inRows ? max(0, int(ui.row + 1) * rowHeight - viewport) : toolScroll;
-    if (inRows && ui.row == 0) target = 0;
+    float target = inRows ? UiListLayout::scroll(ui.row, rows, rowHeight, viewport) : toolScroll;
     uiEngine.animation(&toolScroll, target, uiEngine.fps, 0.5f);
     canvas.setClipWindow(1, 26, 318, toolbarY - 1);
     for (int i = 0; i < rows; ++i) {
@@ -912,7 +928,7 @@ void drawToolPage(const Snapshot &s)
             } else textAt(12, y + 19, 291, item.title + (ui.tool == 0 ? String(" ") + item.password : ""));
         } else textAt(12, y + 19, 291, toolLines[i]);
     }
-    if (inRows) toolFocus(2, 27 + ui.row * rowHeight - lroundf(toolScroll), 316, rowHeight - 1);
+    if (inRows) toolFocus(2, 27 + ui.row * rowHeight - lroundf(target), 316, rowHeight - 1);
     canvas.setMaxClipWindow();
     if (rows == 0) wrappedAt(12, 55, 295, toolLoading ? "正在查询..." : toolData.error.isEmpty() ? "暂无结果" : toolData.error, 3);
     canvas.drawHLine(0, toolbarY - 1, 320);

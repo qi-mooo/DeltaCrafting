@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include "ui_list_layout.h"
 
 enum class UiPage : uint8_t { Home, Facility, Global, CraftMode, AfterRun, Items, Tools, ToolList, ToolDetail, GunMode, GunQuery, Firmware, Brightness, AutoSleep };
 
@@ -44,7 +45,7 @@ struct UiState {
             if (items[i] == selected) { row = i; break; }
     }
 
-    int initialScroll() const { return row > 1 ? -29 * (row - 1) : 0; }
+    int initialScroll() const { return -UiListLayout::scroll(row, count(), 29, 121); }
 
     uint8_t facility() const
     {

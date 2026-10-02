@@ -66,14 +66,14 @@ int main()
     ui.open(UiPage::AutoSleep, 6);
     ui.move(1); assert(ui.row == 0);
     ui.open(UiPage::Brightness, 9);
-    assert(ui.count() == 11 && ui.row * 29 + ui.initialScroll() == 29);
+    assert(ui.count() == 11 && ui.row * 29 + ui.initialScroll() == 46);
     ui.move(1); assert(ui.row == 10); // Cancel is reachable after 100%.
     ui.move(1); assert(ui.row == 0); // Wrap back to 10%.
     ui.open(UiPage::Firmware);
     assert(ui.count() == 3);
     ui.move(-1); assert(ui.row == 2);
     ui.open(UiPage::Global, 6);
-    assert(ui.row * 29 + ui.initialScroll() == 29); // Refresh-data is visible when scrolled.
+    assert(ui.row * 29 + ui.initialScroll() == 46); // Refresh-data opens at the center.
     ui.open(UiPage::Home);
     assert(ui.home == 4);
     ui.move(-1);
@@ -101,7 +101,22 @@ int main()
     for (unsigned i = 0; i < items.size(); ++i) items[i] = std::to_string(i);
     ui.openItems(items, std::string("200"));
     assert(ui.row == 200 && ui.count() == 255);
-    assert(ui.row * 29 + ui.initialScroll() == 29); // Selected item visible immediately, even far down the list.
+    assert(ui.row * 29 + ui.initialScroll() == 46); // A saved item far down the list opens at the center.
+    for (int row = 0; row < ui.count(); ++row) {
+        ui.row = row;
+        int y = row * 29 + ui.initialScroll();
+        assert(y == 46);
+        assert(y - 29 >= 0 && y + 2 * 29 < 121); // Complete previous/next entries fit.
+    }
+    for (int height : {27, 34}) {
+        for (int row = 0; row < 254; ++row) {
+            int y = row * height - UiListLayout::scroll(row, 254, height, 116);
+            assert(y == (116 - height) / 2);
+            assert(y - height >= 0 && y + 2 * height <= 116);
+        }
+    }
+    for (int row = 0; row < 4; ++row)
+        assert(UiListLayout::scroll(row, 4, 29, 121) == 0); // Short menus stay under their title.
     ui.open(UiPage::Items, 254);
     ui.move(1);
     assert(ui.row == 0);
