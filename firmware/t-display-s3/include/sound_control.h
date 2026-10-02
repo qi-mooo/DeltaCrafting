@@ -41,7 +41,8 @@ inline State request(const String &baseUrl, Action action = Action::Read)
         StaticJsonDocument<128> filter;
         filter["muted"] = true; filter["volumePercent"] = true;
         StaticJsonDocument<256> doc;
-        client.setTimeout(800);
+        // Arduino 2.x WiFiClient uses seconds; Stream consistently uses ms.
+        static_cast<Stream &>(http.getStream()).setTimeout(800);
         if (!deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter))) apply(doc.as<JsonVariantConst>(), state);
     }
     http.end();
