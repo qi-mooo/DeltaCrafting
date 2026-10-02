@@ -24,6 +24,28 @@ public:
 
     float offset = 0;
 
+    void drawHomeFocus(int x, int y, int width, int height)
+    {
+        setDrawColor(1);
+        for (int i = 0; i < 3; ++i)
+            drawFrame(x + i, y + i, width - 2 * i, height - 2 * i);
+        for (int side = 0; side < 2; ++side) {
+            int dx = side * (width - 18);
+            drawBox(x + dx, y, 18, 4);
+            drawBox(x + dx, y + height - 4, 18, 4);
+        }
+    }
+
+    void drawFacilityProgress(int x, int y, int pixels)
+    {
+        // Reserve a black gutter even while the moving focus crosses this row.
+        setDrawColor(0);
+        drawBox(x - 1, y - 1, 142, 6);
+        setDrawColor(1);
+        drawFrame(x, y, 140, 4);
+        if (pixels > 0) drawBox(x + 1, y + 1, pixels, 2);
+    }
+
     void drawScrollingText(int x, int baseline, int width, const char *text, int scroll)
     {
         setDrawColor(1);

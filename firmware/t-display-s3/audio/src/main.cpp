@@ -33,7 +33,6 @@ constexpr uint32_t DISPLAY_UPDATE_INTERVAL_MS = 100;
 
 TFT_eSPI display;
 DisplayBrightness brightness(PIN_LCD_BL);
-AutoSleep autoSleep;
 WakeButtonGate wakeButtons;
 TFT_eSprite canvas(&display);
 AudioBridge audioBridge;
@@ -668,17 +667,6 @@ void recoverFirmware(void *)
     }
 }
 
-void handleAutoSleep()
-{
-    bool held = !digitalRead(PIN_BUTTON_LEFT) || !digitalRead(PIN_BUTTON_RIGHT);
-    if (!autoSleep.due(millis(), held, firmwareRecovery || requestInProgress)) return;
-    bool paused = audioBridge.pauseForSleep();
-    if (paused && digitalRead(PIN_BUTTON_LEFT) && digitalRead(PIN_BUTTON_RIGHT)
-        && DeviceSleep::prepare(true)) DeviceSleep::enter(display, brightness);
-    audioBridge.cancelSleep();
-    autoSleep.activity(millis());
-}
-
 } // namespace
 
 void setup()
@@ -701,7 +689,6 @@ void setup()
     gpio14Button.rawLevel = gpio14Button.stableLevel = digitalRead(PIN_BUTTON_RIGHT);
 
     initializeDisplay();
-    autoSleep.begin(millis());
     if (firmwareRecovery) {
         updateProgress("", 0, "Preparing recovery");
         if (returnStatus != ESP_OK || xTaskCreate(recoverFirmware, "delta-ota", 12288, nullptr, 1, nullptr) != pdPASS)
@@ -712,7 +699,6 @@ void setup()
         display.fillScreen(TFT_BLACK);
         display.setTextColor(TFT_WHITE, TFT_BLACK);
         display.drawString(returnStatus != ESP_OK ? "Monitor firmware unavailable" : "Wi-Fi not configured", 10, 55, 2);
-        display.drawString("Press RESET to return", 10, 85, 2);
         return;
     }
     audioBridgeStarted = audioBridge.begin(makeDeviceId(), AUDIO_BRIDGE_NAME);
@@ -726,7 +712,6 @@ void setup()
 
 void loop()
 {
-    handleAutoSleep();
     if (!audioBridgeStarted) {
         delay(1000);
         return;
@@ -741,7 +726,6 @@ void loop()
     const ButtonEvent gpio0Event = updateButton(gpio0Button);
     const ButtonEvent gpio14Event = updateButton(gpio14Button);
     bool released = gpio0Button.rawLevel && gpio0Button.stableLevel && gpio14Button.rawLevel && gpio14Button.stableLevel;
-    if (!released || gpio0Event != ButtonEvent::None || gpio14Event != ButtonEvent::None) autoSleep.activity(millis());
     bool allowButtons = wakeButtons.allow(released, millis());
 
     if (allowButtons && gpio14Event == ButtonEvent::ShortPress) {

@@ -267,11 +267,6 @@ void AudioBridge::refreshUsbConnectionState()
 void AudioBridge::networkTask()
 {
     for (;;) {
-        if (_sleepRequested.load()) {
-            _networkParked.store(true);
-            while (_sleepRequested.load()) vTaskDelay(pdMS_TO_TICKS(10));
-            _networkParked.store(false);
-        }
         refreshUsbConnectionState();
         if (WiFi.status() != WL_CONNECTED) {
             if (_networkBound) {
@@ -606,12 +601,6 @@ void AudioBridge::usbTask()
     TickType_t lastWake = xTaskGetTickCount();
 
     for (;;) {
-        if (_sleepRequested.load()) {
-            _usbParked.store(true);
-            while (_sleepRequested.load()) vTaskDelay(pdMS_TO_TICKS(10));
-            _usbParked.store(false);
-            lastWake = xTaskGetTickCount();
-        }
         vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(1));
 
         bool streaming;
@@ -631,16 +620,3 @@ void AudioBridge::usbTask()
         }
     }
 }
-
-bool AudioBridge::pauseForSleep()
-{
-    _sleepRequested.store(true);
-    uint32_t started = millis();
-    while (((_networkTaskHandle && !_networkParked.load()) || (_usbTaskHandle && !_usbParked.load()))
-        && millis() - started < 2000) delay(5);
-    bool ready = (!_networkTaskHandle || _networkParked.load()) && (!_usbTaskHandle || _usbParked.load());
-    if (!ready) cancelSleep();
-    return ready;
-}
-
-void AudioBridge::cancelSleep() { _sleepRequested.store(false); }

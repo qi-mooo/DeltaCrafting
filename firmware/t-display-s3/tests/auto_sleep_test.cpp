@@ -20,15 +20,15 @@ int main()
     assert(monitor.save(1, 272000) && sleepWrites == 1);
     assert(!monitor.save(AutoSleep::Count, 0));
 
-    AutoSleep audio;
-    audio.begin(0);
-    assert(audio.row() == 1 && audio.due(30000, false, false));
-    assert(audio.save(0, 0));
-    assert(!audio.due(UINT32_MAX, false, false)); // Disabled never sleeps.
-    assert(audio.save(2, UINT32_MAX - 999));
-    assert(!audio.due(58999, false, false) && audio.due(59000, false, false));
+    AutoSleep reboot;
+    reboot.begin(0);
+    assert(reboot.row() == 1 && reboot.due(30000, false, false));
+    assert(reboot.save(0, 0));
+    assert(!reboot.due(UINT32_MAX, false, false)); // Disabled never sleeps.
+    assert(reboot.save(2, UINT32_MAX - 999));
+    assert(!reboot.due(58999, false, false) && reboot.due(59000, false, false));
     writesSucceed = false;
-    assert(!audio.save(5, 0) && audio.row() == 2 && storedSleepSeconds == 60);
+    assert(!reboot.save(5, 0) && reboot.row() == 2 && storedSleepSeconds == 60);
     writesSucceed = true;
     storedSleepSeconds = 7;
     AutoSleep invalid;
@@ -52,7 +52,7 @@ int main()
     assert(button.update(false, 2135) && gate.allow(false, 2135));
 
     assert(SleepResume::save(true));
-    assert(SleepResume::consume(true)); // Deep wake resumes audio once.
+    assert(SleepResume::consume(true)); // Honor a legacy v21 audio wake marker once.
     assert(!SleepResume::consume(true));
     assert(SleepResume::save(true));
     assert(!SleepResume::consume(false)); // RESET exits audio and clears the marker.

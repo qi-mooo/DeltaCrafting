@@ -5,7 +5,6 @@
 #include <USBAudioCard.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
-#include <atomic>
 
 #include "AudioProtocol.h"
 
@@ -32,8 +31,6 @@ public:
     bool hasServer() const;
     String serverBaseUrl() const;
     AudioBridgeStats getStats() const;
-    bool pauseForSleep();
-    void cancelSleep();
 
 private:
     struct MonoFrame {
@@ -74,7 +71,6 @@ private:
     WiFiClient _audioClient;
     TaskHandle_t _networkTaskHandle = nullptr;
     TaskHandle_t _usbTaskHandle = nullptr;
-    std::atomic_bool _sleepRequested{false}, _networkParked{false}, _usbParked{false};
     MonoFrame *_frames = nullptr;
     uint64_t *_frameTags = nullptr;
 

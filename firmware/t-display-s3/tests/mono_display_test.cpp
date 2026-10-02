@@ -34,6 +34,46 @@ int main()
         for (int x = 0; x < 320; ++x) assert(row[x] == (x >= 320 + shift ? 0xFFFF : 0));
     }
     screen.offset = 0;
+    // Every progress pixel and its black gutter survive a moving home focus.
+    const int targets[][4] = {
+        {1, 1, 158, 70}, {161, 1, 158, 70}, {1, 73, 158, 70},
+        {161, 73, 158, 70}, {1, 145, 228, 25}, {230, 145, 89, 25}
+    };
+    const int fills[] = {-1, 0, 69, 138};
+    for (const auto &from : targets) {
+        for (const auto &to : targets) {
+            for (int step = 0; step <= 20; ++step) {
+                int focus[4];
+                for (int i = 0; i < 4; ++i) focus[i] = from[i] + (to[i] - from[i]) * step / 20;
+                screen.clearBuffer();
+                screen.drawHomeFocus(focus[0], focus[1], focus[2], focus[3]);
+                for (int cell = 0; cell < 4; ++cell)
+                    screen.drawFacilityProgress(cell % 2 * 160 + 10, cell / 2 * 72 + 61, fills[cell]);
+                for (int cell = 0; cell < 4; ++cell) {
+                    int x = cell % 2 * 160 + 10, y = cell / 2 * 72 + 61;
+                    for (int dy = -1; dy <= 4; ++dy) {
+                        screen.readRow(y + dy, row);
+                        for (int dx = -1; dx <= 140; ++dx) {
+                            bool frame = dx >= 0 && dx < 140 && dy >= 0 && dy < 4
+                                && (dx == 0 || dx == 139 || dy == 0 || dy == 3);
+                            bool fill = dx >= 1 && dx <= fills[cell] && dy >= 1 && dy <= 2;
+                            assert(row[x + dx] == (frame || fill ? 0xFFFF : 0));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // At rest, the bottom corners leave two clear rows below the progress bar.
+    for (int cell = 0; cell < 4; ++cell) {
+        int x = cell % 2 * 160, y = cell / 2 * 72;
+        screen.clearBuffer();
+        screen.drawHomeFocus(x + 1, y + 1, 158, 70);
+        for (int dy = 60; dy <= 66; ++dy) {
+            screen.readRow(y + dy, row);
+            for (int dx = 9; dx <= 150; ++dx) assert(row[x + dx] == 0);
+        }
+    }
     screen.clearBuffer();
     uint16_t image[96 * 96];
     for (auto &pixel : image) pixel = 0xF800;

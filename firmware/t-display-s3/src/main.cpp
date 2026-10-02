@@ -657,20 +657,16 @@ String phaseName(const String &phase)
 
 void border(int x, int y, int width, int height, bool selected)
 {
+    if (selected && height > 40) {
+        canvas.drawHomeFocus(x, y, width, height);
+        return;
+    }
     canvas.setDrawColor(1);
     for (int i = 0; i < (selected ? 3 : 1); ++i)
         canvas.drawFrame(x + i, y + i, width - 2 * i, height - 2 * i);
     if (!selected) return;
-    if (height > 40) {
-        canvas.drawFrame(x + 5, y + 5, width - 10, height - 10);
-        for (int dx : {0, width - 18}) {
-            canvas.drawBox(x + dx, y, 18, 6);
-            canvas.drawBox(x + dx, y + height - 6, 18, 6);
-        }
-    } else {
-        canvas.drawTriangle(x + 7, y + height / 2 - 4,
-            x + 7, y + height / 2 + 4, x + 12, y + height / 2);
-    }
+    canvas.drawTriangle(x + 7, y + height / 2 - 4,
+        x + 7, y + height / 2 + 4, x + 12, y + height / 2);
 }
 
 String craftModeName(const String &mode)
@@ -747,18 +743,16 @@ void drawSettingsMenu()
 
 void drawProgress(int x, int y, const Facility &facility, const String &phase, const Snapshot &s)
 {
-    canvas.setDrawColor(1);
-    canvas.drawFrame(x, y, 140, 4);
-    if (!s.valid) return;
-    if (phase == "ReadyToCollect") {
-        canvas.drawBox(x + 1, y + 1, 138, 2);
-    } else if (phase == "Crafting") {
+    int pixels = 0;
+    if (s.valid && phase == "ReadyToCollect") {
+        pixels = 138;
+    } else if (s.valid && phase == "Crafting") {
         int32_t remaining = facility.remaining;
         if (remaining >= 0 && fresh(s))
             remaining = max(int32_t(0), remaining - int32_t((millis() - s.fetchedAt) / 1000));
-        int pixels = progressPixels(remaining, facility.total, 138);
-        if (pixels > 0) canvas.drawBox(x + 1, y + 1, pixels, 2);
+        pixels = progressPixels(remaining, facility.total, 138);
     }
+    canvas.drawFacilityProgress(x, y, pixels);
 }
 
 void updateBattery()
@@ -982,7 +976,6 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
                 : phase == "Idle" ? "暂无制造任务"
                 : phase == "NeedsManual" ? f.reason : "等待识别";
             textAt(x + 10, y + 56, 140, detail);
-            drawProgress(x + 10, y + 61, f, phase, s);
         }
     } else {
         String title = ui.page == UiPage::Global ? "全局设置"
@@ -998,7 +991,7 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         const auto &f = s.facilities[ui.facility()];
         if (ui.page == UiPage::Tools) {
             for (uint8_t i = 0; i < 3; ++i) menuRow(i, TOOL_NAMES[i]);
-            menuRow(3, "静音控制 (RESET退出)");
+            menuRow(3, "声音控制");
             menuRow(4, "返回主界面");
         } else if (ui.page == UiPage::Facility) {
             menuRow(0, String("设施: ") + (!s.valid ? "未知" : f.enabled ? "启用" : "停用"));
@@ -1080,6 +1073,11 @@ void drawStatusBar(U8G2 *, Axeuh_UI *)
     uiEngine.animation(&focusW, ui.home == 5 ? 89.0f : ui.home == 4 ? 228.0f : 158.0f, uiEngine.fps, 0.5f);
     uiEngine.animation(&focusH, ui.home >= 4 ? 25.0f : 70.0f, uiEngine.fps, 0.5f);
     border(lroundf(focusX), lroundf(focusY), lroundf(focusW), lroundf(focusH), true);
+    constexpr uint8_t order[] = {3, 0, 1, 2};
+    for (uint8_t cell = 0; cell < 4; ++cell) {
+        const auto &f = s.facilities[order[cell]];
+        drawProgress((cell % 2) * 160 + 10, (cell / 2) * 72 + 61, f, displayPhase(f, s), s);
+    }
 }
 
 void draw()
