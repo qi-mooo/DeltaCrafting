@@ -6,6 +6,7 @@
 #include "AudioBridge.h"
 #include "config.h"
 #include "program_switch.h"
+#include "display_brightness.h"
 #include <DeltaOta.h>
 
 namespace {
@@ -28,9 +29,9 @@ constexpr uint32_t BUTTON_LONG_PRESS_MS = 600;
 constexpr uint32_t BUTTON_REPEAT_MS = 250;
 constexpr uint32_t BATTERY_UPDATE_INTERVAL_MS = 5000;
 constexpr uint32_t DISPLAY_UPDATE_INTERVAL_MS = 100;
-constexpr uint8_t BACKLIGHT_BRIGHTNESS = 160;
 
 TFT_eSPI display;
+DisplayBrightness brightness(PIN_LCD_BL);
 TFT_eSprite canvas(&display);
 AudioBridge audioBridge;
 
@@ -525,11 +526,11 @@ void setScreenPower(bool enabled)
     if (enabled) {
         display.writecommand(0x11);
         delay(120);
-        analogWrite(PIN_LCD_BL, BACKLIGHT_BRIGHTNESS);
+        brightness.setScreenOn(true);
         screenOn = true;
         drawScreen();
     } else {
-        analogWrite(PIN_LCD_BL, 0);
+        brightness.setScreenOn(false);
         display.writecommand(0x10);
         screenOn = false;
     }
@@ -597,8 +598,7 @@ void initializeDisplay()
 
     display.setRotation(1);
     display.invertDisplay(true);
-    pinMode(PIN_LCD_BL, OUTPUT);
-    analogWrite(PIN_LCD_BL, BACKLIGHT_BRIGHTNESS);
+    brightness.begin();
 
     canvas.setColorDepth(16);
     canvas.createSprite(320, 170);

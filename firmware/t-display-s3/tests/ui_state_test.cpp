@@ -57,9 +57,13 @@ int main()
     assert(ui.home == 4);
     ui.open(UiPage::Global);
     ui.move(-1);
-    assert(ui.row == 8); // Return option follows firmware update.
+    assert(ui.row == 9); // Return option follows brightness.
     ui.move(1);
-    assert(ui.row == 0 && ui.count() == 9);
+    assert(ui.row == 0 && ui.count() == 10);
+    ui.open(UiPage::Brightness, 9);
+    assert(ui.count() == 11 && ui.row * 29 + ui.initialScroll() == 29);
+    ui.move(1); assert(ui.row == 10); // Cancel is reachable after 100%.
+    ui.move(1); assert(ui.row == 0); // Wrap back to 10%.
     ui.open(UiPage::Firmware);
     assert(ui.count() == 3);
     ui.move(-1); assert(ui.row == 2);

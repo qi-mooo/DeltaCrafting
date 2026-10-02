@@ -16,6 +16,7 @@
 #include "mono_display.h"
 #include "program_switch.h"
 #include "firmware_version.h"
+#include "display_brightness.h"
 #include <DeltaOta.h>
 
 #if TFT_WIDTH != 170 || TFT_HEIGHT != 320 || TFT_WR != 8 || TFT_RD != 9 || TFT_BL != 38
@@ -92,6 +93,8 @@ ItemList sharedItems, itemList;
 bool itemsReady = false, itemLoading = false, itemSaving = false;
 int itemSaveResult = -1;
 TFT_eSPI display;
+DisplayBrightness brightness(TFT_BL);
+String brightnessError;
 MonoDisplay canvas;
 Axeuh_UI uiEngine(&canvas);
 Axeuh_UI_Panel mainPanel;
@@ -965,6 +968,7 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         }
     } else {
         String title = ui.page == UiPage::Global ? "全局设置"
+            : ui.page == UiPage::Brightness ? "屏幕亮度"
             : ui.page == UiPage::Tools ? "工具"
             : ui.page == UiPage::ToolList || ui.page == UiPage::ToolDetail ? TOOL_NAMES[ui.tool]
             : ui.page == UiPage::Items ? String(NAMES[ui.facility()]) + " / 制造物品"
@@ -992,7 +996,12 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             menuRow(5, s.running ? "关闭游戏 (请先停止任务)" : "关闭游戏");
             menuRow(6, s.dataRefreshing ? "刷新数据 (刷新中)" : "刷新数据");
             menuRow(7, "固件更新");
-            menuRow(8, "返回主界面");
+            menuRow(8, String("屏幕亮度: ") + brightness.savedPercent() + "%");
+            menuRow(9, "返回主界面");
+        } else if (ui.page == UiPage::Brightness) {
+            for (uint8_t i = 0; i < DisplayBrightness::Levels; ++i)
+                menuRow(i, String(i == brightness.savedRow() ? "* " : "  ") + (i + 1) * 10 + "%");
+            menuRow(DisplayBrightness::Levels, "返回 (不保存)");
         } else if (ui.page == UiPage::CraftMode) {
             for (uint8_t i = 0; i < 3; ++i)
                 menuRow(i, String(f.craftMode == CRAFT_MODES[i] ? "* " : "  ") + craftModeName(CRAFT_MODES[i]));
@@ -1008,11 +1017,13 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             menuRow(3, "返回全局设置");
         }
         drawSettingsMenu();
-        String hint = !s.notice.isEmpty() && millis() - s.noticeAt < 5000 ? s.notice
+        String hint = ui.page == UiPage::Brightness ? (brightnessError.isEmpty() ? "循环预览 / 单击确认保存" : brightnessError)
+            : !s.notice.isEmpty() && millis() - s.noticeAt < 5000 ? s.notice
             : ui.page == UiPage::ToolList ? (toolLoading ? "正在查询数据帝" : !toolData.error.isEmpty() ? toolData.error
                 : toolData.entries.empty() ? "暂无数据" : toolData.detail)
             : ui.page == UiPage::ToolDetail ? toolData.detail
             : ui.page == UiPage::Items && !itemList.error.isEmpty() ? itemList.error
+            : ui.page == UiPage::Global && ui.row == 8 ? "本机亮度 / 离线也可调节"
             : !fresh(s) ? "离线 / 可浏览,暂不能保存"
             : !s.control ? "只读 / 电脑未允许设备控制"
             : ui.page == UiPage::Global && (ui.row == 6 || s.dataRefreshing) && !s.dataRefreshDetail.isEmpty() ? s.dataRefreshDetail
@@ -1091,16 +1102,20 @@ void draw()
             || (ui.page == UiPage::Firmware && readFirmware().busy);
         if (!blocked) {
             if (pendingHold) activateSelection(true);
-            else if (uiEngine.IN_now == DOWN) ui.move(1);
+            else if (uiEngine.IN_now == DOWN) {
+                ui.move(1);
+                if (ui.page == UiPage::Brightness) { brightness.preview(ui.row); brightnessError = ""; }
+            }
             else if (uiEngine.IN_now == SELECT) activateSelection();
         }
         pendingHold = false;
     }
     if (receivedItems || receivedTool || saved >= 0) pendingHold = false;
     if (ui.page != before) {
+        if (before == UiPage::Brightness) brightness.cancel();
         bool forward = ui.page != UiPage::Home
             && before != UiPage::CraftMode && before != UiPage::AfterRun && before != UiPage::Items
-            && before != UiPage::Firmware
+            && before != UiPage::Firmware && before != UiPage::Brightness
             && before != UiPage::ToolDetail && !(before == UiPage::ToolList && ui.page == UiPage::Tools);
         canvas.startTransition(forward);
         positionMenu();
@@ -1260,12 +1275,19 @@ bool serialFirmwareControl(bool install)
 {
     auto state = readFirmware();
     if (state.busy || (install && !state.ready)) return false;
+    if (ui.page == UiPage::Brightness) brightness.cancel();
     ui.open(UiPage::Firmware);
     return requestFirmware(install);
 }
 
 void activateSelection(bool held)
 {
+    if (ui.page == UiPage::Brightness) {
+        if (ui.row == DisplayBrightness::Levels) { brightness.cancel(); ui.open(UiPage::Global, 8); }
+        else if (brightness.save()) { setNotice("亮度已保存"); ui.open(UiPage::Global, 8); }
+        else brightnessError = "保存失败,请重试";
+        return;
+    }
     Snapshot s = readSnapshot();
     if (ui.page == UiPage::Firmware) {
         auto f = readFirmware();
@@ -1358,6 +1380,7 @@ void activateSelection(bool held)
         else if (ui.row == 5) submitAction(Command::CloseGame);
         else if (ui.row == 6) submitAction(Command::RefreshData);
         else if (ui.row == 7) { ui.open(UiPage::Firmware); requestFirmware(false); }
+        else if (ui.row == 8) { brightnessError = ""; ui.open(UiPage::Brightness, brightness.savedRow()); }
         else ui.open(UiPage::Home);
     } else if (ui.page == UiPage::CraftMode) {
         if (ui.row == 3 || submit(Setting::CraftMode, ui.row)) ui.open(UiPage::Facility, 1);
@@ -1414,8 +1437,7 @@ void setup()
     display.setRotation(1);
     display.setSwapBytes(true);
     display.invertDisplay(true);
-    pinMode(38, OUTPUT);
-    digitalWrite(38, HIGH);
+    brightness.begin();
     stateMutex = xSemaphoreCreateMutex();
     commands = xQueueCreate(1, sizeof(Request));
     if (!stateMutex || !commands || !uiEngine.get_xMutex() || !mainPanel.xMutex
