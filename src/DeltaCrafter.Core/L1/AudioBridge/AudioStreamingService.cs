@@ -8,6 +8,8 @@ using DeltaCrafter.Core.L0;
 
 namespace DeltaCrafter.Core.L1.AudioBridge;
 
+public sealed record AudioLevelDelivery(DateTimeOffset? SentAt, byte PeakLevel, IReadOnlyList<string> Targets);
+
 public sealed class AudioStreamingService : IAsyncDisposable
 {
     private readonly DeviceDiscoveryService _discovery;
@@ -25,6 +27,7 @@ public sealed class AudioStreamingService : IAsyncDisposable
     private long _captureRestartCount;
     private long _endpointProbeErrorCount;
     private AudioGainState _gainState = new(false, 1.0f, string.Empty);
+    private AudioLevelDelivery _levelDelivery = new(null, 0, []);
 
     public AudioStreamingService(DeviceDiscoveryService discovery, WindowsAudioService windowsAudio)
     {
@@ -40,6 +43,7 @@ public sealed class AudioStreamingService : IAsyncDisposable
 
     public long SentPackets => Interlocked.Read(ref _sentPackets);
     public long SentLevelPackets => Interlocked.Read(ref _sentLevelPackets);
+    public AudioLevelDelivery LevelDelivery => Volatile.Read(ref _levelDelivery);
     public string Status => _status;
     public string EndpointName => _endpointName;
     public string CaptureFormat => _captureFormat;
@@ -207,23 +211,13 @@ public sealed class AudioStreamingService : IAsyncDisposable
                         pendingPeakLevel,
                         CalculatePeakLevel(sampleBuffer, 0, samplesRead, gainState));
 
-                    var canSendLevel = !_paused && target is { UsbMounted: false };
                     var nowForLevel = Stopwatch.GetTimestamp();
-                    if (canSendLevel && (nextLevelWriteAt == 0 || nowForLevel >= nextLevelWriteAt))
+                    if (nextLevelWriteAt == 0 || nowForLevel >= nextLevelWriteAt)
                     {
-                        try
-                        {
-                            var levelPacket = AudioProtocol.CreateLevelPacket(pendingPeakLevel);
-                            await _levelUdp.SendAsync(
-                                levelPacket,
-                                levelPacket.Length,
-                                new IPEndPoint(target!.Address, target.LevelPort)).ConfigureAwait(false);
-                            Interlocked.Increment(ref _sentLevelPackets);
-                        }
-                        catch (SocketException)
-                        {
-                            // The next 100 ms level update retries automatically.
-                        }
+                        // Every discovered display needs the meter, including devices
+                        // that are not selected as the single USB PCM destination.
+                        await SendLevelsAsync(_discovery.Devices, pendingPeakLevel, cancellationToken)
+                            .ConfigureAwait(false);
                         pendingPeakLevel = 0;
                         nextLevelWriteAt = nowForLevel + Stopwatch.Frequency / 10;
                     }
@@ -328,6 +322,30 @@ public sealed class AudioStreamingService : IAsyncDisposable
             audioStream?.Dispose();
             tcpClient?.Dispose();
         }
+    }
+
+    internal async Task SendLevelsAsync(IReadOnlyList<BridgeDevice> devices, byte peakLevel, CancellationToken ct)
+    {
+        var delivered = new List<string>();
+        if (!_paused)
+        {
+            var packet = AudioProtocol.CreateLevelPacket(peakLevel);
+            foreach (var device in devices)
+            {
+                var endpoint = new IPEndPoint(device.Address, device.LevelPort);
+                try
+                {
+                    await _levelUdp.SendAsync(packet.AsMemory(), endpoint, ct).ConfigureAwait(false);
+                    Interlocked.Increment(ref _sentLevelPackets);
+                    delivered.Add(endpoint.ToString());
+                }
+                catch (SocketException) when (!ct.IsCancellationRequested)
+                {
+                    // One unreachable display must not suppress the others.
+                }
+            }
+        }
+        Volatile.Write(ref _levelDelivery, new(DateTimeOffset.UtcNow, peakLevel, delivered.ToArray()));
     }
 
     private static byte CalculatePeakLevel(
