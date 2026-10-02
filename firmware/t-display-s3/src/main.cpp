@@ -5,6 +5,7 @@
 #include <TFT_eSPI.h>
 #include <WiFi.h>
 #include <vector>
+#include <atomic>
 #include <mbedtls/base64.h>
 #include "config.h"
 #include "lcd_init.h"
@@ -17,6 +18,7 @@
 #include "program_switch.h"
 #include "firmware_version.h"
 #include "display_brightness.h"
+#include "device_sleep.h"
 #include <DeltaOta.h>
 
 #if TFT_WIDTH != 170 || TFT_HEIGHT != 320 || TFT_WR != 8 || TFT_RD != 9 || TFT_BL != 38
@@ -95,6 +97,11 @@ int itemSaveResult = -1;
 TFT_eSPI display;
 DisplayBrightness brightness(TFT_BL);
 String brightnessError;
+AutoSleep autoSleep;
+WakeButtonGate wakeButtons;
+String sleepError;
+std::atomic_bool sleepRequested{false}, networkParked{false};
+bool sleepBlockedByOta = false;
 MonoDisplay canvas;
 Axeuh_UI uiEngine(&canvas);
 Axeuh_UI_Panel mainPanel;
@@ -542,6 +549,11 @@ void networkTask(void *)
     uint32_t lastWifiAttempt = millis(), lastPoll = 0;
     bool wasConnected = false;
     for (;;) {
+        if (sleepRequested.load()) {
+            networkParked.store(true);
+            while (sleepRequested.load()) vTaskDelay(pdMS_TO_TICKS(10));
+            networkParked.store(false);
+        }
         bool hasCommand = xQueueReceive(commands, &request, pdMS_TO_TICKS(50)) == pdTRUE;
         bool connected = WiFi.status() == WL_CONNECTED;
         ItemList fetched;
@@ -673,6 +685,12 @@ String afterRunName(const String &mode)
     if (mode == "KeepRunning") return "最小化后台";
     if (mode == "KeepAtLobby") return "停留大厅";
     return "关闭游戏";
+}
+
+String sleepLabel(uint8_t row)
+{
+    uint16_t seconds = AutoSleep::secondsAt(row);
+    return seconds == 0 ? "关闭" : seconds == 30 ? "30 秒" : String(seconds / 60) + " 分钟";
 }
 
 String gameStatus(const Snapshot &s)
@@ -969,6 +987,7 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
     } else {
         String title = ui.page == UiPage::Global ? "全局设置"
             : ui.page == UiPage::Brightness ? "屏幕亮度"
+            : ui.page == UiPage::AutoSleep ? "自动休眠"
             : ui.page == UiPage::Tools ? "工具"
             : ui.page == UiPage::ToolList || ui.page == UiPage::ToolDetail ? TOOL_NAMES[ui.tool]
             : ui.page == UiPage::Items ? String(NAMES[ui.facility()]) + " / 制造物品"
@@ -997,7 +1016,12 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             menuRow(6, s.dataRefreshing ? "刷新数据 (刷新中)" : "刷新数据");
             menuRow(7, "固件更新");
             menuRow(8, String("屏幕亮度: ") + brightness.savedPercent() + "%");
-            menuRow(9, "返回主界面");
+            menuRow(9, String("自动休眠: ") + sleepLabel(autoSleep.row()));
+            menuRow(10, "返回主界面");
+        } else if (ui.page == UiPage::AutoSleep) {
+            for (uint8_t i = 0; i < AutoSleep::Count; ++i)
+                menuRow(i, String(i == autoSleep.row() ? "* " : "  ") + sleepLabel(i));
+            menuRow(AutoSleep::Count, "返回 (不保存)");
         } else if (ui.page == UiPage::Brightness) {
             for (uint8_t i = 0; i < DisplayBrightness::Levels; ++i)
                 menuRow(i, String(i == brightness.savedRow() ? "* " : "  ") + (i + 1) * 10 + "%");
@@ -1018,12 +1042,14 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         }
         drawSettingsMenu();
         String hint = ui.page == UiPage::Brightness ? (brightnessError.isEmpty() ? "循环预览 / 单击确认保存" : brightnessError)
+            : ui.page == UiPage::AutoSleep ? (sleepError.isEmpty() ? "休眠断网 / 循环键唤醒" : sleepError)
             : !s.notice.isEmpty() && millis() - s.noticeAt < 5000 ? s.notice
             : ui.page == UiPage::ToolList ? (toolLoading ? "正在查询数据帝" : !toolData.error.isEmpty() ? toolData.error
                 : toolData.entries.empty() ? "暂无数据" : toolData.detail)
             : ui.page == UiPage::ToolDetail ? toolData.detail
             : ui.page == UiPage::Items && !itemList.error.isEmpty() ? itemList.error
             : ui.page == UiPage::Global && ui.row == 8 ? "本机亮度 / 离线也可调节"
+            : ui.page == UiPage::Global && ui.row == 9 ? "休眠断网 / 循环键唤醒"
             : !fresh(s) ? "离线 / 可浏览,暂不能保存"
             : !s.control ? "只读 / 电脑未允许设备控制"
             : ui.page == UiPage::Global && (ui.row == 6 || s.dataRefreshing) && !s.dataRefreshDetail.isEmpty() ? s.dataRefreshDetail
@@ -1115,7 +1141,7 @@ void draw()
         if (before == UiPage::Brightness) brightness.cancel();
         bool forward = ui.page != UiPage::Home
             && before != UiPage::CraftMode && before != UiPage::AfterRun && before != UiPage::Items
-            && before != UiPage::Firmware && before != UiPage::Brightness
+            && before != UiPage::Firmware && before != UiPage::Brightness && before != UiPage::AutoSleep
             && before != UiPage::ToolDetail && !(before == UiPage::ToolList && ui.page == UiPage::Tools);
         canvas.startTransition(forward);
         positionMenu();
@@ -1273,6 +1299,7 @@ bool requestFirmware(bool install)
 
 bool serialFirmwareControl(bool install)
 {
+    autoSleep.activity(millis());
     auto state = readFirmware();
     if (state.busy || (install && !state.ready)) return false;
     if (ui.page == UiPage::Brightness) brightness.cancel();
@@ -1282,6 +1309,12 @@ bool serialFirmwareControl(bool install)
 
 void activateSelection(bool held)
 {
+    if (ui.page == UiPage::AutoSleep) {
+        if (ui.row == AutoSleep::Count) ui.open(UiPage::Global, 9);
+        else if (autoSleep.save(ui.row, millis())) { setNotice("休眠设置已保存"); ui.open(UiPage::Global, 9); }
+        else sleepError = "保存失败,请重试";
+        return;
+    }
     if (ui.page == UiPage::Brightness) {
         if (ui.row == DisplayBrightness::Levels) { brightness.cancel(); ui.open(UiPage::Global, 8); }
         else if (brightness.save()) { setNotice("亮度已保存"); ui.open(UiPage::Global, 8); }
@@ -1381,6 +1414,7 @@ void activateSelection(bool held)
         else if (ui.row == 6) submitAction(Command::RefreshData);
         else if (ui.row == 7) { ui.open(UiPage::Firmware); requestFirmware(false); }
         else if (ui.row == 8) { brightnessError = ""; ui.open(UiPage::Brightness, brightness.savedRow()); }
+        else if (ui.row == 9) { sleepError = ""; ui.open(UiPage::AutoSleep, autoSleep.row()); }
         else ui.open(UiPage::Home);
     } else if (ui.page == UiPage::CraftMode) {
         if (ui.row == 3 || submit(Setting::CraftMode, ui.row)) ui.open(UiPage::Facility, 1);
@@ -1394,11 +1428,41 @@ void handleButtons()
     uint32_t now = millis();
     bool cycle = cycleButton.update(digitalRead(UI_CYCLE_PIN), now);
     bool confirm = confirmButton.update(digitalRead(UI_CONFIRM_PIN), now);
+    bool released = cycleButton.raw && cycleButton.stable && confirmButton.raw && confirmButton.stable;
+    if (!released) autoSleep.activity(now);
+    if (!wakeButtons.allow(released, now)) {
+        pendingInput = STOP; pendingHold = false; itemHold.active = false;
+        return;
+    }
     if (itemHold.update(confirm, confirmButton.raw || confirmButton.stable,
         ui.page == UiPage::Items && !itemLoading && !itemSaving && cycleButton.raw
             && canvas.offset == 0, now)) pendingHold = true;
     if (cycle && confirmButton.stable) pendingInput = DOWN;
     else if (confirm && cycleButton.stable) pendingInput = SELECT;
+}
+
+void handleAutoSleep()
+{
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    bool busy = requestPending || firmwareView.busy;
+    xSemaphoreGive(stateMutex);
+    uint32_t now = millis();
+    if (!autoSleep.due(now, !digitalRead(UI_CYCLE_PIN) || !digitalRead(UI_CONFIRM_PIN),
+        busy || sleepBlockedByOta || canvas.offset != 0)) return;
+    if (DeltaOta::loadJob().stage != DeltaOta::Stage::None) {
+        autoSleep.activity(now);
+        return;
+    }
+    // Stop only between HTTP operations; never suspend a worker holding a lock.
+    sleepRequested.store(true);
+    while (networkTaskHandle && !networkParked.load() && millis() - now < 10000
+        && digitalRead(UI_CYCLE_PIN) && digitalRead(UI_CONFIRM_PIN)) delay(10);
+    bool idle = (!networkTaskHandle || networkParked.load())
+        && digitalRead(UI_CYCLE_PIN) && digitalRead(UI_CONFIRM_PIN);
+    if (idle && DeviceSleep::prepare(false)) DeviceSleep::enter(display, brightness);
+    sleepRequested.store(false);
+    autoSleep.activity(millis());
+    if (idle) setNotice("休眠准备失败,稍后重试");
 }
 
 void captureScreen()
@@ -1415,9 +1479,14 @@ void captureScreen()
 
 void setup()
 {
+    DeviceSleep::releasePins();
     Serial.begin(115200);
+    bool resumeAudio = SleepResume::consume(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1);
+    if (resumeAudio && DeltaOta::loadJob().stage == DeltaOta::Stage::None
+        && DevicePrograms::enterAudio() == ESP_OK) ESP.restart();
     String firmwareBootError;
     DeltaOta::monitorBoot(firmwareBootError);
+    sleepBlockedByOta = DeltaOta::loadJob().stage != DeltaOta::Stage::None;
     DeviceConfig::load();
     pinMode(15, OUTPUT);
     digitalWrite(15, HIGH);
@@ -1438,6 +1507,7 @@ void setup()
     display.setSwapBytes(true);
     display.invertDisplay(true);
     brightness.begin();
+    autoSleep.begin(millis());
     stateMutex = xSemaphoreCreateMutex();
     commands = xQueueCreate(1, sizeof(Request));
     if (!stateMutex || !commands || !uiEngine.get_xMutex() || !mainPanel.xMutex
@@ -1503,5 +1573,6 @@ void loop()
         lastDraw = now;
         draw();
     }
+    handleAutoSleep();
     delay(1);
 }

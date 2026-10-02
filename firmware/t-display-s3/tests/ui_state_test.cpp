@@ -57,9 +57,14 @@ int main()
     assert(ui.home == 4);
     ui.open(UiPage::Global);
     ui.move(-1);
-    assert(ui.row == 9); // Return option follows brightness.
+    assert(ui.row == 10); // Return option follows auto sleep.
     ui.move(1);
-    assert(ui.row == 0 && ui.count() == 10);
+    assert(ui.row == 0 && ui.count() == 11);
+    ui.open(UiPage::AutoSleep, 2);
+    assert(ui.count() == 7);
+    ui.move(-1); assert(ui.row == 1);
+    ui.open(UiPage::AutoSleep, 6);
+    ui.move(1); assert(ui.row == 0);
     ui.open(UiPage::Brightness, 9);
     assert(ui.count() == 11 && ui.row * 29 + ui.initialScroll() == 29);
     ui.move(1); assert(ui.row == 10); // Cancel is reachable after 100%.

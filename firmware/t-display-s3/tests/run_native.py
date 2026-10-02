@@ -21,6 +21,10 @@ with tempfile.TemporaryDirectory(prefix="s3-ui-test-") as temporary:
          "-I" + str(project / "include"), project / "tests/display_brightness_test.cpp",
          "-o", build / "brightness"])
     run([build / "brightness"])
+    run([cxx, "-std=c++17", "-I" + str(project / "tests/brightness_stubs"),
+         "-I" + str(project / "include"), project / "tests/auto_sleep_test.cpp",
+         "-o", build / "auto-sleep"])
+    run([build / "auto-sleep"])
     run([cxx, "-std=c++17", "-I" + str(project / "tests/stubs"),
          "-I" + str(project / "include"), project / "tests/program_switch_test.cpp",
          "-o", build / "program-switch"])
@@ -42,4 +46,4 @@ with tempfile.TemporaryDirectory(prefix="s3-ui-test-") as temporary:
          "-I" + str(project / "tests/stubs"), "-I" + str(project / "include"),
          project / "tests/mono_display_test.cpp", build / "u8g2.a", "-o", build / "display"])
     run([build / "display"])
-print("Navigation, buttons, brightness persistence/wake, program switching/RESET, interrupted OTA recovery, display bounds and transitions passed.")
+print("Navigation, buttons, brightness, deep-sleep timing/wake/resume, program switching/RESET, interrupted OTA recovery, display bounds and transitions passed.")

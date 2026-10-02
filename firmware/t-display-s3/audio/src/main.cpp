@@ -7,6 +7,7 @@
 #include "config.h"
 #include "program_switch.h"
 #include "display_brightness.h"
+#include "device_sleep.h"
 #include <DeltaOta.h>
 
 namespace {
@@ -32,6 +33,8 @@ constexpr uint32_t DISPLAY_UPDATE_INTERVAL_MS = 100;
 
 TFT_eSPI display;
 DisplayBrightness brightness(PIN_LCD_BL);
+AutoSleep autoSleep;
+WakeButtonGate wakeButtons;
 TFT_eSprite canvas(&display);
 AudioBridge audioBridge;
 
@@ -665,10 +668,23 @@ void recoverFirmware(void *)
     }
 }
 
+void handleAutoSleep()
+{
+    bool held = !digitalRead(PIN_BUTTON_LEFT) || !digitalRead(PIN_BUTTON_RIGHT);
+    if (!autoSleep.due(millis(), held, firmwareRecovery || requestInProgress)) return;
+    bool paused = audioBridge.pauseForSleep();
+    if (paused && digitalRead(PIN_BUTTON_LEFT) && digitalRead(PIN_BUTTON_RIGHT)
+        && DeviceSleep::prepare(true)) DeviceSleep::enter(display, brightness);
+    audioBridge.cancelSleep();
+    autoSleep.activity(millis());
+}
+
 } // namespace
 
 void setup()
 {
+    DeviceSleep::releasePins();
+    SleepResume::consume(false); // Also clear the marker if the bootloader resumed audio directly.
     // Return selection is committed before audio initialization. No button or
     // menu exits this program; RESET (or a power cycle) starts the monitor.
     firmwareRecovery = DeltaOta::loadJob().stage != DeltaOta::Stage::None;
@@ -685,6 +701,7 @@ void setup()
     gpio14Button.rawLevel = gpio14Button.stableLevel = digitalRead(PIN_BUTTON_RIGHT);
 
     initializeDisplay();
+    autoSleep.begin(millis());
     if (firmwareRecovery) {
         updateProgress("", 0, "Preparing recovery");
         if (returnStatus != ESP_OK || xTaskCreate(recoverFirmware, "delta-ota", 12288, nullptr, 1, nullptr) != pdPASS)
@@ -709,6 +726,7 @@ void setup()
 
 void loop()
 {
+    handleAutoSleep();
     if (!audioBridgeStarted) {
         delay(1000);
         return;
@@ -722,16 +740,19 @@ void loop()
 
     const ButtonEvent gpio0Event = updateButton(gpio0Button);
     const ButtonEvent gpio14Event = updateButton(gpio14Button);
+    bool released = gpio0Button.rawLevel && gpio0Button.stableLevel && gpio14Button.rawLevel && gpio14Button.stableLevel;
+    if (!released || gpio0Event != ButtonEvent::None || gpio14Event != ButtonEvent::None) autoSleep.activity(millis());
+    bool allowButtons = wakeButtons.allow(released, millis());
 
-    if (gpio14Event == ButtonEvent::ShortPress) {
+    if (allowButtons && gpio14Event == ButtonEvent::ShortPress) {
         setScreenPower(!screenOn);
-    } else if (gpio14Event == ButtonEvent::LongRepeat && !requestInProgress && audioBridge.hasServer()) {
+    } else if (allowButtons && gpio14Event == ButtonEvent::LongRepeat && !requestInProgress && audioBridge.hasServer()) {
         performRequest(RequestType::VolumeUp);
     }
 
-    if (gpio0Event == ButtonEvent::ShortPress && !requestInProgress && audioBridge.hasServer()) {
+    if (allowButtons && gpio0Event == ButtonEvent::ShortPress && !requestInProgress && audioBridge.hasServer()) {
         performRequest(RequestType::ToggleMute);
-    } else if (gpio0Event == ButtonEvent::LongRepeat && !requestInProgress && audioBridge.hasServer()) {
+    } else if (allowButtons && gpio0Event == ButtonEvent::LongRepeat && !requestInProgress && audioBridge.hasServer()) {
         performRequest(RequestType::VolumeDown);
     }
 

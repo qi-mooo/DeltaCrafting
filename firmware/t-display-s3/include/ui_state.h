@@ -1,7 +1,7 @@
 #pragma once
 #include <stdint.h>
 
-enum class UiPage : uint8_t { Home, Facility, Global, CraftMode, AfterRun, Items, Tools, ToolList, ToolDetail, GunMode, GunQuery, Firmware, Brightness };
+enum class UiPage : uint8_t { Home, Facility, Global, CraftMode, AfterRun, Items, Tools, ToolList, ToolDetail, GunMode, GunQuery, Firmware, Brightness, AutoSleep };
 
 struct UiState {
     UiPage page = UiPage::Home;
@@ -19,11 +19,12 @@ struct UiState {
     {
         return page == UiPage::Home ? 6 : page == UiPage::Tools ? 5
             : page == UiPage::Brightness ? 11
+            : page == UiPage::AutoSleep ? 7
             : page == UiPage::GunMode || page == UiPage::GunQuery || page == UiPage::Firmware ? 3
             : page == UiPage::ToolList ? toolCount + (tool == 2 ? 4 : tool == 0 || toolFailed ? 2 : 1)
             : page == UiPage::ToolDetail ? (tool == 2 ? detailCount + 2 : 1)
             : page == UiPage::Items ? itemCount + 1
-            : page == UiPage::Facility ? (customMode || hourlyMode ? 4 : 3) : page == UiPage::Global ? 10 : 4;
+            : page == UiPage::Facility ? (customMode || hourlyMode ? 4 : 3) : page == UiPage::Global ? 11 : 4;
     }
 
     void move(int direction)
