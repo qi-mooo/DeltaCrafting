@@ -603,18 +603,41 @@ void initializeDisplay()
     canvas.setColorDepth(16);
     canvas.createSprite(320, 170);
     canvas.setSwapBytes(true);
-    drawScreen();
+    if (!firmwareRecovery) drawScreen();
+}
+
+void drawFirmwareProgress(int percent, const String &detail, bool retry = false)
+{
+    static String lastDetail;
+    static int lastPercent = -1;
+    static bool lastRetry = false;
+    static uint32_t lastDrawAt = 0;
+    percent = constrain(percent, 0, 100);
+    const uint32_t now = millis();
+    if (lastPercent >= 0 && detail == lastDetail && retry == lastRetry
+        && (percent == lastPercent || (percent < 100 && now - lastDrawAt < 100))) return;
+
+    // Reuse the audio framebuffer: clearing the LCD for every percentage exposes
+    // a black frame between drawing the title, progress bar and footer.
+    canvas.fillSprite(TFT_BLACK);
+    canvas.setTextDatum(TL_DATUM);
+    canvas.setTextColor(TFT_WHITE, TFT_BLACK);
+    canvas.drawString("Firmware update (2/2)", 10, 16, 2);
+    canvas.drawString(detail.isEmpty() ? "Updating monitor" : detail, 10, 50, 2);
+    canvas.drawRect(10, 82, 300, 16, TFT_WHITE);
+    if (percent > 0) canvas.fillRect(12, 84, 296 * percent / 100, 12, TFT_WHITE);
+    canvas.drawString("Keep power on", 10, 118, 2);
+    if (retry) canvas.drawString("Retry in 20 seconds", 10, 145, 2);
+    canvas.pushSprite(0, 0);
+    lastDetail = detail;
+    lastPercent = percent;
+    lastRetry = retry;
+    lastDrawAt = now;
 }
 
 void updateProgress(const char *, int percent, const String &detail)
 {
-    display.fillScreen(TFT_BLACK);
-    display.setTextColor(TFT_WHITE, TFT_BLACK);
-    display.drawString("Firmware update (2/2)", 10, 16, 2);
-    display.drawString(detail.isEmpty() ? "Updating monitor" : detail, 10, 50, 2);
-    display.drawRect(10, 82, 300, 16, TFT_WHITE);
-    if (percent > 0) display.fillRect(12, 84, 296 * percent / 100, 12, TFT_WHITE);
-    display.drawString("Keep power on", 10, 118, 2);
+    drawFirmwareProgress(percent, detail);
 }
 
 void recoverFirmware(void *)
@@ -637,8 +660,7 @@ void recoverFirmware(void *)
                 delay(400); ESP.restart();
             }
         }
-        updateProgress("", 0, error);
-        display.drawString("Retry in 20 seconds", 10, 145, 2);
+        drawFirmwareProgress(0, error, true);
         delay(20000);
     }
 }
