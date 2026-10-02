@@ -238,30 +238,10 @@ void AudioBridge::setUsbStreaming(bool enabled)
 
 void AudioBridge::refreshUsbConnectionState()
 {
-    constexpr uint32_t USB_STATE_DEBOUNCE_MS = 120;
     const bool signal = tud_mounted() && !tud_suspended();
-    const uint32_t now = millis();
-
-    bool applyState = false;
-    portENTER_CRITICAL(&_mux);
-    if (!_usbSignalInitialized) {
-        _usbSignalInitialized = true;
-        _usbSignalState = signal;
-        _usbSignalChangedAt = now;
-    } else if (_usbSignalState != signal) {
-        _usbSignalState = signal;
-        _usbSignalChangedAt = now;
-    } else if (_usbMounted != signal && now - _usbSignalChangedAt >= USB_STATE_DEBOUNCE_MS) {
-        applyState = true;
-    }
-    portEXIT_CRITICAL(&_mux);
-
-    if (applyState) {
-        setUsbMounted(signal);
-        if (!signal) {
-            setUsbStreaming(false);
-        }
-    }
+    const bool mounted = _usbHost.update(signal, millis());
+    setUsbMounted(mounted);
+    if (!signal) setUsbStreaming(false);
 }
 
 void AudioBridge::networkTask()
@@ -272,6 +252,7 @@ void AudioBridge::networkTask()
             if (_networkBound) {
                 _audioClient.stop();
                 _audioServer.end();
+                _pcmListening = false;
                 _discoveryUdp.stop();
                 _levelUdp.stop();
                 _networkBound = false;
@@ -283,10 +264,6 @@ void AudioBridge::networkTask()
         if (!_networkBound) {
             const bool discoveryReady = _discoveryUdp.begin(AudioProtocol::DISCOVERY_PORT) == 1;
             const bool levelReady = _levelUdp.begin(AudioProtocol::LEVEL_PORT) == 1;
-            if (discoveryReady && levelReady) {
-                _audioServer.begin();
-                _audioServer.setNoDelay(true);
-            }
             _networkBound = discoveryReady && levelReady;
             if (!_networkBound) {
                 _discoveryUdp.stop();
@@ -404,12 +381,32 @@ void AudioBridge::serviceLevelStream()
 
 void AudioBridge::serviceAudioStream()
 {
-    bool serverActive;
+    bool serverActive, usbMounted;
     IPAddress serverIp;
     portENTER_CRITICAL(&_mux);
     serverActive = serverActiveLocked(millis());
     serverIp = _serverIp;
+    usbMounted = _usbMounted;
     portEXIT_CRITICAL(&_mux);
+
+    if (!usbMounted) {
+        _audioClient.stop();
+        if (_pcmListening) {
+            _audioServer.end();
+            _pcmListening = false;
+            _hasPendingPcmByte = false;
+            portENTER_CRITICAL(&_mux);
+            _lastAudioAt = 0;
+            resetAudioBufferLocked(_sessionId + 1, 0);
+            portEXIT_CRITICAL(&_mux);
+        }
+        return;
+    }
+    if (!_pcmListening) {
+        _audioServer.begin();
+        _audioServer.setNoDelay(true);
+        _pcmListening = true;
+    }
 
     if (_audioClient && (!_audioClient.connected() || !serverActive || _audioClient.remoteIP() != serverIp)) {
         _audioClient.stop();
@@ -605,9 +602,11 @@ void AudioBridge::usbTask()
 
         bool streaming;
         portENTER_CRITICAL(&_mux);
-        streaming = _usbStreaming;
+        streaming = _usbMounted && _usbStreaming;
         portEXIT_CRITICAL(&_mux);
         if (!streaming) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            lastWake = xTaskGetTickCount();
             continue;
         }
 

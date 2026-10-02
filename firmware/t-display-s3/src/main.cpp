@@ -19,6 +19,8 @@
 #include "firmware_version.h"
 #include "display_brightness.h"
 #include "device_sleep.h"
+#include "sound_control.h"
+#include "sound_wifi_handoff.h"
 #include <DeltaOta.h>
 
 #if TFT_WIDTH != 170 || TFT_HEIGHT != 320 || TFT_WR != 8 || TFT_RD != 9 || TFT_BL != 38
@@ -115,6 +117,7 @@ SemaphoreHandle_t stateMutex;
 QueueHandle_t commands;
 TaskHandle_t networkTaskHandle = nullptr;
 Snapshot shared;
+SoundControl::State sharedSound;
 UiButton cycleButton, confirmButton;
 UiHoldConfirm itemHold;
 bool pendingHold = false;
@@ -546,7 +549,8 @@ void networkTask(void *)
     WiFi.persistent(false);
     if (!DeviceConfig::ssid().isEmpty()) WiFi.begin(DeviceConfig::ssid().c_str(), DeviceConfig::password().c_str());
     else WiFi.begin();
-    uint32_t lastWifiAttempt = millis(), lastPoll = 0;
+    const String soundUrl = SoundControl::url(DeviceConfig::baseUrl());
+    uint32_t lastWifiAttempt = millis(), lastPoll = 0, lastSoundPoll = 0;
     bool wasConnected = false;
     for (;;) {
         if (sleepRequested.load()) {
@@ -566,6 +570,9 @@ void networkTask(void *)
             setError("Setup via USB serial");
         } else if (!connected) {
             setError("Wi-Fi disconnected");
+            xSemaphoreTake(stateMutex, portMAX_DELAY);
+            sharedSound.online = false;
+            xSemaphoreGive(stateMutex);
             if (hasCommand) setNotice("设备离线,请求未发送");
             if (millis() - lastWifiAttempt >= 10000) {
                 WiFi.reconnect();
@@ -583,6 +590,14 @@ void networkTask(void *)
             if (!wasConnected || hasCommand || millis() - lastPoll >= DELTA_POLL_MS) {
                 pollStatus();
                 lastPoll = millis();
+            }
+            // HTTP control only: no discovery reply, PCM listener or USB audio here.
+            if (!sleepRequested.load() && (!wasConnected || millis() - lastSoundPoll >= 3000)) {
+                auto sound = SoundControl::request(soundUrl);
+                xSemaphoreTake(stateMutex, portMAX_DELAY);
+                sharedSound = sound;
+                xSemaphoreGive(stateMutex);
+                lastSoundPoll = millis();
             }
         }
         if (hasCommand) {
@@ -1338,9 +1353,10 @@ void activateSelection(bool held)
                 return;
             }
             if (DevicePrograms::enterAudio() != ESP_OK) {
-                setNotice("静音程序不可用,请烧录完整固件包");
+                setNotice("声音程序不可用,请烧录完整固件包");
                 return;
             }
+            SoundWifiHandoff::save();
             ESP.restart();
         }
         else ui.open(UiPage::Home);
@@ -1558,6 +1574,10 @@ void loop()
     if (Serial.available()) {
         Snapshot s = readSnapshot();
         DeviceConfig::setHealth(fresh(s), s.error, s.valid ? 4 : 0);
+        xSemaphoreTake(stateMutex, portMAX_DELAY);
+        bool soundOnline = WiFi.status() == WL_CONNECTED && SoundControl::fresh(sharedSound, millis());
+        xSemaphoreGive(stateMutex);
+        DeviceConfig::setSoundHealth(soundOnline);
         DeviceConfig::setStackHealth(uxTaskGetStackHighWaterMark(nullptr),
             networkTaskHandle ? uxTaskGetStackHighWaterMark(networkTaskHandle) : 0);
     }

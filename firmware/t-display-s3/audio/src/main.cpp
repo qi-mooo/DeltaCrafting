@@ -8,6 +8,8 @@
 #include "program_switch.h"
 #include "display_brightness.h"
 #include "device_sleep.h"
+#include "sound_control.h"
+#include "sound_wifi_handoff.h"
 #include <DeltaOta.h>
 
 namespace {
@@ -43,7 +45,6 @@ enum class ScreenState {
     ConnectingServer,
     Ready,
     ServerError,
-    AudioError,
 };
 
 enum class ButtonEvent {
@@ -52,12 +53,7 @@ enum class ButtonEvent {
     LongRepeat,
 };
 
-enum class RequestType {
-    GetState,
-    ToggleMute,
-    VolumeUp,
-    VolumeDown,
-};
+using RequestType = SoundControl::Action;
 
 struct ButtonState {
     explicit ButtonState(uint8_t buttonPin)
@@ -84,6 +80,7 @@ bool muted = false;
 bool requestInProgress = false;
 bool screenOn = true;
 bool audioBridgeStarted = false;
+bool soundConfigured = false;
 bool firmwareRecovery = false;
 int volumePercent = 0;
 int lastHttpStatus = 0;
@@ -234,7 +231,7 @@ void drawHeader(const AudioBridgeStats &stats)
     canvas.drawString("WINDOWS AUDIO", 10, 15, 2);
     drawBatteryIndicator();
     drawStatusDot(273, "W", WiFi.status() == WL_CONNECTED, COLOR_GREEN);
-    drawStatusDot(294, "P", stats.serverDiscovered, COLOR_CYAN);
+    drawStatusDot(294, "P", muteKnown && screenState == ScreenState::Ready, COLOR_CYAN);
     drawStatusDot(315, "U", stats.usbMounted, COLOR_GREEN);
 }
 
@@ -302,9 +299,9 @@ void drawReadyState(const AudioBridgeStats &stats)
 
     canvas.setTextDatum(TR_DATUM);
     canvas.setTextColor(TFT_WHITE, TFT_BLACK);
-    canvas.drawString((String("BUF ") + stats.bufferMilliseconds + "ms").c_str(), 310, 128, 2);
+    canvas.drawString((stats.usbMounted ? String("BUF ") + stats.bufferMilliseconds + "ms" : String("Wi-Fi control")).c_str(), 310, 128, 2);
     const uint32_t totalLoss = stats.missingPackets + stats.bufferUnderruns + stats.usbDroppedBlocks;
-    canvas.drawString((String("LOSS ") + totalLoss).c_str(), 310, 149, 2);
+    canvas.drawString((!audioBridgeStarted ? String("USB unavailable") : stats.usbMounted ? String("LOSS ") + totalLoss : String("USB inactive")).c_str(), 310, 149, 2);
 }
 
 void drawMessage(const char *title, const char *detail, uint16_t color)
@@ -328,19 +325,20 @@ void drawScreen()
 
     switch (screenState) {
     case ScreenState::Starting:
-        drawMessage("STARTING", "USB AUDIO BRIDGE", COLOR_CYAN);
+        drawMessage("STARTING", "SOUND CONTROL", COLOR_CYAN);
         break;
     case ScreenState::ConnectingWifi:
         drawMessage("CONNECTING", WIFI_SSID, COLOR_AMBER);
         break;
     case ScreenState::ConnectingServer:
-        drawMessage("DISCOVERING", "WINDOWS BRIDGE", COLOR_CYAN);
-        break;
-    case ScreenState::AudioError:
-        drawMessage("USB ERROR", "AUDIO BRIDGE FAILED", COLOR_RED);
+        drawMessage("CONNECTING", "WINDOWS SOUND CONTROL", COLOR_CYAN);
         break;
     case ScreenState::ServerError:
     case ScreenState::Ready:
+        if (!muteKnown) {
+            drawMessage("UNAVAILABLE", "WINDOWS SOUND CONTROL", COLOR_RED);
+            break;
+        }
         drawReadyState(stats);
         if (screenState == ScreenState::ServerError) {
             canvas.setTextDatum(TR_DATUM);
@@ -353,126 +351,28 @@ void drawScreen()
     canvas.pushSprite(0, 0);
 }
 
-bool parseBooleanField(const String &json, const char *field, bool &value)
+String controlUrl()
 {
-    String key = "\"";
-    key += field;
-    key += "\":";
-    int position = json.indexOf(key);
-    if (position < 0) {
-        return false;
-    }
-
-    position += key.length();
-    while (position < json.length() && isspace(static_cast<unsigned char>(json[position]))) {
-        ++position;
-    }
-    if (json.substring(position, position + 4) == "true") {
-        value = true;
-        return true;
-    }
-    if (json.substring(position, position + 5) == "false") {
-        value = false;
-        return true;
-    }
-    return false;
-}
-
-bool parseIntegerField(const String &json, const char *field, int &value)
-{
-    String key = "\"";
-    key += field;
-    key += "\":";
-    int position = json.indexOf(key);
-    if (position < 0) {
-        return false;
-    }
-
-    position += key.length();
-    while (position < json.length() && isspace(static_cast<unsigned char>(json[position]))) {
-        ++position;
-    }
-
-    int parsedValue = 0;
-    bool hasDigit = false;
-    while (position < json.length() && isdigit(static_cast<unsigned char>(json[position]))) {
-        hasDigit = true;
-        parsedValue = parsedValue * 10 + json[position] - '0';
-        ++position;
-    }
-    if (!hasDigit) {
-        return false;
-    }
-    value = parsedValue;
-    return true;
-}
-
-bool applyServerResponse(const String &payload)
-{
-    bool parsedMuted = false;
-    int parsedVolume = 0;
-    if (!parseBooleanField(payload, "muted", parsedMuted)
-        || !parseIntegerField(payload, "volumePercent", parsedVolume)) {
-        return false;
-    }
-
-    muted = parsedMuted;
-    volumePercent = constrain(parsedVolume, 0, 100);
-    muteKnown = true;
-    screenState = ScreenState::Ready;
-    lastHttpStatus = HTTP_CODE_OK;
-    return true;
+    // A paired computer is immediately usable; discovery is only a legacy fallback.
+    return AudioMode::controlUrl().isEmpty() ? audioBridge.serverBaseUrl() : AudioMode::controlUrl();
 }
 
 bool performRequest(RequestType requestType)
 {
-    const String serverBaseUrl = audioBridge.serverBaseUrl();
+    const String serverBaseUrl = controlUrl();
     if (WiFi.status() != WL_CONNECTED || serverBaseUrl.isEmpty()) {
         return false;
     }
 
     requestInProgress = true;
-    WiFiClient client;
-    HTTPClient http;
-    String url = serverBaseUrl;
-
-    switch (requestType) {
-    case RequestType::GetState:
-        url += "/api/mute";
-        break;
-    case RequestType::ToggleMute:
-        url += "/api/mute/toggle";
-        break;
-    case RequestType::VolumeUp:
-        url += "/api/volume/up";
-        break;
-    case RequestType::VolumeDown:
-        url += "/api/volume/down";
-        break;
-    }
-
-    http.setConnectTimeout(1000);
-    http.setTimeout(1800);
-    http.setReuse(false);
-    http.useHTTP10(true);
-
-    bool success = false;
-    if (http.begin(client, url)) {
-        int statusCode;
-        if (requestType == RequestType::GetState) {
-            statusCode = http.GET();
-        } else {
-            http.addHeader("Content-Type", "application/json");
-            statusCode = http.POST("{}");
-        }
-
-        lastHttpStatus = statusCode;
-        if (statusCode == HTTP_CODE_OK) {
-            success = applyServerResponse(http.getString());
-        }
-        http.end();
-    } else {
-        lastHttpStatus = -1;
+    auto state = SoundControl::request(serverBaseUrl, requestType);
+    bool success = state.online;
+    lastHttpStatus = state.httpStatus;
+    if (success) {
+        muted = state.muted;
+        volumePercent = state.volume;
+        muteKnown = true;
+        screenState = ScreenState::Ready;
     }
 
     requestInProgress = false;
@@ -545,7 +445,7 @@ void beginWifi()
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);
     WiFi.setAutoReconnect(true);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    if (!SoundWifiHandoff::begin(WIFI_SSID, WIFI_PASSWORD)) WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
     screenState = ScreenState::ConnectingWifi;
     previousWifiStatus = WiFi.status();
@@ -572,14 +472,7 @@ void updateWifiState()
         nextWifiRetryAt = millis() + WIFI_RETRY_INTERVAL_MS;
     }
 
-    if (currentStatus == WL_CONNECTED && audioBridge.hasServer()
-        && screenState != ScreenState::ServerError && screenState != ScreenState::AudioError) {
-        screenState = ScreenState::Ready;
-    } else if (currentStatus == WL_CONNECTED && !audioBridge.hasServer()
-        && screenState != ScreenState::AudioError) {
-        screenState = ScreenState::ConnectingServer;
-        muteKnown = false;
-    }
+    // Control readiness is confirmed by HTTP, never by USB or discovery status.
 }
 
 void initializeDisplay()
@@ -688,6 +581,8 @@ void setup()
     gpio0Button.rawLevel = gpio0Button.stableLevel = digitalRead(PIN_BUTTON_LEFT);
     gpio14Button.rawLevel = gpio14Button.stableLevel = digitalRead(PIN_BUTTON_RIGHT);
 
+    soundConfigured = !firmwareRecovery && returnStatus == ESP_OK && AudioMode::loadWifi();
+    if (soundConfigured) beginWifi(); // Associate while the LCD/USB initialize.
     initializeDisplay();
     if (firmwareRecovery) {
         updateProgress("", 0, "Preparing recovery");
@@ -695,24 +590,20 @@ void setup()
             updateProgress("", 0, "Recovery init failed");
         return;
     }
-    if (returnStatus != ESP_OK || !AudioMode::loadWifi()) {
+    if (!soundConfigured) {
         display.fillScreen(TFT_BLACK);
         display.setTextColor(TFT_WHITE, TFT_BLACK);
         display.drawString(returnStatus != ESP_OK ? "Monitor firmware unavailable" : "Wi-Fi not configured", 10, 55, 2);
         return;
     }
     audioBridgeStarted = audioBridge.begin(makeDeviceId(), AUDIO_BRIDGE_NAME);
-    if (!audioBridgeStarted) {
-        screenState = ScreenState::AudioError;
-        drawScreen();
-        return;
-    }
-    beginWifi();
+    // A failed USB bridge must not disable Wi-Fi volume/mute control.
+    if (WiFi.status() == WL_CONNECTED) performRequest(RequestType::Read);
 }
 
 void loop()
 {
-    if (!audioBridgeStarted) {
+    if (!soundConfigured) {
         delay(1000);
         return;
     }
@@ -730,18 +621,18 @@ void loop()
 
     if (allowButtons && gpio14Event == ButtonEvent::ShortPress) {
         setScreenPower(!screenOn);
-    } else if (allowButtons && gpio14Event == ButtonEvent::LongRepeat && !requestInProgress && audioBridge.hasServer()) {
+    } else if (allowButtons && gpio14Event == ButtonEvent::LongRepeat && !requestInProgress) {
         performRequest(RequestType::VolumeUp);
     }
 
-    if (allowButtons && gpio0Event == ButtonEvent::ShortPress && !requestInProgress && audioBridge.hasServer()) {
+    if (allowButtons && gpio0Event == ButtonEvent::ShortPress && !requestInProgress) {
         performRequest(RequestType::ToggleMute);
-    } else if (allowButtons && gpio0Event == ButtonEvent::LongRepeat && !requestInProgress && audioBridge.hasServer()) {
+    } else if (allowButtons && gpio0Event == ButtonEvent::LongRepeat && !requestInProgress) {
         performRequest(RequestType::VolumeDown);
     }
 
-    if (!requestInProgress && audioBridge.hasServer() && timeReached(nextPollAt)) {
-        performRequest(RequestType::GetState);
+    if (!requestInProgress && timeReached(nextPollAt)) {
+        performRequest(RequestType::Read);
     }
 
     if (screenOn && timeReached(nextDisplayUpdateAt)) {

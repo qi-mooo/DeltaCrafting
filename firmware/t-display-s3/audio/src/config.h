@@ -5,6 +5,7 @@ namespace AudioMode {
 bool loadWifi();
 const String &ssid();
 const String &password();
+const String &controlUrl();
 }
 
 #define WIFI_SSID AudioMode::ssid().c_str()

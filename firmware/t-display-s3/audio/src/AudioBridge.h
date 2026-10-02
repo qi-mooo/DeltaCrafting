@@ -7,6 +7,7 @@
 #include <WiFiUdp.h>
 
 #include "AudioProtocol.h"
+#include "sound_policy.h"
 
 struct AudioBridgeStats {
     bool serverDiscovered = false;
@@ -90,11 +91,10 @@ private:
     float _concealGain = 0.0f;
     bool _buffering = true;
     bool _networkBound = false;
+    bool _pcmListening = false;
     bool _usbMounted = false;
     bool _usbStreaming = false;
-    bool _usbSignalState = false;
-    bool _usbSignalInitialized = false;
-    uint32_t _usbSignalChangedAt = 0;
+    SoundPolicy::UsbHostGate _usbHost;
     uint32_t _receivedPackets = 0;
     uint32_t _missingFrames = 0;
     uint32_t _bufferUnderruns = 0;

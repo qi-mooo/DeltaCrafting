@@ -12,6 +12,7 @@ String wifiSsid, wifiPassword, url, key;
 String serialLine;
 bool overflow = false;
 bool apiOnline = false;
+bool soundOnline = false;
 String apiError;
 int facilities = 0;
 uint32_t loopMinFreeStack = 0, networkMinFreeStack = 0;
@@ -68,6 +69,7 @@ void processLine(const String &line)
         doc["wifiConnected"] = WiFi.status() == WL_CONNECTED;
         doc["ip"] = WiFi.localIP().toString();
         doc["apiOnline"] = apiOnline;
+        doc["soundControlOnline"] = soundOnline;
         doc["error"] = apiError;
         doc["facilities"] = facilities;
         doc["freeHeap"] = ESP.getFreeHeap();
@@ -154,6 +156,7 @@ void handleSerial()
 
 // Called and read only from the Arduino loop task.
 void setScreenCapture(void (*capture)()) { screenCapture = capture; }
+void setSoundHealth(bool online) { soundOnline = online; }
 void setFirmwareControl(bool (*control)(bool)) { firmwareControl = control; }
 
 void setHealth(bool online, const String &error, int facilityCount)
