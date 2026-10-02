@@ -706,6 +706,24 @@ void positionMenu()
     settingsMenu.pointer_h_now = 29;
 }
 
+void drawSettingsMenu()
+{
+    settingsMenu.menuOptions_index = ui.count();
+    settingsMenu.set_munber(ui.row);
+    // Keep Axeuh's native moving/resizing focus and scrolling. Repaint its
+    // XOR highlight as an outline to retain white text on black throughout.
+    int px = settingsPanel.x_now + settingsMenu.pointer_x_now + 1;
+    int py = settingsPanel.y_now + settingsMenu.pointer_y_now + 1;
+    int pw = settingsMenu.pointer_w_now - 1, ph = settingsMenu.pointer_h_now + 1;
+    settingsPanel.drawPanel(&canvas, &uiEngine, STOP);
+    canvas.setClipWindow(5, 28, 315, 148);
+    canvas.setDrawColor(2);
+    canvas.drawBox(px, py, pw, ph);
+    canvas.setDrawColor(1);
+    border(px, py, pw + 7, ph, true);
+    canvas.setMaxClipWindow();
+}
+
 void drawProgress(int x, int y, const Facility &facility, const String &phase, const Snapshot &s)
 {
     canvas.setDrawColor(1);
@@ -911,15 +929,15 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         canvas.setFont(u8g2_font_wqy16_t_gb2312);
         canvas.drawHLine(0, 24, 320);
         if (f.busy) {
-            textAt(8, 80, 304, f.detail);
-            border(8, 98, 304, 14, false);
-            if (f.percent > 0) canvas.drawBox(10, 100, 300 * f.percent / 100, 10);
+            textAt(8, 51, 304, f.detail);
+            border(8, 69, 304, 14, false);
+            if (f.percent > 0) canvas.drawBox(10, 71, 300 * f.percent / 100, 10);
             textAt(8, 143, 304, "更新期间保持供电");
         } else {
-            textAt(12, 77, 293, f.ready ? String("安装 ") + f.version : "检查更新");
-            textAt(12, 106, 293, "重新检查");
-            textAt(12, 135, 293, "返回全局设置");
-            border(4, 56 + ui.row * 29, 312, 28, true);
+            menuRow(0, f.ready ? String("安装 ") + f.version : "检查更新");
+            menuRow(1, "重新检查");
+            menuRow(2, "返回全局设置");
+            drawSettingsMenu();
             textAt(8, 165, 304, f.detail);
         }
         return;
@@ -989,20 +1007,7 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
                 menuRow(i, String(s.afterRun == AFTER_RUN[i] ? "* " : "  ") + afterRunName(AFTER_RUN[i]));
             menuRow(3, "返回全局设置");
         }
-        settingsMenu.menuOptions_index = ui.count();
-        settingsMenu.set_munber(ui.row);
-        // Keep Axeuh's native moving/resizing focus and scrolling. Repaint its
-        // XOR highlight as an outline to retain white text on black throughout.
-        int px = settingsPanel.x_now + settingsMenu.pointer_x_now + 1;
-        int py = settingsPanel.y_now + settingsMenu.pointer_y_now + 1;
-        int pw = settingsMenu.pointer_w_now - 1, ph = settingsMenu.pointer_h_now + 1;
-        settingsPanel.drawPanel(&canvas, &uiEngine, STOP);
-        canvas.setClipWindow(5, 28, 315, 148);
-        canvas.setDrawColor(2);
-        canvas.drawBox(px, py, pw, ph);
-        canvas.setDrawColor(1);
-        border(px, py, pw + 7, ph, true);
-        canvas.setMaxClipWindow();
+        drawSettingsMenu();
         String hint = !s.notice.isEmpty() && millis() - s.noticeAt < 5000 ? s.notice
             : ui.page == UiPage::ToolList ? (toolLoading ? "正在查询数据帝" : !toolData.error.isEmpty() ? toolData.error
                 : toolData.entries.empty() ? "暂无数据" : toolData.detail)
@@ -1095,6 +1100,7 @@ void draw()
     if (ui.page != before) {
         bool forward = ui.page != UiPage::Home
             && before != UiPage::CraftMode && before != UiPage::AfterRun && before != UiPage::Items
+            && before != UiPage::Firmware
             && before != UiPage::ToolDetail && !(before == UiPage::ToolList && ui.page == UiPage::Tools);
         canvas.startTransition(forward);
         positionMenu();
