@@ -145,7 +145,7 @@ __attribute__((noinline)) void updateFirmware(bool install)
     firmwareView.busy = false;
     firmwareView.ready = ok && !install;
     firmwareView.version = ok ? firmwareManifest.version : "";
-    firmwareView.detail = ok ? "当前 " DELTA_FIRMWARE_VERSION : error;
+    firmwareView.detail = ok ? "已检查更新" : error;
     xSemaphoreGive(stateMutex);
 }
 
@@ -903,8 +903,13 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
     if (ui.page == UiPage::ToolList || ui.page == UiPage::ToolDetail || ui.page == UiPage::GunMode || ui.page == UiPage::GunQuery) { drawToolPage(s); return; }
     if (ui.page == UiPage::Firmware) {
         auto f = readFirmware();
-        textAt(8, 18, 304, "固件更新"); canvas.drawHLine(0, 24, 320);
-        textAt(8, 46, 304, String("当前 ") + DELTA_FIRMWARE_VERSION);
+        textAt(8, 18, 80, "固件更新");
+        canvas.setFont(u8g2_font_wqy12_t_gb2312);
+        String currentVersion = String("当前 ") + DELTA_FIRMWARE_VERSION;
+        int versionX = max(88, 312 - canvas.getUTF8Width(currentVersion.c_str()));
+        textAt(versionX, 18, 312 - versionX, currentVersion);
+        canvas.setFont(u8g2_font_wqy16_t_gb2312);
+        canvas.drawHLine(0, 24, 320);
         if (f.busy) {
             textAt(8, 80, 304, f.detail);
             border(8, 98, 304, 14, false);
