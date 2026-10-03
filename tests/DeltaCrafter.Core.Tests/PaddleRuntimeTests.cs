@@ -19,6 +19,28 @@ public sealed class WindowsOcrFactAttribute : FactAttribute
 public sealed class PaddleRuntimeTests
 {
     [WindowsOcrFact]
+    public async Task Actual_grip_replenish_button_uses_production_pipeline_at_both_resolutions()
+    {
+        // 183 在 2026-10-03 10:21 的失败画面，只保存操作按钮区域。
+        using var crop = Cv2.ImRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", "button-replenish-grip.png"));
+        using var original = new Mat(1080, 1920, MatType.CV_8UC3, Scalar.Black);
+        using (var destination = new Mat(original, new Rect(1560, 906, crop.Width, crop.Height)))
+            crop.CopyTo(destination);
+        var anchors = new JsonStoreBrick().Load<AnchorTable>(Path.Combine(AppContext.BaseDirectory, "Data", "anchors.json"));
+        using var log = new LoggerConfiguration().CreateLogger();
+        var probe = new ScreenProbe(new(), new(), new PaddleOcrBrick(), new(), () => anchors, "", log);
+        foreach (int width in new[] { 1920, 2560 })
+        {
+            string label = await probe.ReadProductionButtonAsync(FrameAt(original, width),
+                anchors.Screen(AnchorKeys.Production).Roi(AnchorKeys.RoiActionButton));
+            Assert.Equal("一键补齐", label);
+            Assert.True(CraftStartFlow.LabelHits(label, anchors.Keywords.ButtonReplenish));
+            Assert.False(CraftStartFlow.LabelHits(label, anchors.Keywords.ButtonProduce));
+            Assert.False(CraftStartFlow.LabelHits(label, anchors.Keywords.ButtonAbort));
+        }
+    }
+
+    [WindowsOcrFact]
     public async Task Production_countdown_uses_paddle_and_retains_confidence_at_both_resolutions()
     {
         // 183 在 2026-10-01 14:35 的失败画面，仅保留倒计时区域。

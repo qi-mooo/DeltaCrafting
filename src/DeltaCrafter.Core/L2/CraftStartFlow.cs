@@ -187,15 +187,17 @@ public sealed class CraftStartFlow
 
     private async Task<string> ReadActionLabelAsync(nint hwnd, ScreenSpec prodSpec, CancellationToken ct)
     {
+        string lastLabel = "";
         for (int attempt = 1; attempt <= 2; attempt++)
         {
             string label = await ReadLabelOnceAsync(hwnd, prodSpec);
+            if (label.Length > 0) lastLabel = label;
             var kw = _probe.Anchors.Keywords;
             if (LabelHits(label, kw.ButtonProduce) || LabelHits(label, kw.ButtonReplenish) ||
                 LabelHits(label, kw.ButtonAbort)) return label;
             await Task.Delay(1200, ct);
         }
-        return "";
+        return lastLabel;
     }
 
     /// <summary>

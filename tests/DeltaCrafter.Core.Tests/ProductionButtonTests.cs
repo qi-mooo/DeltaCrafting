@@ -10,6 +10,12 @@ public sealed class ProductionButtonTests
     [Theory]
     [InlineData("生产", true, false, false)]
     [InlineData("一键补齐", false, true, false)]
+    [InlineData("—键补齐", false, true, false)]
+    [InlineData("–键补齐", false, true, false)]
+    [InlineData("-键补齐", false, true, false)]
+    [InlineData("－键补齐", false, true, false)]
+    [InlineData("−键补齐", false, true, false)]
+    [InlineData(" — 键 补 齐 ", false, true, false)]
     [InlineData("补齐", false, true, false)]
     [InlineData("中止", false, false, true)]
     [InlineData("", false, false, false)]
@@ -17,13 +23,33 @@ public sealed class ProductionButtonTests
     [InlineData("生产中", false, false, false)]
     [InlineData("停止生产", false, false, false)]
     [InlineData("生产一键补齐", false, false, false)]
+    [InlineData("键补齐", false, false, false)]
+    [InlineData("—健补齐", false, false, false)]
+    [InlineData("—键补", false, false, false)]
+    [InlineData("——键补齐", false, false, false)]
+    [InlineData("—键补齐中", false, false, false)]
+    [InlineData("生产—键补齐", false, false, false)]
     public void Actions_require_a_complete_unambiguous_button_label(string label,
         bool produce, bool replenish, bool abort)
     {
         var kw = new StateKeywords();
+        label = ScreenProbe.NormalizeProductionButton(label);
         Assert.Equal(produce, CraftStartFlow.LabelHits(label, kw.ButtonProduce));
         Assert.Equal(replenish, CraftStartFlow.LabelHits(label, kw.ButtonReplenish));
         Assert.Equal(abort, CraftStartFlow.LabelHits(label, kw.ButtonAbort));
+    }
+
+    [Theory]
+    [InlineData(.79f, true)]
+    [InlineData(.80f, false)]
+    [InlineData(float.NaN, true)]
+    public void Dash_reading_still_requires_original_ocr_confidence(float score, bool uncertain)
+    {
+        var raw = new OcrReadout("—键补齐", [new("—键补齐", 0, 0) { Confidence = score }]);
+        var filtered = OcrMatchFilter.Filter(raw, new StateKeywords().ButtonReplenish);
+        Assert.Equal("—键补齐", filtered.FullText);
+        Assert.Equal(uncertain, filtered.HasTextBelowConfidence(ScreenProbe.ProductionButtonMinimumConfidence));
+        Assert.Equal("一键补齐", ScreenProbe.NormalizeProductionButton(filtered.FullText));
     }
 
     [Theory]

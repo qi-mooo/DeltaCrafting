@@ -170,9 +170,20 @@ public sealed class ScreenProbe
         var targets = kw.ButtonProduce.Concat(kw.ButtonReplenish).Concat(kw.ButtonAbort).ToArray();
         var readout = await ReadItemAsync(frame, roi, targets,
             minimumConfidence: ProductionButtonMinimumConfidence);
-        string label = Normalize(readout.FullText);
+        string label = NormalizeProductionButton(readout.FullText);
+        if (label != Normalize(readout.FullText))
+            _log.Debug("生产操作按钮横线校正：{Raw} → {Label}", readout.FullText, label);
         _log.Debug("生产操作按钮(PaddleOCR)：{Label}", label);
         return label;
+    }
+
+    internal static string NormalizeProductionButton(string text)
+    {
+        string label = Normalize(text);
+        // PaddleOCR 会把「一」识别成横线。只修正完整的四字操作按钮，
+        // 不放宽物品名、部分按钮或其他错字；调用前仍须通过按钮置信度检查。
+        return label.Length == 4 && (label[0] is '—' or '–' or '-' or '－' or '−') &&
+            label.AsSpan(1).SequenceEqual("键补齐") ? "一键补齐" : label;
     }
 
     /// <summary>物品识别使用离线模型，失败即停止，不自动切回识别率较低的路径。</summary>
