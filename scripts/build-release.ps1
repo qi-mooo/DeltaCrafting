@@ -2,7 +2,8 @@
 param(
     [Parameter()]
     [ValidatePattern('^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$')]
-    [string]$Version
+    [string]$Version,
+    [string]$FirmwareBundle
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,8 +56,23 @@ try {
         -p:Version=$Version --no-restore -o $publishDir
     if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
 
+    # 原生 OCR 与内嵌 V5 模型必须随完整客户端发布。
+    foreach ($dependency in @('Sdcb.PaddleOCR.Models.LocalV5.dll', 'paddle_inference_c.dll',
+        'OpenCvSharpExtern.dll', 'mkldnn.dll', 'mklml.dll', 'libiomp5md.dll')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $publishDir $dependency))) {
+            throw "Missing offline OCR dependency: $dependency"
+        }
+    }
+
     Copy-Item -LiteralPath README.md, LICENSE, THIRD-PARTY-NOTICES.md -Destination $publishDir
     Copy-Item -LiteralPath licenses -Destination $publishDir -Recurse
+    if ($FirmwareBundle) {
+        $firmwareDir = Join-Path $publishDir 'Firmware'
+        New-Item -ItemType Directory -Path $firmwareDir | Out-Null
+        Copy-Item -LiteralPath $FirmwareBundle -Destination (Join-Path $firmwareDir 'DeltaCrafter-esp32s3.zip')
+    } elseif ($env:CI -eq 'true') {
+        throw 'CI packages must include the matching S3 firmware bundle.'
+    }
     Compress-Archive -Path (Join-Path $publishDir '*') -DestinationPath $zipPath -CompressionLevel Optimal
     $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
     Set-Content -LiteralPath $checksumPath -Value "$hash  $zipName" -Encoding ascii

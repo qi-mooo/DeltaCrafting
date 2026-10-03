@@ -7,7 +7,7 @@ namespace DeltaCrafter.Core.L2;
 
 /// <summary>
 /// 配方目录扫描:进入设施生产界面,滚动读完整个「已解锁」列表,收集配方名。
-/// 名称以游戏内 OCR 为准(与玩家解锁完全一致),网上抄的清单反而会有出入。
+/// 只保留与当前设施目录完整匹配的名称，目录外乱码不写入物品列表。
 /// 终止条件 = 滚动后列表内容不再变化(到底);带安全上限防意外死循环。
 /// </summary>
 public sealed partial class CatalogScanFlow
@@ -19,12 +19,14 @@ public sealed partial class CatalogScanFlow
     private readonly StepRunner _runner;
     private readonly InputBrick _input;
     private readonly ILogger _log;
+    private readonly ICatalogLookup _catalog;
 
-    public CatalogScanFlow(ScreenProbe probe, StepRunner runner, InputBrick input, ILogger log)
+    public CatalogScanFlow(ScreenProbe probe, StepRunner runner, InputBrick input, ICatalogLookup catalog, ILogger log)
     {
         _probe = probe;
         _runner = runner;
         _input = input;
+        _catalog = catalog;
         _log = log.ForContext<CatalogScanFlow>();
     }
 
@@ -35,6 +37,8 @@ public sealed partial class CatalogScanFlow
         string facility = FacilityKeys.DisplayName(key);
         var prodSpec = _probe.Screen(AnchorKeys.Production);
         var listArea = prodSpec.Roi(AnchorKeys.RoiListArea);
+        var items = _catalog.ItemsFor(key);
+        var targets = OcrMatchFilter.CatalogTargets(items);
 
         await _runner.RunAsync(hwnd, new Step(
             $"打开{facility}生产界面(扫描)",
@@ -48,15 +52,23 @@ public sealed partial class CatalogScanFlow
         for (int page = 0; page < MaxScrollPages; page++)
         {
             ct.ThrowIfCancellationRequested();
-            var lines = await _probe.ReadAreaLinesAsync(hwnd, listArea);
+            var (frame, readout) = await _probe.ReadAreaFrameAsync(hwnd, listArea, targets);
+            var lines = readout.Lines;
             foreach (var line in lines)
             {
-                string name = CleanName(line.Text);
+                string name = CatalogNameResolver.Resolve(items, CleanName(line.Text)) ?? "";
+                if (key == FacilityKey.Workbench && BlkAmmoIdentity.IsBareName(line.Text))
+                {
+                    foreach (int grade in new[] { 3, 4, 5 })
+                        if (BlkAmmoMatcher.Find(frame, [line], listArea, grade: grade) is not null &&
+                            items.Any(i => i.Name == BlkAmmoIdentity.Name(grade)))
+                            name = BlkAmmoIdentity.Name(grade);
+                }
                 if (name.Length < 2) continue;
                 if (seen.Add(TextMatch.Canonical(name))) names.Add(name);
             }
 
-            string currentView = ScreenProbe.Normalize(string.Join("|", lines.Select(l => l.Text)));
+            string currentView = ScreenProbe.Normalize(readout.SourceText ?? readout.FullText);
             if (currentView.Length > 0 && currentView == previousView) break; // 到底
             previousView = currentView;
             _probe.ScrollRoi(hwnd, listArea, -5);

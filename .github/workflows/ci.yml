@@ -4,13 +4,19 @@ on:
   push:
     branches:
       - main
-  pull_request:
+      - 'codex/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   build-and-test:
+    needs: firmware
     runs-on: windows-latest
 
     steps:
@@ -22,11 +28,25 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Restore
-        run: dotnet restore DeltaCrafter.sln --configfile nuget.config
+      - name: Download matching S3 firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: DeltaCrafter-esp32s3-${{ github.sha }}
+          path: ${{ runner.temp }}/s3-firmware
 
-      - name: Build
-        run: dotnet build DeltaCrafter.sln -c Release -p:Platform=x64 --no-restore
+      - name: Build, test and package Windows app
+        shell: pwsh
+        run: .\scripts\build-release.ps1 -FirmwareBundle '${{ runner.temp }}\s3-firmware\DeltaCrafter-esp32s3.zip'
 
-      - name: Test
-        run: dotnet test tests\DeltaCrafter.Core.Tests\DeltaCrafter.Core.Tests.csproj -c Release -p:Platform=x64 --no-build --no-restore
+      - name: Upload Windows app
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeltaCrafter-win-x64-${{ github.sha }}
+          path: |
+            artifacts/*.zip
+            artifacts/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  firmware:
+    uses: ./.github/workflows/firmware.yml

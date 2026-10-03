@@ -1,0 +1,122 @@
+{
+  "code": 0,
+  "data": [
+    {
+      "objectID": 14070000009,
+      "name": "去甲肾上腺素",
+      "grade": 3,
+      "unlockLevel": 1,
+      "period": 12,
+      "price": 5071,
+      "price_hour": 422
+    },
+    {
+      "objectID": 14070000001,
+      "name": "M1肌肉强化针",
+      "grade": 3,
+      "unlockLevel": 1,
+      "period": 12,
+      "price": 7238,
+      "price_hour": 603
+    },
+    {
+      "objectID": 14070000004,
+      "name": "感知激活针",
+      "grade": 3,
+      "unlockLevel": 1,
+      "period": 12,
+      "price": 9377,
+      "price_hour": 781
+    },
+    {
+      "objectID": 14070000008,
+      "name": "OE2战斗兴奋剂",
+      "grade": 3,
+      "unlockLevel": 1,
+      "period": 12,
+      "price": 16872,
+      "price_hour": 1406
+    },
+    {
+      "objectID": 14070000006,
+      "name": "体能激活针",
+      "grade": 3,
+      "unlockLevel": 1,
+      "period": 12,
+      "price": 11075,
+      "price_hour": 922
+    },
+    {
+      "objectID": 14070000003,
+      "name": "M2肌肉注射剂",
+      "grade": 4,
+      "unlockLevel": 2,
+      "period": 8,
+      "price": 28401,
+      "price_hour": 3550
+    },
+    {
+      "objectID": 14070000005,
+      "name": "感知强化剂",
+      "grade": 4,
+      "unlockLevel": 2,
+      "period": 8,
+      "price": 29801,
+      "price_hour": 3725
+    },
+    {
+      "objectID": 14070000007,
+      "name": "体能强化剂",
+      "grade": 4,
+      "unlockLevel": 2,
+      "period": 8,
+      "price": 37996,
+      "price_hour": 4749
+    },
+    {
+      "objectID": 14020000006,
+      "name": "战地医疗箱",
+      "grade": 5,
+      "unlockLevel": 2,
+      "period": 8,
+      "price": 38645,
+      "price_hour": 4830
+    },
+    {
+      "objectID": 14060000001,
+      "name": "精密头盔维修包",
+      "grade": 5,
+      "unlockLevel": 2,
+      "period": 8,
+      "price": 30124,
+      "price_hour": 3765
+    },
+    {
+      "objectID": 14060000002,
+      "name": "精密护甲维修包",
+      "grade": 5,
+      "unlockLevel": 2,
+      "period": 8,
+      "price": 35000,
+      "price_hour": 4375
+    },
+    {
+      "objectID": 14060000003,
+      "name": "高级头盔维修组合",
+      "grade": 6,
+      "unlockLevel": 3,
+      "period": 8,
+      "price": 40326,
+      "price_hour": 5040
+    },
+    {
+      "objectID": 14060000004,
+      "name": "高级护甲维修组合",
+      "grade": 6,
+      "unlockLevel": 3,
+      "period": 8,
+      "price": 18941,
+      "price_hour": 2367
+    }
+  ]
+}

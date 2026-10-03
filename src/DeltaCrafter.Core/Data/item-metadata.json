@@ -1,0 +1,1136 @@
+{
+  "source": "三角洲数据帝 /v1/sjz_api/item_info_all（制造目录已核对条目）",
+  "fetchedAt": "2026-09-29T18:59:33+08:00",
+  "items": [
+    {
+      "objectId": 11010004001,
+      "name": "D6 战术头盔",
+      "grade": 4
+    },
+    {
+      "objectId": 11010004002,
+      "name": "MHS 战术头盔",
+      "grade": 4
+    },
+    {
+      "objectId": 11010004003,
+      "name": "DICH 训练头盔",
+      "grade": 4
+    },
+    {
+      "objectId": 11010004004,
+      "name": "GT1 战术头盔",
+      "grade": 4
+    },
+    {
+      "objectId": 11010005001,
+      "name": "Mask-1铁壁头盔",
+      "grade": 5
+    },
+    {
+      "objectId": 11010005002,
+      "name": "H09 防暴头盔",
+      "grade": 5
+    },
+    {
+      "objectId": 11010005003,
+      "name": "DICH-1战术头盔",
+      "grade": 5
+    },
+    {
+      "objectId": 11010005004,
+      "name": "GN 重型头盔",
+      "grade": 5
+    },
+    {
+      "objectId": 11010005009,
+      "name": "GN 重型夜视头盔",
+      "grade": 5
+    },
+    {
+      "objectId": 11010005010,
+      "name": "GN 久战重型夜视头盔",
+      "grade": 5
+    },
+    {
+      "objectId": 11010006003,
+      "name": "DICH-9重型头盔",
+      "grade": 6
+    },
+    {
+      "objectId": 11010006004,
+      "name": "GT5 指挥官头盔",
+      "grade": 6
+    },
+    {
+      "objectId": 11010006007,
+      "name": "H70 夜视精英头盔",
+      "grade": 6
+    },
+    {
+      "objectId": 11050004002,
+      "name": "突击手防弹背心",
+      "grade": 4
+    },
+    {
+      "objectId": 11050004003,
+      "name": "DT-AVS防弹衣",
+      "grade": 4
+    },
+    {
+      "objectId": 11050004004,
+      "name": "MK-2战术背心",
+      "grade": 4
+    },
+    {
+      "objectId": 11050004007,
+      "name": "HMP特勤防弹衣",
+      "grade": 4
+    },
+    {
+      "objectId": 11050005001,
+      "name": "精英防弹背心",
+      "grade": 5
+    },
+    {
+      "objectId": 11050005002,
+      "name": "Hvk-2防弹衣",
+      "grade": 5
+    },
+    {
+      "objectId": 11050005003,
+      "name": "FS复合防弹衣",
+      "grade": 5
+    },
+    {
+      "objectId": 11050005004,
+      "name": "重型突击背心",
+      "grade": 5
+    },
+    {
+      "objectId": 11050006001,
+      "name": "金刚防弹衣",
+      "grade": 6
+    },
+    {
+      "objectId": 11050006003,
+      "name": "特里克MAS2.0装甲",
+      "grade": 6
+    },
+    {
+      "objectId": 11050006004,
+      "name": "泰坦防弹装甲",
+      "grade": 6
+    },
+    {
+      "objectId": 11070004001,
+      "name": "强袭战术背心",
+      "grade": 4
+    },
+    {
+      "objectId": 11070004002,
+      "name": "突击者战术背心",
+      "grade": 4
+    },
+    {
+      "objectId": 11070004003,
+      "name": "DRC先进侦察胸挂",
+      "grade": 4
+    },
+    {
+      "objectId": 11070004004,
+      "name": "GIR野战胸挂",
+      "grade": 4
+    },
+    {
+      "objectId": 11080004001,
+      "name": "MAP侦察背包",
+      "grade": 4
+    },
+    {
+      "objectId": 11080004002,
+      "name": "野战徒步背包",
+      "grade": 4
+    },
+    {
+      "objectId": 11080004003,
+      "name": "D2战术登山包",
+      "grade": 4
+    },
+    {
+      "objectId": 11080004004,
+      "name": "GT1户外登山包",
+      "grade": 4
+    },
+    {
+      "objectId": 11080004005,
+      "name": "生存战术背包",
+      "grade": 4
+    },
+    {
+      "objectId": 11080005001,
+      "name": "ALS背负系统",
+      "grade": 5
+    },
+    {
+      "objectId": 11080005002,
+      "name": "HLS-2重型背包",
+      "grade": 5
+    },
+    {
+      "objectId": 11080005003,
+      "name": "D3战术登山包",
+      "grade": 5
+    },
+    {
+      "objectId": 11080005004,
+      "name": "GT5野战背包",
+      "grade": 5
+    },
+    {
+      "objectId": 13030000112,
+      "name": "侵袭后握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13030000169,
+      "name": "RK3后握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13040000006,
+      "name": "闪电导轨枪托",
+      "grade": 3
+    },
+    {
+      "objectId": 13040000007,
+      "name": "影袭导轨枪托",
+      "grade": 4
+    },
+    {
+      "objectId": 13040000107,
+      "name": "枢机稳固枪托",
+      "grade": 3
+    },
+    {
+      "objectId": 13040000108,
+      "name": "侵掠核心枪托",
+      "grade": 3
+    },
+    {
+      "objectId": 13040000110,
+      "name": "UR特种战术枪托",
+      "grade": 4
+    },
+    {
+      "objectId": 13040000112,
+      "name": "416轻型枪托",
+      "grade": 3
+    },
+    {
+      "objectId": 13040000113,
+      "name": "416稳固枪托",
+      "grade": 3
+    },
+    {
+      "objectId": 13040000183,
+      "name": "MRGS镂空枪托",
+      "grade": 4
+    },
+    {
+      "objectId": 13040000184,
+      "name": "影袭托芯枪托",
+      "grade": 4
+    },
+    {
+      "objectId": 13040000185,
+      "name": "骨架狙击枪托",
+      "grade": 3
+    },
+    {
+      "objectId": 13110000042,
+      "name": "俄式准直二倍瞄准镜",
+      "grade": 2
+    },
+    {
+      "objectId": 13110000043,
+      "name": "全景红点瞄准镜",
+      "grade": 3
+    },
+    {
+      "objectId": 13110000044,
+      "name": "XRO快速反应瞄准镜",
+      "grade": 3
+    },
+    {
+      "objectId": 13110000051,
+      "name": "HAMR组合瞄准镜",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000052,
+      "name": "侦察1.5/5可调瞄准镜",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000053,
+      "name": "XCOG突击3.5倍瞄准镜",
+      "grade": 3
+    },
+    {
+      "objectId": 13110000056,
+      "name": "光学狙击8倍瞄准镜",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000057,
+      "name": "3/7可调倍率狙击镜",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000061,
+      "name": "okp-7反射瞄准镜",
+      "grade": 3
+    },
+    {
+      "objectId": 13110000062,
+      "name": "微型红点瞄准镜",
+      "grade": 3
+    },
+    {
+      "objectId": 13110000063,
+      "name": "战斗红点瞄准镜",
+      "grade": 3
+    },
+    {
+      "objectId": 13110000064,
+      "name": "Cobra准直式瞄准镜",
+      "grade": 3
+    },
+    {
+      "objectId": 13110000066,
+      "name": "先进热融合全息瞄准镜",
+      "grade": 6
+    },
+    {
+      "objectId": 13110000067,
+      "name": "先进白热成像战斗瞄准镜",
+      "grade": 6
+    },
+    {
+      "objectId": 13110000069,
+      "name": "LPVO多倍率战斗瞄具",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000070,
+      "name": "6/12神射手变倍狙击镜",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000072,
+      "name": "1p-29俄制3倍瞄准镜",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000073,
+      "name": "视点3倍瞄准镜",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000076,
+      "name": "侧置全景红点瞄准镜",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000077,
+      "name": "侧置XRO快速反应瞄准镜",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000078,
+      "name": "侧置微型红点瞄准镜",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000079,
+      "name": "侧置战斗红点瞄准镜",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000082,
+      "name": "M157火控光学系统",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000087,
+      "name": "Osight微型瞄准镜",
+      "grade": 3
+    },
+    {
+      "objectId": 13110000088,
+      "name": "侧置Osight微型瞄准镜",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000089,
+      "name": "ACOG精准六倍镜",
+      "grade": 3
+    },
+    {
+      "objectId": 13110000091,
+      "name": "灵眼3/7弹道计算狙击镜",
+      "grade": 4
+    },
+    {
+      "objectId": 13110000093,
+      "name": "棱镜通用二倍光学瞄具",
+      "grade": 4
+    },
+    {
+      "objectId": 13130000159,
+      "name": "炽火抑制器",
+      "grade": 4
+    },
+    {
+      "objectId": 13130000160,
+      "name": "钛金竞赛制退器",
+      "grade": 4
+    },
+    {
+      "objectId": 13130000164,
+      "name": "轻语战术消音器",
+      "grade": 4
+    },
+    {
+      "objectId": 13130000165,
+      "name": "海神消焰器",
+      "grade": 4
+    },
+    {
+      "objectId": 13130000167,
+      "name": "堡垒水平补偿器",
+      "grade": 4
+    },
+    {
+      "objectId": 13130000168,
+      "name": "沙暴垂直补偿器",
+      "grade": 4
+    },
+    {
+      "objectId": 13130000169,
+      "name": "死寂消音器",
+      "grade": 4
+    },
+    {
+      "objectId": 13130000196,
+      "name": "M7实用消音器",
+      "grade": 4
+    },
+    {
+      "objectId": 13130000208,
+      "name": "先进多口径消音器",
+      "grade": 4
+    },
+    {
+      "objectId": 13130000209,
+      "name": "薪火螺旋消焰器",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000022,
+      "name": "相位战斗前握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000024,
+      "name": "竞赛阻手器",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000026,
+      "name": "斜角阻手器",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000027,
+      "name": "战术三角握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000029,
+      "name": "RK-0前握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000030,
+      "name": "密令斜角握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000032,
+      "name": "战术垂直握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000033,
+      "name": "幻影垂直握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000034,
+      "name": "共振人体工程握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000035,
+      "name": "X25U斜侧战斗握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000036,
+      "name": "K1精英斜角握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000038,
+      "name": "伸缩脚架握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000039,
+      "name": "共振二代前握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000040,
+      "name": "CR棱镜阻手器",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000041,
+      "name": "破晓垂直手电握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13140000042,
+      "name": "黎明三角手电握把",
+      "grade": 4
+    },
+    {
+      "objectId": 13160000005,
+      "name": "PEQ-2红色激光镭指",
+      "grade": 4
+    },
+    {
+      "objectId": 13160000006,
+      "name": "LA-3C绿色激光镭指",
+      "grade": 4
+    },
+    {
+      "objectId": 13160000007,
+      "name": "耀斑战术手电",
+      "grade": 4
+    },
+    {
+      "objectId": 13160000009,
+      "name": "PERST-7蓝色激光镭指",
+      "grade": 4
+    },
+    {
+      "objectId": 13160000010,
+      "name": "DBAL-X2紫色激光镭指",
+      "grade": 4
+    },
+    {
+      "objectId": 13160000014,
+      "name": "OLIGHT Baldr Pro R多功能手电",
+      "grade": 4
+    },
+    {
+      "objectId": 13160000016,
+      "name": "OLIGHT Odin S战术手电",
+      "grade": 4
+    },
+    {
+      "objectId": 13160000018,
+      "name": "OLIGHT WARRIOR 3S战术手电",
+      "grade": 4
+    },
+    {
+      "objectId": 13210000012,
+      "name": "微型瞄具增高架",
+      "grade": 3
+    },
+    {
+      "objectId": 13210000013,
+      "name": "多用途战术增高架",
+      "grade": 3
+    },
+    {
+      "objectId": 13330000001,
+      "name": "稳固握把底座",
+      "grade": 4
+    },
+    {
+      "objectId": 13330000002,
+      "name": "平衡握把底座",
+      "grade": 4
+    },
+    {
+      "objectId": 13370000001,
+      "name": "蜂网遮光罩",
+      "grade": 4
+    },
+    {
+      "objectId": 14020000006,
+      "name": "战地医疗箱",
+      "grade": 5
+    },
+    {
+      "objectId": 14060000001,
+      "name": "精密头盔维修包",
+      "grade": 5
+    },
+    {
+      "objectId": 14060000002,
+      "name": "精密护甲维修包",
+      "grade": 5
+    },
+    {
+      "objectId": 14060000003,
+      "name": "高级头盔维修组合",
+      "grade": 6
+    },
+    {
+      "objectId": 14060000004,
+      "name": "高级护甲维修组合",
+      "grade": 6
+    },
+    {
+      "objectId": 14070000001,
+      "name": "M1肌肉强化针",
+      "grade": 3
+    },
+    {
+      "objectId": 14070000003,
+      "name": "M2肌肉注射剂",
+      "grade": 4
+    },
+    {
+      "objectId": 14070000004,
+      "name": "感知激活针",
+      "grade": 3
+    },
+    {
+      "objectId": 14070000005,
+      "name": "感知强化剂",
+      "grade": 4
+    },
+    {
+      "objectId": 14070000006,
+      "name": "体能激活针",
+      "grade": 3
+    },
+    {
+      "objectId": 14070000007,
+      "name": "体能强化剂",
+      "grade": 4
+    },
+    {
+      "objectId": 14070000008,
+      "name": "OE2战斗兴奋剂",
+      "grade": 3
+    },
+    {
+      "objectId": 14070000009,
+      "name": "去甲肾上腺素",
+      "grade": 3
+    },
+    {
+      "objectId": 18010000001,
+      "name": "M4A1突击步枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18010000006,
+      "name": "AKM突击步枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18010000015,
+      "name": "AUG突击步枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18010000018,
+      "name": "AK-12突击步枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18010000021,
+      "name": "SCAR-H战斗步枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18010000038,
+      "name": "腾龙突击步枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18010000044,
+      "name": "MCX LT突击步枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18010000049,
+      "name": "RM277突击步枪",
+      "grade": 0
+    },
+    {
+      "objectId": 18020000002,
+      "name": "P90冲锋枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18020000008,
+      "name": "SR-3M紧凑突击步枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18020000011,
+      "name": "QCQ171冲锋枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18020000012,
+      "name": "MK4冲锋枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18030000006,
+      "name": "FS-12霰弹枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18040000001,
+      "name": "PKM通用机枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18040000002,
+      "name": "M249轻机枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18040000004,
+      "name": "QJB201轻机枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18050000004,
+      "name": "SVD狙击步枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18050000005,
+      "name": "M14射手步枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18050000006,
+      "name": "SKS射手步枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18050000031,
+      "name": "PSG-1射手步枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18060000009,
+      "name": "M700狙击步枪",
+      "grade": 1
+    },
+    {
+      "objectId": 18150000001,
+      "name": "复合弓",
+      "grade": 1
+    },
+    {
+      "objectId": 37100300001,
+      "name": "5.56x45mm M855",
+      "grade": 3
+    },
+    {
+      "objectId": 37100400001,
+      "name": "5.56x45mm M855A1",
+      "grade": 4
+    },
+    {
+      "objectId": 37100500001,
+      "name": "5.56x45mm M995",
+      "grade": 5
+    },
+    {
+      "objectId": 37110300001,
+      "name": "7.62x39mm PS",
+      "grade": 3
+    },
+    {
+      "objectId": 37110400001,
+      "name": "7.62x39mm BP",
+      "grade": 4
+    },
+    {
+      "objectId": 37110500001,
+      "name": "7.62x39mm AP",
+      "grade": 5
+    },
+    {
+      "objectId": 37120300001,
+      "name": "5.45x39mm PS",
+      "grade": 3
+    },
+    {
+      "objectId": 37120400001,
+      "name": "5.45x39mm BT",
+      "grade": 4
+    },
+    {
+      "objectId": 37120500001,
+      "name": "5.45x39mm BS",
+      "grade": 5
+    },
+    {
+      "objectId": 37120500003,
+      "name": "5.45x39mm BS ST+",
+      "grade": 5
+    },
+    {
+      "objectId": 37130300001,
+      "name": "5.8x42mm DVP88",
+      "grade": 3
+    },
+    {
+      "objectId": 37130400001,
+      "name": "5.8x42mm DBP10",
+      "grade": 4
+    },
+    {
+      "objectId": 37130400002,
+      "name": "5.8x42mm DVC12+P",
+      "grade": 5
+    },
+    {
+      "objectId": 37130500001,
+      "name": "5.8x42mm DVC12",
+      "grade": 5
+    },
+    {
+      "objectId": 37130500002,
+      "name": "5.8x42mm DBP10+P",
+      "grade": 4
+    },
+    {
+      "objectId": 37140300001,
+      "name": "9x39mm SP5",
+      "grade": 3
+    },
+    {
+      "objectId": 37140400001,
+      "name": "9x39mm SP6",
+      "grade": 4
+    },
+    {
+      "objectId": 37140400002,
+      "name": "9x39mm PAB-9",
+      "grade": 4
+    },
+    {
+      "objectId": 37140500001,
+      "name": "9x39mm BP",
+      "grade": 5
+    },
+    {
+      "objectId": 37150400001,
+      "name": "6.8x51mm FMJ",
+      "grade": 4
+    },
+    {
+      "objectId": 37150400002,
+      "name": "6.8x51mm PLY-II",
+      "grade": 4
+    },
+    {
+      "objectId": 37150500001,
+      "name": "6.8x51mm Hybrid",
+      "grade": 5
+    },
+    {
+      "objectId": 37150500002,
+      "name": "6.8x51mm PLY-III",
+      "grade": 5
+    },
+    {
+      "objectId": 37150600001,
+      "name": "6.8x51mm AP",
+      "grade": 6
+    },
+    {
+      "objectId": 37160300001,
+      "name": "12.7x55mm PS12A",
+      "grade": 3
+    },
+    {
+      "objectId": 37160400001,
+      "name": "12.7x55mm PS12",
+      "grade": 4
+    },
+    {
+      "objectId": 37160400002,
+      "name": "12.7x55mm PD12双头弹",
+      "grade": 4
+    },
+    {
+      "objectId": 37160500001,
+      "name": "12.7x55mm PS12B",
+      "grade": 5
+    },
+    {
+      "objectId": 37170300001,
+      "name": "7.62x51mm BPZ",
+      "grade": 3
+    },
+    {
+      "objectId": 37170400001,
+      "name": "7.62x51mm M80",
+      "grade": 4
+    },
+    {
+      "objectId": 37170500001,
+      "name": "7.62x51mm M62",
+      "grade": 5
+    },
+    {
+      "objectId": 37180300001,
+      "name": "7.62x54R T46M",
+      "grade": 3
+    },
+    {
+      "objectId": 37180400001,
+      "name": "7.62x54R LPS",
+      "grade": 4
+    },
+    {
+      "objectId": 37180500001,
+      "name": "7.62x54R BT",
+      "grade": 5
+    },
+    {
+      "objectId": 37180600001,
+      "name": "7.62x54R SNB",
+      "grade": 6
+    },
+    {
+      "objectId": 37190000001,
+      "name": ".45 ACP RIP",
+      "grade": 3
+    },
+    {
+      "objectId": 37190000002,
+      "name": ".45 ACP CT",
+      "grade": 4
+    },
+    {
+      "objectId": 37190300001,
+      "name": ".45 ACP FMJ",
+      "grade": 3
+    },
+    {
+      "objectId": 37190400001,
+      "name": ".45 ACP AP",
+      "grade": 4
+    },
+    {
+      "objectId": 37190500001,
+      "name": ".45 ACP Super",
+      "grade": 5
+    },
+    {
+      "objectId": 37200000001,
+      "name": "9x19mm RIP",
+      "grade": 3
+    },
+    {
+      "objectId": 37200000002,
+      "name": "9x19mm CT",
+      "grade": 4
+    },
+    {
+      "objectId": 37200300001,
+      "name": "9x19mm AP6.3",
+      "grade": 3
+    },
+    {
+      "objectId": 37200400001,
+      "name": "9x19mm PBP",
+      "grade": 4
+    },
+    {
+      "objectId": 37210000001,
+      "name": "5.7x28mm R37.F",
+      "grade": 3
+    },
+    {
+      "objectId": 37210300001,
+      "name": "5.7x28mm L191",
+      "grade": 3
+    },
+    {
+      "objectId": 37210400001,
+      "name": "5.7x28mm SS193",
+      "grade": 4
+    },
+    {
+      "objectId": 37210500001,
+      "name": "5.7x28mm SS190",
+      "grade": 5
+    },
+    {
+      "objectId": 37220000001,
+      "name": ".357 Magnum 9号霰射\"鼠弹\"",
+      "grade": 3
+    },
+    {
+      "objectId": 37220300001,
+      "name": ".357 Magnum JHP",
+      "grade": 3
+    },
+    {
+      "objectId": 37220400001,
+      "name": ".357 Magnum FMJ",
+      "grade": 4
+    },
+    {
+      "objectId": 37230300001,
+      "name": ".50 AE JHP",
+      "grade": 3
+    },
+    {
+      "objectId": 37230400001,
+      "name": ".50 AE FMJ",
+      "grade": 4
+    },
+    {
+      "objectId": 37230500001,
+      "name": ".50 AE AP",
+      "grade": 5
+    },
+    {
+      "objectId": 37240700001,
+      "name": ".338 Lap Mag AP",
+      "grade": 6
+    },
+    {
+      "objectId": 37250300001,
+      "name": "12 Gauge 箭形弹",
+      "grade": 3
+    },
+    {
+      "objectId": 37250300002,
+      "name": "12 Gauge独头 FTX",
+      "grade": 3
+    },
+    {
+      "objectId": 37250400002,
+      "name": "12 Gauge独头 AP-20",
+      "grade": 4
+    },
+    {
+      "objectId": 37250400003,
+      "name": "12 Gauge 龙息弹",
+      "grade": 4
+    },
+    {
+      "objectId": 37260300001,
+      "name": "4.6x30mm Subsonic SX",
+      "grade": 3
+    },
+    {
+      "objectId": 37260400001,
+      "name": "4.6x30mm FMJ SX",
+      "grade": 4
+    },
+    {
+      "objectId": 37260500001,
+      "name": "4.6x30mm AP SX",
+      "grade": 5
+    },
+    {
+      "objectId": 37270300001,
+      "name": "玻纤柳叶箭矢",
+      "grade": 3
+    },
+    {
+      "objectId": 37270400001,
+      "name": "碳纤维刺骨箭矢",
+      "grade": 4
+    },
+    {
+      "objectId": 37270500001,
+      "name": "碳纤维穿甲箭矢",
+      "grade": 5
+    },
+    {
+      "objectId": 37270500002,
+      "name": "碳纤维散射箭矢",
+      "grade": 5
+    },
+    {
+      "objectId": 37280300001,
+      "name": ".300BLK_3",
+      "grade": 3
+    },
+    {
+      "objectId": 37280400001,
+      "name": ".300BLK_4",
+      "grade": 4
+    },
+    {
+      "objectId": 37280500001,
+      "name": ".300BLK_5",
+      "grade": 5
+    },
+    {
+      "objectId": 37290300001,
+      "name": "45-70 Govt RN",
+      "grade": 3
+    },
+    {
+      "objectId": 37290400001,
+      "name": "45-70 Govt FMJ",
+      "grade": 4
+    },
+    {
+      "objectId": 37290500001,
+      "name": "45-70 Govt FTX",
+      "grade": 5
+    },
+    {
+      "objectId": 37300600001,
+      "name": ".50 BMG M10 RAZOR",
+      "grade": 6
+    },
+    {
+      "objectId": 37300600002,
+      "name": ".50 BMG M3 K-0",
+      "grade": 6
+    },
+    {
+      "objectId": 37300700001,
+      "name": ".50 BMG M903 SLAP",
+      "grade": 7
+    }
+  ]
+}

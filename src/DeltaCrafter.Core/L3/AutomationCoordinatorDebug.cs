@@ -57,8 +57,7 @@ public sealed partial class AutomationCoordinator
         ExecuteGuardedAsync("单步:画面诊断", affectsSchedule: false, requiresCalibration: false,
             async (r, ct) =>
             {
-                var s = _settings();
-                var win = _windowBrick.FindGameClient(s.WindowMatch)
+                var win = _launch.FindRunningClient()
                     ?? throw new StepFailedException("画面诊断",
                         "未找到 16:9 的游戏客户端窗口。请先手动把游戏开进客户端,或在设置页检查窗口匹配规则。");
                 _windowBrick.TryEnsureForeground(win.Hwnd, TimeSpan.FromSeconds(2));

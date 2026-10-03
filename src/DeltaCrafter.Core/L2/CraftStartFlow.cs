@@ -11,8 +11,7 @@ public sealed record CraftStartResult(bool Started, TimeSpan? Remaining, string?
 /// 「选择配方并开始生产」流程。生产界面右下角为同位置三态按钮,其文字即状态:
 /// 「一键补齐」=缺料 →(可选)自动购买;「生产」=可开工;「中止」=已在生产(异常)。
 /// 开工成功的判据 = 按钮变为「中止」;随后读「剩余时间」作为唯一调度依据。
-/// 配方列表因玩家置顶而顺序各异,按名称 OCR 定位(两级匹配:精确包含 → 子串编辑距离,
-/// 见 PickLine);滚到列表不再变化为止,并设安全页数上限。
+/// 配方列表因玩家置顶而顺序各异,按离线 OCR 完整名称与目录唯一匹配定位;滚到列表不再变化为止,并设安全页数上限。
 /// </summary>
 public sealed class CraftStartFlow
 {
@@ -21,13 +20,15 @@ public sealed class CraftStartFlow
     private readonly StepRunner _runner;
     private readonly InputBrick _input;
     private readonly ILogger _log;
+    private readonly ICatalogLookup _catalog;
 
-    public CraftStartFlow(ScreenProbe probe, StepRunner runner, InputBrick input, ILogger log)
+    public CraftStartFlow(ScreenProbe probe, StepRunner runner, InputBrick input, ICatalogLookup catalog, ILogger log)
     {
         _probe = probe;
         _runner = runner;
         _input = input;
         _log = log.ForContext<CraftStartFlow>();
+        _catalog = catalog;
     }
 
     /// <param name="searchName">运行期匹配名(通常为 OCR 原文),用于列表定位与选中校验。</param>
@@ -38,6 +39,10 @@ public sealed class CraftStartFlow
         string facility = FacilityKeys.DisplayName(key);
         var prodSpec = _probe.Screen(AnchorKeys.Production);
         var kw = _probe.Anchors.Keywords;
+        var items = _catalog.ItemsFor(key);
+        if (!items.Any(i => CatalogNameResolver.Canonical(i.Name) == CatalogNameResolver.Canonical(displayName)))
+            throw new StepFailedException("校验计划物品", "计划物品不在目录中,请先在设置页刷新物品目录并重新选择。");
+        searchName = displayName; // 不再使用旧版本保存的任意 OCR 匹配键。
 
         await _runner.RunAsync(hwnd, new Step(
             $"打开{facility}生产界面",
@@ -45,7 +50,8 @@ public sealed class CraftStartFlow
             () => _probe.IsOnAsync(hwnd, AnchorKeys.Production),
             TimeSpan.FromSeconds(12)), ct);
 
-        await FindAndSelectItemAsync(hwnd, facility, searchName, displayName, prodSpec, ct);
+        int? blkGrade = BlkAmmoMatcher.GradeFor(key, displayName, searchName);
+        await FindAndSelectItemAsync(hwnd, facility, searchName, displayName, prodSpec, items, blkGrade, ct);
 
         string label = await ReadActionLabelAsync(hwnd, prodSpec, ct);
         if (LabelHits(label, kw.ButtonAbort))
@@ -97,9 +103,10 @@ public sealed class CraftStartFlow
     }
 
     private async Task FindAndSelectItemAsync(nint hwnd, string facility, string searchName,
-        string displayName, ScreenSpec prodSpec, CancellationToken ct)
+        string displayName, ScreenSpec prodSpec, IReadOnlyList<CatalogItem> items, int? blkGrade, CancellationToken ct)
     {
         var listArea = prodSpec.Roi(AnchorKeys.RoiListArea);
+        string expectedName = blkGrade is not null ? BlkAmmoMatcher.GameName : searchName;
         OcrLine? line = null;
         string previousView = "";
         bool reachedBottom = false;
@@ -107,11 +114,27 @@ public sealed class CraftStartFlow
         for (int page = 0; page < MaxScrollPages; page++)
         {
             ct.ThrowIfCancellationRequested();
-            var lines = await _probe.ReadAreaLinesAsync(hwnd, listArea);
-            line = PickLine(lines, searchName, page);
+            var (frame, readout) = await _probe.ReadAreaFrameAsync(hwnd, listArea, [expectedName]);
+            var lines = readout.Lines;
+            string currentView;
+            if (blkGrade is { } grade)
+            {
+                var candidate = BlkAmmoMatcher.Find(frame, lines, listArea, grade: grade);
+                if (candidate is not null)
+                    line = new OcrLine(BlkAmmoMatcher.GameName, candidate.X, candidate.Y);
+                currentView = BlkAmmoMatcher.ViewSignature(frame, listArea);
+                _log.Debug("查找 .300 BLK {Grade}级弹第{Page}页:名称与品质颜色 {Found}",
+                    grade, page + 1, candidate is not null);
+            }
+            else
+            {
+                var matches = lines.Where(l => CatalogNameResolver.Matches(items, l.Text, searchName)).ToArray();
+                line = matches.Length == 1 ? matches[0] : null;
+                // 是否到底看整页原文；不能因筛选后都为空或仅剩同一相似项就提前停翻页。
+                currentView = ScreenProbe.Normalize(readout.SourceText ?? readout.FullText);
+            }
             if (line is not null) break;
 
-            string currentView = ScreenProbe.Normalize(string.Concat(lines.Select(l => l.Text)));
             if (currentView.Length > 0 && currentView == previousView)
             {
                 reachedBottom = true;
@@ -125,60 +148,56 @@ public sealed class CraftStartFlow
         {
             var (png, dumpText) = await _probe.DumpAsync(hwnd, "fail-查找物品");
             throw new StepFailedException($"查找物品「{displayName}」",
-                (reachedBottom
-                    ? $"{facility}列表已滚到底仍未找到(匹配键「{searchName}」)。可用「扫描配方目录」重建候选。"
+                (blkGrade is not null
+                    ? $"{facility}未找到能同时确认「.300 BLK」名称与 {blkGrade} 级品质颜色的弹药。"
+                    : reachedBottom
+                    ? $"{facility}列表已滚到底仍未找到(匹配键「{searchName}」)。请在画面稳定后重试,或核对目录中的完整名称。"
                     : $"{facility}列表滚动 {MaxScrollPages} 页未找到(或滚轮未生效)。") +
                 $"诊断截图:{png}", png, dumpText);
         }
 
         _probe.ClickFramePoint(hwnd, line.CenterX, line.CenterY);
+        var titleArea = ItemTitleOcr.AreaFor(displayName, prodSpec.Roi(AnchorKeys.RoiDetailTitle));
+        if (blkGrade is not null) _probe.MovePointerToRoi(hwnd, titleArea);
         long deadline = Environment.TickCount64 + 8000;
-        // 注意:下方详情标题校验保持「规范形包含」强匹配——列表模糊选错行时,
-        // 校验必然不过并大声失败,绝不会静默生产错误物品。
+        // 普通物品保留原有标题强匹配。.300 BLK 五级弹额外确认金色行的白色选中框,
+        // 因为同名标题无法区分等级。所有确认必须在补齐材料/生产之前完成。
         while (Environment.TickCount64 < deadline)
         {
             ct.ThrowIfCancellationRequested();
             await Task.Delay(800, ct);
-            string title = await _probe.ReadRoiAsync(hwnd, prodSpec.Roi(AnchorKeys.RoiDetailTitle));
-            if (TextMatch.LineContains(title, searchName)) return;
+            if (blkGrade is { } grade)
+            {
+                var (frame, readout) = await _probe.ReadAreaFrameAsync(hwnd, listArea, [expectedName]);
+                var selected = BlkAmmoMatcher.Find(frame, readout.Lines, listArea, requireSelected: true, grade: grade);
+                string title = await _probe.ReadFrameRoiAsync(frame, titleArea, expectedName);
+                if (selected is not null && BlkAmmoIdentity.IsBareName(title)) return;
+            }
+            else
+            {
+                string title = await _probe.ReadFrameRoiAsync(_probe.Capture(hwnd), titleArea, expectedName);
+                if (CatalogNameResolver.Matches(items, title, searchName)) return;
+            }
         }
         var (png2, dump2) = await _probe.DumpAsync(hwnd, "fail-选中物品");
         throw new StepFailedException($"选中物品「{displayName}」",
-            $"点击后详情标题未出现该物品。诊断截图:{png2}", png2, dump2);
-    }
-
-    /// <summary>页内选行,两级匹配:① 规范形包含(精确);② 子串编辑距离 ≤1 且严格惟一最优
-    /// (容忍单点误读——实测「7.62」被读成「7毛2」或吞掉行首「7.」,包含匹配直接漏过,
-    /// 导致目标明明在第一屏却一路滚到底)。阈值取 1 保证不会错认同族名(AP/PS 差 2);
-    /// 即便极端情况下选错行,后续详情标题强校验也会大声失败,不会静默错造。</summary>
-    private OcrLine? PickLine(IReadOnlyList<OcrLine> lines, string searchName, int page)
-    {
-        var exact = lines.FirstOrDefault(l => TextMatch.LineContains(l.Text, searchName));
-        if (exact is not null) return exact;
-
-        OcrLine? best = null;
-        int bestD = int.MaxValue, secondD = int.MaxValue;
-        foreach (var l in lines)
-        {
-            int d = TextMatch.SubstringDistance(l.Text, searchName);
-            if (d < bestD) { secondD = bestD; bestD = d; best = l; }
-            else if (d < secondD) { secondD = d; }
-        }
-        _log.Debug("查找第{Page}页:{Count} 行,最优距离 {Best}(次优 {Second}):{Text}",
-            page + 1, lines.Count, bestD, secondD,
-            best is null ? "" : ScreenProbe.Normalize(best.Text));
-        return bestD <= 1 && bestD < secondD ? best : null;
+            (blkGrade is not null ? "点击后未同时确认 .300 BLK 详情标题、品质颜色及该行选中框。"
+                : "点击后详情标题未出现该物品。") + $"诊断截图:{png2}", png2, dump2);
     }
 
     private async Task<string> ReadActionLabelAsync(nint hwnd, ScreenSpec prodSpec, CancellationToken ct)
     {
+        string lastLabel = "";
         for (int attempt = 1; attempt <= 2; attempt++)
         {
             string label = await ReadLabelOnceAsync(hwnd, prodSpec);
-            if (label.Length > 0) return label;
+            if (label.Length > 0) lastLabel = label;
+            var kw = _probe.Anchors.Keywords;
+            if (LabelHits(label, kw.ButtonProduce) || LabelHits(label, kw.ButtonReplenish) ||
+                LabelHits(label, kw.ButtonAbort)) return label;
             await Task.Delay(1200, ct);
         }
-        return "";
+        return lastLabel;
     }
 
     /// <summary>
@@ -214,26 +233,30 @@ public sealed class CraftStartFlow
     }
 
     private async Task<string> ReadLabelOnceAsync(nint hwnd, ScreenSpec prodSpec) =>
-        ScreenProbe.Normalize(await _probe.ReadRoiAsync(hwnd, prodSpec.Roi(AnchorKeys.RoiActionButton)));
+        await _probe.ReadProductionButtonAsync(_probe.Capture(hwnd), prodSpec.Roi(AnchorKeys.RoiActionButton));
 
-    private static bool LabelHits(string normalizedLabel, IEnumerable<string> keywords) =>
+    internal static bool LabelHits(string normalizedLabel, IEnumerable<string> keywords) =>
         keywords.Any(k => k.Length > 0 &&
-            normalizedLabel.Contains(ScreenProbe.Normalize(k), StringComparison.Ordinal));
+            normalizedLabel.Equals(ScreenProbe.Normalize(k), StringComparison.Ordinal));
 
     private async Task<TimeSpan> ReadRemainingTimeAsync(nint hwnd, string facility,
         ScreenSpec prodSpec, CancellationToken ct)
     {
-        long deadline = Environment.TickCount64 + 8000;
+        long deadline = Environment.TickCount64 + 15000;
+        var consensus = new CountdownOcr();
+        int attempt = 0;
         while (Environment.TickCount64 < deadline)
         {
             ct.ThrowIfCancellationRequested();
-            string text = await _probe.ReadRoiAsync(hwnd, prodSpec.Roi(AnchorKeys.RoiRemainingTime));
-            if (CountdownParser.TryParse(text, out var remaining)) return remaining;
-            await Task.Delay(1000, ct);
+            long capturedAt = Environment.TickCount64;
+            var reading = await _probe.ReadCountdownAsync(_probe.Capture(hwnd),
+                prodSpec.Roi(AnchorKeys.RoiRemainingTime), ++attempt % 2 == 1 ? 1 : 2);
+            if (consensus.Observe(reading, capturedAt, Environment.TickCount64, out var remaining)) return remaining;
+            await Task.Delay(700, ct);
         }
         var (png, dumpText) = await _probe.DumpAsync(hwnd, "fail-读取剩余时间");
         throw new StepFailedException($"读取{facility}剩余时间",
-            $"开工后读不到剩余时间,无法调度下一轮。诊断截图:{png}", png, dumpText);
+            $"开工后未读到两次一致且置信度足够的剩余时间,无法调度下一轮。诊断截图:{png}", png, dumpText);
     }
 
     private Task EscBackToHomeAsync(nint hwnd, CancellationToken ct) =>

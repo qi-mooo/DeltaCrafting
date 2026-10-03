@@ -13,7 +13,13 @@ public static class Win32Dialogs
         _ = MessageBoxW(0, message, title, MB_OK | MB_ICONERROR);
 
     /// <summary>选择 exe 文件;用户取消返回 null。</summary>
-    public static string? PickExeFile(nint ownerHwnd)
+    public static string? PickExeFile(nint ownerHwnd) => PickFile(ownerHwnd,
+        "选择游戏可执行文件", "可执行文件 (*.exe)\0*.exe\0所有文件 (*.*)\0*.*\0\0");
+
+    public static string? PickFirmwareFile(nint ownerHwnd) => PickFile(ownerHwnd,
+        "导入 S3 固件包", "S3 固件包 (*.zip)\0*.zip\0\0");
+
+    private static string? PickFile(nint ownerHwnd, string title, string filter)
     {
         const int bufferChars = 4096;
         nint buffer = Marshal.AllocHGlobal(bufferChars * sizeof(char));
@@ -24,11 +30,11 @@ public static class Win32Dialogs
             {
                 lStructSize = Marshal.SizeOf<OPENFILENAME>(),
                 hwndOwner = ownerHwnd,
-                lpstrFilter = "可执行文件 (*.exe)\0*.exe\0所有文件 (*.*)\0*.*\0\0",
+                lpstrFilter = filter,
                 nFilterIndex = 1,
                 lpstrFile = buffer,
                 nMaxFile = bufferChars,
-                lpstrTitle = "选择游戏可执行文件",
+                lpstrTitle = title,
                 Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR,
             };
             return GetOpenFileNameW(ref ofn) ? Marshal.PtrToStringUni(buffer) : null;

@@ -45,6 +45,8 @@ public sealed partial class MainWindow : Window
     public void RestoreFromTray()
     {
         AppWindow.Show();
+        if (AppWindow.Presenter is OverlappedPresenter presenter)
+            presenter.Maximize();
         Activate();
     }
 
@@ -74,6 +76,7 @@ public sealed partial class MainWindow : Window
             "overview" => typeof(OverviewPage),
             "plan" => typeof(PlanPage),
             "logs" => typeof(LogPage),
+            "tools" => typeof(ToolsPage),
             "settings" => typeof(SettingsPage),
             _ => null,
         };

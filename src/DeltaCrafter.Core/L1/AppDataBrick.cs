@@ -15,6 +15,7 @@ public sealed class AppDataBrick
     public string StatePath => Path.Combine(Root, "state.json");
     public string AnchorsPath => Path.Combine(Root, "anchors.json");
     public string ItemsPath => Path.Combine(Root, "items.json");
+    public string ItemMetadataPath => Path.Combine(Root, "item-metadata.json");
     public string LogsDir => Path.Combine(Root, "logs");
     public string ShotsDir => Path.Combine(Root, "shots");
     /// <summary>更新安装包下载目录。每次下载前清空,避免误用旧包或半截文件。</summary>
@@ -28,6 +29,7 @@ public sealed class AppDataBrick
         Directory.CreateDirectory(ShotsDir);
         CopyDefaultIfMissing(defaultsDir, "anchors.json", AnchorsPath);
         CopyDefaultIfMissing(defaultsDir, "items.json", ItemsPath);
+        CopyDefaultIfMissing(defaultsDir, "item-metadata.json", ItemMetadataPath);
     }
 
     private static void CopyDefaultIfMissing(string defaultsDir, string fileName, string targetPath)

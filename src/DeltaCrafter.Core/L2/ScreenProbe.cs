@@ -10,15 +10,16 @@ namespace DeltaCrafter.Core.L2;
 /// </summary>
 public sealed class ScreenProbe
 {
+    internal const float ProductionButtonMinimumConfidence = .80f;
     private readonly GameWindowBrick _window;
     private readonly ScreenCaptureBrick _capture;
-    private readonly OcrBrick _ocr;
+    private readonly PaddleOcrBrick _ocr;
     private readonly InputBrick _input;
     private readonly Func<AnchorTable> _anchors;
     private readonly string _shotsDir;
     private readonly ILogger _log;
 
-    public ScreenProbe(GameWindowBrick window, ScreenCaptureBrick capture, OcrBrick ocr,
+    public ScreenProbe(GameWindowBrick window, ScreenCaptureBrick capture, PaddleOcrBrick ocr,
         InputBrick input, Func<AnchorTable> anchors, string shotsDir, ILogger log)
     {
         _window = window;
@@ -36,17 +37,24 @@ public sealed class ScreenProbe
 
     public CapturedFrame Capture(nint hwnd) => _capture.CaptureClient(_window.ClientRectOnScreen(hwnd));
 
-    public async Task<string> ReadRoiAsync(nint hwnd, NRect roi) =>
-        (await _ocr.ReadAsync(Capture(hwnd), roi)).FullText;
+    public async Task<OcrReadout> ReadCountdownAsync(CapturedFrame frame, NRect roi, double upscale)
+    {
+        var result = await _ocr.ReadAsync(frame, roi, upscale);
+        _log.Debug("生产倒计时(PaddleOCR {Scale}x)：{Readings}", upscale,
+            string.Join(" | ", OcrEvidence.Candidates(result).Select(l => $"{l.Text} ({l.Confidence:P0})")));
+        return result;
+    }
 
     /// <summary>一次捕获、多区域识别,保证多个读数来自同一帧。
     /// upscale 可指定识别倍率:2x 适合小字号;1x 适合低对比大字(见 CollectFlow 交替倍率观察)。</summary>
-    public async Task<string[]> ReadRoisAsync(nint hwnd, IReadOnlyList<NRect> rois, double upscale = 2.0)
+    public async Task<OcrReadout[]> ReadSlotsAsync(CapturedFrame frame, IReadOnlyList<NRect> rois,
+        IReadOnlyList<IReadOnlyList<string>> expectedNames, double upscale = 2.0)
     {
-        var frame = Capture(hwnd);
-        var result = new string[rois.Count];
+        if (rois.Count != expectedNames.Count) throw new ArgumentException("Slot target count mismatch");
+        var result = new OcrReadout[rois.Count];
         for (int i = 0; i < rois.Count; i++)
-            result[i] = (await _ocr.ReadAsync(frame, rois[i], upscale)).FullText;
+            result[i] = await ReadItemAsync(frame, rois[i], expectedNames[i].Concat(Anchors.Keywords.Idle).ToArray(),
+                upscale, SlotOcrLayout.IconMasks(rois[i]), slot: true);
         return result;
     }
 
@@ -58,10 +66,7 @@ public sealed class ScreenProbe
         foreach (var name in screenNames)
         {
             var spec = Screen(name);
-            string text = (await _ocr.ReadAsync(
-                frame, spec.Probe.Roi, spec.Probe.Upscale)).FullText;
-            if (Normalize(text).Contains(Normalize(spec.Probe.MustContain), StringComparison.Ordinal))
-                return name;
+            if (MatchesScreenTexts(spec, await ReadScreenTextsAsync(frame, spec))) return name;
         }
         return null;
     }
@@ -70,11 +75,39 @@ public sealed class ScreenProbe
     public async Task<bool> IsOnAsync(nint hwnd, string screenName)
     {
         var spec = Screen(screenName);
-        string text = (await _ocr.ReadAsync(
-            Capture(hwnd), spec.Probe.Roi, spec.Probe.Upscale)).FullText;
-        bool on = Normalize(text).Contains(Normalize(spec.Probe.MustContain), StringComparison.Ordinal);
-        _log.Debug("界面判定 {Screen}:{Result}(读到:{Text})", screenName, on, Compact(text));
+        var texts = await ReadScreenTextsAsync(Capture(hwnd), spec);
+        bool on = MatchesScreenTexts(spec, texts);
+        _log.Debug("界面判定 {Screen}:{Result}(读到:{Text})", screenName, on, Compact(string.Join(" | ", texts)));
         return on;
+    }
+
+    public async Task<IReadOnlyList<string>> ReadScreenTextsAsync(CapturedFrame frame, ScreenSpec spec)
+    {
+        var probes = new[] { spec.Probe }.Concat(spec.AdditionalProbes);
+        var texts = new List<string>();
+        foreach (var probe in probes)
+        {
+            var reading = await _ocr.ReadAsync(frame, probe.Roi, probe.Upscale);
+            string text = OcrEvidence.FindTarget(reading, probe.MustContain)?.Text ?? "";
+            _log.Debug("界面探针(PaddleOCR)：目标={Target}; 可信匹配={Matched}; 原文={Readings}",
+                probe.MustContain, text.Length > 0,
+                string.Join(" | ", reading.Lines.Select(l => $"{l.Text} ({l.Confidence:P0})")));
+            texts.Add(text);
+            if (text.Length == 0) break; // 首探针不成立时无需识别同屏附加探针。
+        }
+        return texts;
+    }
+
+    internal static bool MatchesScreenTexts(ScreenSpec spec, IReadOnlyList<string> texts)
+    {
+        var probes = new[] { spec.Probe }.Concat(spec.AdditionalProbes).ToArray();
+        if (texts.Count != probes.Length) return false;
+        for (int i = 0; i < probes.Length; i++)
+        {
+            string expected = Normalize(probes[i].MustContain);
+            if (expected.Length == 0 || !Normalize(texts[i]).Contains(expected, StringComparison.Ordinal)) return false;
+        }
+        return true;
     }
 
     public void ClickPoint(nint hwnd, string screenName, string pointName)
@@ -93,6 +126,15 @@ public sealed class ScreenProbe
         _input.ClickAt(rect.Left + (int)Math.Round(frameX), rect.Top + (int)Math.Round(frameY));
     }
 
+    /// <summary>将鼠标移离列表,避免把悬停边框误当成 .300 BLK 行的选中状态。</summary>
+    public void MovePointerToRoi(nint hwnd, NRect roi)
+    {
+        var rect = _window.ClientRectOnScreen(hwnd);
+        var point = new NPoint { X = roi.X + roi.W / 2, Y = roi.Y + roi.H / 2 };
+        var (x, y) = PixelMapper.ToPixel(point, rect.Left, rect.Top, rect.Width, rect.Height);
+        _input.MoveTo(x, y);
+    }
+
     /// <summary>在区域中心滚动(负档向下翻列表)。</summary>
     public void ScrollRoi(nint hwnd, NRect roi, int notches)
     {
@@ -102,17 +144,102 @@ public sealed class ScreenProbe
         _input.ScrollAt(x, y, notches);
     }
 
-    /// <summary>在区域内按文本找行(TextMatch 规范形包含匹配,抗 0/O、1/I 同形误读)。
+    /// <summary>在区域内按完整目标文字找行，并检查该文字框的置信度。
     /// 找不到返回 null,由调用方决定翻页或失败。</summary>
     public async Task<OcrLine?> FindLineAsync(nint hwnd, NRect area, string target)
     {
         var readout = await _ocr.ReadAsync(Capture(hwnd), area);
-        return readout.Lines.FirstOrDefault(l => TextMatch.LineContains(l.Text, target));
+        return OcrEvidence.FindTarget(readout, target);
     }
 
-    /// <summary>读取区域内全部 OCR 行(配方目录扫描用)。</summary>
-    public async Task<IReadOnlyList<OcrLine>> ReadAreaLinesAsync(nint hwnd, NRect area) =>
-        (await _ocr.ReadAsync(Capture(hwnd), area)).Lines;
+    /// <summary>.300 BLK 专用识别保留 OCR 对应原帧,避免文字与品质颜色来自不同画面。</summary>
+    public async Task<(CapturedFrame Frame, OcrReadout Readout)> ReadAreaFrameAsync(nint hwnd, NRect area,
+        IReadOnlyList<string> expectedNames)
+    {
+        var frame = Capture(hwnd);
+        return (frame, await ReadItemAsync(frame, area, expectedNames,
+            iconMasks: ProductionListOcrLayout.IconMasks(area)));
+    }
+
+    public async Task<string> ReadFrameRoiAsync(CapturedFrame frame, NRect roi, string expectedName)
+    {
+        var title = await ReadItemAsync(frame, roi, [expectedName], itemTitle: true);
+        if (CatalogNameResolver.Canonical(title.FullText) == CatalogNameResolver.Canonical(expectedName))
+            return title.FullText;
+        // 某些字体在 2x 缩放后会多出字母。只重新识别同一帧、同一区域，
+        // 不猜测名称；两个尺度都保持原置信度，最后仍由目录完整匹配确认。
+        _log.Debug("详情标题未完整匹配，使用 1.5x 复核：{Title}", title.FullText);
+        return (await ReadItemAsync(frame, roi, [expectedName], upscale: 1.5, itemTitle: true)).FullText;
+    }
+
+    public async Task<string> ReadProductionButtonAsync(CapturedFrame frame, NRect roi)
+    {
+        var kw = Anchors.Keywords;
+        var targets = kw.ButtonProduce.Concat(kw.ButtonReplenish).Concat(kw.ButtonAbort).ToArray();
+        var readout = await ReadItemAsync(frame, roi, targets,
+            minimumConfidence: ProductionButtonMinimumConfidence);
+        string label = NormalizeProductionButton(readout.FullText);
+        if (label != Normalize(readout.FullText))
+            _log.Debug("生产操作按钮横线校正：{Raw} → {Label}", readout.FullText, label);
+        _log.Debug("生产操作按钮(PaddleOCR)：{Label}", label);
+        return label;
+    }
+
+    internal static string NormalizeProductionButton(string text)
+    {
+        string label = Normalize(text);
+        // PaddleOCR 会把「一」识别成横线。只修正完整的四字操作按钮，
+        // 不放宽物品名、部分按钮或其他错字；调用前仍须通过按钮置信度检查。
+        return label.Length == 4 && (label[0] is '—' or '–' or '-' or '－' or '−') &&
+            label.AsSpan(1).SequenceEqual("键补齐") ? "一键补齐" : label;
+    }
+
+    /// <summary>物品识别使用离线模型，失败即停止，不自动切回识别率较低的路径。</summary>
+    private async Task<OcrReadout> ReadItemAsync(CapturedFrame frame, NRect roi,
+        IReadOnlyList<string> expectedNames, double upscale = 2.0,
+        IReadOnlyList<NRect>? iconMasks = null, bool itemTitle = false, bool slot = false,
+        float minimumConfidence = OcrReadout.MinimumItemConfidence)
+    {
+        var result = await _ocr.ReadAsync(frame, roi, upscale, iconMasks);
+        var raw = result;
+        _log.Debug("PaddleOCR 物品读数(图标遮罩={Masked})：{Text}",
+            iconMasks is { Count: > 0 }, result.FullText.Replace('\n', '|'));
+        if (itemTitle)
+        {
+            var title = ItemTitleOcr.Normalize(result);
+            if (title.FullText != result.FullText)
+                _log.Debug("详情标题去除数量后缀：{Title}", title.FullText);
+            result = title;
+        }
+        result = OcrMatchFilter.Filter(result, expectedNames, slot,
+            line => SlotOcrLayout.IsCountdownText(line, roi, frame.Width, frame.Height))
+            with { SourceText = raw.FullText };
+        if (itemTitle)
+        {
+            // 独立的乱码行可能使首次数量清理退出；筛除无关行后再处理完整
+            // 「名称 * 数量」，防止把数量当成名称。绝不删除名称里的字母。
+            var title = ItemTitleOcr.Normalize(result);
+            if (title.FullText != result.FullText)
+                _log.Debug("详情标题筛选后去除数量后缀：{Title}", title.FullText);
+            result = title with { SourceText = raw.FullText };
+        }
+        _log.Debug("OCR 目标筛选(匹配度>{Threshold}%)：{Text}; 倒计时未读清={Unreadable}",
+            OcrMatchFilter.MinimumMatchPercent, result.FullText.Replace('\n', '|'), result.HasUnreadableCountdown);
+        if (result.HasTextBelowConfidence(minimumConfidence))
+        {
+            string uncertain = string.Join("、", result.Lines.Where(l =>
+                !float.IsFinite(l.Confidence) || l.Confidence < minimumConfidence)
+                .Select(l => $"{l.Text} ({l.Confidence:P0})"));
+            string png = Path.Combine(_shotsDir, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-fail-PaddleOCR.png");
+            await _capture.SavePngAsync(frame, png);
+            await File.WriteAllTextAsync(Path.ChangeExtension(png, ".txt"),
+                $"ROI={roi.X},{roi.Y},{roi.W},{roi.H}; scale={upscale}; iconMasks={iconMasks is { Count: > 0 }}; match>60%; confidence>={minimumConfidence:P0}; targets={string.Join("|", expectedNames)}\n" +
+                string.Join("\n", raw.Lines.Select(l =>
+                    $"{l.Confidence:F3}\t{l.Text}\t{string.Join("; ", l.Words)}")));
+            throw new StepFailedException("识别物品", $"PaddleOCR 识别置信度不足：{uncertain}。已停止本轮，请在画面稳定后重试。诊断截图：{png}", png, result.FullText);
+        }
+        return result;
+    }
 
     /// <summary>保存整帧截图与全文 OCR 转储(失败现场/校准诊断)。返回(截图路径, OCR 文本)。</summary>
     public async Task<(string PngPath, string OcrText)> DumpAsync(nint hwnd, string tag)
@@ -121,7 +248,7 @@ public sealed class ScreenProbe
         string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
         string png = Path.Combine(_shotsDir, $"{stamp}-{tag}.png");
         await _capture.SavePngAsync(frame, png);
-        var readout = await _ocr.ReadAsync(frame, roi: null, upscale: 1.0);
+        var readout = await _ocr.ReadAsync(frame, upscale: 1.0);
         await File.WriteAllTextAsync(Path.ChangeExtension(png, ".txt"), readout.FullText);
         _log.Information("已保存诊断截图:{Png}", png);
         return (png, readout.FullText);

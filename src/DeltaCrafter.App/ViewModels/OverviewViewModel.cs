@@ -34,12 +34,22 @@ public sealed partial class OverviewViewModel : ObservableObject
     [ObservableProperty] private bool isRunning;
     [ObservableProperty] private bool lastRunFailed;
     [ObservableProperty] private string lastRunSummary = "";
+    [ObservableProperty] private string muteLabel = "声音不可用";
+    [ObservableProperty] private string muteGlyph = "\uE7BA";
+    [ObservableProperty] private string muteHint = "正在读取声音状态";
+    [ObservableProperty] private bool canToggleMute;
+    [ObservableProperty] private Visibility gamePlayingVisibility = Visibility.Collapsed;
 
     public OverviewViewModel(AutomationCoordinator coordinator, UiLogSink sink, AppHost host)
     {
         _coordinator = coordinator;
         _host = host;
-        foreach (var key in FacilityKeys.All)
+        host.AudioBridge.Changed += () => _dq.TryEnqueue(RefreshAudio);
+        RefreshAudio();
+        RefreshGameStatus();
+        // Match the game and S3: tech/workbench, pharmacy/armor.
+        foreach (var key in new[] { FacilityKey.TechCenter, FacilityKey.Workbench,
+                     FacilityKey.PharmacyLab, FacilityKey.ArmorStation })
             Facilities.Add(new FacilityCardModel(key, FacilityKeys.DisplayName(key), HandleCancelAsync));
 
         coordinator.StatusChanged += s => _dq.TryEnqueue(RefreshAll);
@@ -53,9 +63,26 @@ public sealed partial class OverviewViewModel : ObservableObject
         {
             var now = DateTimeOffset.Now;
             foreach (var f in Facilities) f.Tick(now);
+            RefreshGameStatus();
         };
         _ticker.Start();
     }
+
+    private void RefreshGameStatus() =>
+        GamePlayingVisibility = _host.SteamStatus.Snapshot(_host.Settings.SteamActivity).State == "Playing"
+            ? Visibility.Visible : Visibility.Collapsed;
+
+    private void RefreshAudio()
+    {
+        var status = _host.AudioBridge.Status;
+        MuteLabel = status.Label;
+        MuteGlyph = status.Glyph;
+        MuteHint = status.Hint;
+        CanToggleMute = status.Audio is not null;
+    }
+
+    [RelayCommand]
+    private Task ToggleMuteAsync() => _host.AudioBridge.ToggleMuteAsync();
 
     private void RefreshAll()
     {
@@ -75,7 +102,7 @@ public sealed partial class OverviewViewModel : ObservableObject
         foreach (var model in Facilities)
         {
             var rt = snapshot.FirstOrDefault(f => f.Key == model.Key);
-            if (rt is not null) model.Update(rt);
+            if (rt is not null) model.Update(rt, _host.ItemsFor(model.Key));
         }
 
         var (lastAt, summary, failed) = _coordinator.LastRunInfo();
@@ -102,6 +129,9 @@ public sealed partial class OverviewViewModel : ObservableObject
 
     [RelayCommand]
     private void Stop() => _coordinator.RequestStop();
+
+    [RelayCommand]
+    private Task CloseGameAsync() => Task.Run(() => _coordinator.CloseGameAsync());
 
     /// <summary>取消某设施的制造:先二次确认,再后台执行中止(执行中不重复触发)。</summary>
     private async Task HandleCancelAsync(FacilityCardModel model)

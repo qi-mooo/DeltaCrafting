@@ -1,0 +1,114 @@
+{
+  "code": 0,
+  "count": 754,
+  "data": [
+    {
+      "id": 613,
+      "name": "40WMCXLT",
+      "objectName": "MCX LT突击步枪",
+      "solutionCode": "MCX LT突击步枪-烽火地带-6IUN21O0BD4E24SFR3J6M",
+      "solutionType": "gun",
+      "price": 278860,
+      "authorNickname": "老飞宇66"
+    },
+    {
+      "id": 619,
+      "name": "20W稳定版G3",
+      "objectName": "G3战斗步枪",
+      "solutionCode": "G3战斗步枪-烽火地带-6IN87MG0ERP7EPT8SOPKB",
+      "solutionType": "gun",
+      "price": 207889,
+      "authorNickname": "杨齐家"
+    },
+    {
+      "id": 706,
+      "name": "70W满改M7",
+      "objectName": "M7战斗步枪",
+      "solutionCode": "M7战斗步枪-烽火地带-6H53BT80B9C8L5S53AOM7",
+      "solutionType": "gun",
+      "price": 878038,
+      "authorNickname": "天霸Mad98"
+    },
+    {
+      "id": 606,
+      "name": "20WFS-12",
+      "objectName": "FS-12霰弹枪",
+      "solutionCode": "FS-12霰弹枪-烽火地带-6IUN7EC0BD4E24SFR3J6M",
+      "solutionType": "gun",
+      "price": 209003,
+      "authorNickname": "老飞宇66"
+    },
+    {
+      "id": 595,
+      "name": "25WFS-12",
+      "objectName": "FS-12霰弹枪",
+      "solutionCode": "FS-12霰弹枪-烽火地带-6IUPTQG0CCNN7V1KCQCD1",
+      "solutionType": "gun",
+      "price": 226778,
+      "authorNickname": "杨齐家"
+    },
+    {
+      "id": 709,
+      "name": "58W满配M250",
+      "objectName": "M250通用机枪",
+      "solutionCode": "M250通用机枪-烽火地带-6GC2P8801UOS4RT8Q9JAG",
+      "solutionType": "gun",
+      "price": 610867,
+      "authorNickname": "翩翩"
+    },
+    {
+      "id": 231,
+      "name": "SVCH全自动版",
+      "objectName": "SVCH精确射手步枪",
+      "solutionCode": "SVCH精确射手步枪-烽火地带-6KF7DKG027DRE8MFHUEJP",
+      "solutionType": "gun",
+      "price": 389979,
+      "authorNickname": "林树"
+    },
+    {
+      "id": 228,
+      "name": "RM277中远架枪",
+      "objectName": "RM277突击步枪",
+      "solutionCode": "RM277突击步枪-烽火地带-6KF7JQ8027DRE8MFHUEJP",
+      "solutionType": "gun",
+      "price": 435476,
+      "authorNickname": "陈小刀"
+    },
+    {
+      "id": 648,
+      "name": "11W日用G18",
+      "objectName": "G18",
+      "solutionCode": "G18-烽火地带-6HQ6U1C0A6PIA75LU5T70",
+      "solutionType": "gun",
+      "price": 87717,
+      "authorNickname": "陈小刀 "
+    },
+    {
+      "id": 835,
+      "name": "27W性价比M14",
+      "objectName": "M14射手步枪",
+      "solutionCode": "M14射手步枪-烽火地带-6GQ0VK00FIAS4OUQQ081T",
+      "solutionType": "gun",
+      "price": 321606,
+      "authorNickname": "洋洋"
+    },
+    {
+      "id": 761,
+      "name": "54W满改AS Val",
+      "objectName": "AS Val突击步枪",
+      "solutionCode": "AS Val突击步枪-烽火地带-6GBM2KS09CT4421JNGF5N",
+      "solutionType": "gun",
+      "price": 635244,
+      "authorNickname": "天霸Mad98"
+    },
+    {
+      "id": 681,
+      "name": "52W满改MK47",
+      "objectName": "MK47突击步枪",
+      "solutionCode": "MK47突击步枪-烽火地带-6HIEHA402FTHV847S6HJF",
+      "solutionType": "gun",
+      "price": 744043,
+      "authorNickname": "林树"
+    }
+  ]
+}

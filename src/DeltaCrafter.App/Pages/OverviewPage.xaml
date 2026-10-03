@@ -10,13 +10,37 @@
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="999*" MaxWidth="{StaticResource TokenContentMaxWidth}" />
+                <ColumnDefinition Width="999*" MaxWidth="{StaticResource TokenOverviewMaxWidth}" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="1" Padding="{StaticResource TokenPagePadding}"
                         Spacing="{StaticResource TokenGapL}">
 
-                <controls:PageHeader Title="总览" Subtitle="监控四个特勤处设施,并手动或按计划执行收取与续造。" />
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <controls:PageHeader Title="总览" Subtitle="监控四个特勤处设施,并手动或按计划执行收取与续造。" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                        <TextBlock Text="游戏中" FontSize="20" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                   VerticalAlignment="Center"
+                                   AutomationProperties.AutomationId="OverviewGamePlayingLabel"
+                                   Visibility="{x:Bind Vm.GamePlayingVisibility, Mode=OneWay}" />
+                        <Button Width="132" Height="68" Padding="12,6"
+                                AutomationProperties.AutomationId="OverviewMuteButton"
+                                AutomationProperties.Name="{x:Bind Vm.MuteLabel, Mode=OneWay}"
+                                ToolTipService.ToolTip="{x:Bind Vm.MuteHint, Mode=OneWay}"
+                                Command="{x:Bind Vm.ToggleMuteCommand}"
+                                IsEnabled="{x:Bind Vm.CanToggleMute, Mode=OneWay}">
+                            <StackPanel Spacing="4" HorizontalAlignment="Center">
+                                <FontIcon FontSize="28" Glyph="{x:Bind Vm.MuteGlyph, Mode=OneWay}" />
+                                <TextBlock Text="{x:Bind Vm.MuteLabel, Mode=OneWay}" HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
 
                 <!-- 运行状态卡:主操作(执行/停止)+ 单步调试 -->
                 <Border Style="{StaticResource CardBorderStyle}">
@@ -50,6 +74,10 @@
                             <Button Content="停止"
                                     Command="{x:Bind Vm.StopCommand}"
                                     IsEnabled="{x:Bind Vm.IsRunning, Mode=OneWay}" />
+                            <Button Content="关闭游戏"
+                                    Command="{x:Bind Vm.CloseGameCommand}"
+                                    IsEnabled="{x:Bind Vm.IsRunning, Mode=OneWay, Converter={StaticResource InvertBool}}"
+                                    ToolTipService.ToolTip="关闭本机三角洲行动，Steam 暂缓期间也可使用；任务执行中请先停止。" />
                             <Button Content="单步调试"
                                     Visibility="{x:Bind Vm.DebugVisibility, Mode=OneWay}">
                                 <Button.Flyout>
@@ -87,7 +115,8 @@
                 <!-- 四设施卡 -->
                 <ItemsRepeater ItemsSource="{x:Bind Vm.Facilities}">
                     <ItemsRepeater.Layout>
-                        <UniformGridLayout MinItemWidth="252" MinItemHeight="168"
+                        <UniformGridLayout MinItemWidth="240" MinItemHeight="{StaticResource TokenFacilityCardHeight}"
+                                           MaximumRowsOrColumns="2" ItemsStretch="Fill"
                                            MinColumnSpacing="16" MinRowSpacing="16" />
                     </ItemsRepeater.Layout>
                     <ItemsRepeater.ItemTemplate>
