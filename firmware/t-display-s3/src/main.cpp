@@ -1091,7 +1091,8 @@ void drawStatusBar(U8G2 *, Axeuh_UI *)
     border(1, 145, 318, 25, false);
     if (ui.settingsHint()) textAt(82, 162, 136, "进入设置");
     else {
-        textAt(12, 162, 91, gameStatus(s));
+        if (fresh(s) && s.gameState == "Playing") canvas.drawRedText(12, 162, "游戏中");
+        else textAt(12, 162, 91, gameStatus(s));
         textAt(108, 162, 112, String("下次 ") + (fresh(s) && s.autoLoop && !s.nextRunClock.isEmpty() ? s.nextRunClock : "--:--"));
     }
     canvas.drawVLine(229, 146, 23);

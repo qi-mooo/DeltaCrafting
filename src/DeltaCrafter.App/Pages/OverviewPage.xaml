@@ -22,17 +22,24 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <controls:PageHeader Title="总览" Subtitle="监控四个特勤处设施,并手动或按计划执行收取与续造。" />
-                    <Button Grid.Column="1" Width="132" Height="68" Padding="12,6"
-                            AutomationProperties.AutomationId="OverviewMuteButton"
-                            AutomationProperties.Name="{x:Bind Vm.MuteLabel, Mode=OneWay}"
-                            ToolTipService.ToolTip="{x:Bind Vm.MuteHint, Mode=OneWay}"
-                            Command="{x:Bind Vm.ToggleMuteCommand}"
-                            IsEnabled="{x:Bind Vm.CanToggleMute, Mode=OneWay}">
-                        <StackPanel Spacing="4" HorizontalAlignment="Center">
-                            <FontIcon FontSize="28" Glyph="{x:Bind Vm.MuteGlyph, Mode=OneWay}" />
-                            <TextBlock Text="{x:Bind Vm.MuteLabel, Mode=OneWay}" HorizontalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                        <TextBlock Text="游戏中" FontSize="20" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                   VerticalAlignment="Center"
+                                   AutomationProperties.AutomationId="OverviewGamePlayingLabel"
+                                   Visibility="{x:Bind Vm.GamePlayingVisibility, Mode=OneWay}" />
+                        <Button Width="132" Height="68" Padding="12,6"
+                                AutomationProperties.AutomationId="OverviewMuteButton"
+                                AutomationProperties.Name="{x:Bind Vm.MuteLabel, Mode=OneWay}"
+                                ToolTipService.ToolTip="{x:Bind Vm.MuteHint, Mode=OneWay}"
+                                Command="{x:Bind Vm.ToggleMuteCommand}"
+                                IsEnabled="{x:Bind Vm.CanToggleMute, Mode=OneWay}">
+                            <StackPanel Spacing="4" HorizontalAlignment="Center">
+                                <FontIcon FontSize="28" Glyph="{x:Bind Vm.MuteGlyph, Mode=OneWay}" />
+                                <TextBlock Text="{x:Bind Vm.MuteLabel, Mode=OneWay}" HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
                 </Grid>
 
                 <!-- 运行状态卡:主操作(执行/停止)+ 单步调试 -->

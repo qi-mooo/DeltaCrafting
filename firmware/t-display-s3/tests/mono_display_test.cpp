@@ -34,6 +34,55 @@ int main()
         for (int x = 0; x < 320; ++x) assert(row[x] == (x >= 320 + shift ? 0xFFFF : 0));
     }
     screen.offset = 0;
+    // Red game glyphs share page motion, while focus borders remain white.
+    screen.clearBuffer();
+    screen.setFont(u8g2_font_wqy16_t_gb2312);
+    screen.drawRedText(12, 162, u8"游戏中");
+    screen.drawFrame(1, 145, 228, 25);
+    uint16_t gameRows[25][320];
+    unsigned redCount = 0;
+    for (unsigned y = 145; y < 170; ++y) {
+        screen.readRow(y, gameRows[y - 145]);
+        for (unsigned x = 0; x < 320; ++x) {
+            if (gameRows[y - 145][x] == 0xF800) {
+                assert(x >= 12 && x < 103 && y > 145 && y < 165);
+                ++redCount;
+            }
+        }
+        assert(gameRows[y - 145][1] == 0xFFFF);
+    }
+    assert(redCount > 100);
+    for (bool forward : {true, false}) {
+        screen.offset = 0;
+        screen.clearBuffer();
+        screen.drawRedText(12, 162, u8"游戏中");
+        screen.drawFrame(1, 145, 228, 25);
+        screen.startTransition(forward);
+        screen.clearBuffer();
+        for (int progress : {320, 160, 1, 0}) {
+            screen.offset = forward ? progress : -progress;
+            for (unsigned y = 145; y < 170; ++y) {
+                screen.readRow(y, row);
+                for (int x = 0; x < 320; ++x) {
+                    int oldX = forward ? x + 320 - progress : x - 320 + progress;
+                    assert(row[x] == (oldX >= 0 && oldX < 320 ? gameRows[y - 145][oldX] : 0));
+                }
+            }
+        }
+    }
+    screen.offset = 0;
+    screen.clearBuffer();
+    screen.drawUTF8(82, 162, u8"进入设置");
+    for (unsigned y = 145; y < 170; ++y) {
+        screen.readRow(y, row);
+        for (auto pixel : row) assert(pixel == 0 || pixel == 0xFFFF);
+    }
+    screen.clearBuffer();
+    screen.drawRedText(12, 162, u8"游戏中");
+    screen.drawBox(12, 145, 48, 18);
+    screen.readRow(155, row);
+    for (int x = 12; x < 60; ++x) assert(row[x] == 0xFFFF);
+
     // Every progress pixel and its black gutter survive a moving home focus.
     const int targets[][4] = {
         {1, 1, 158, 70}, {161, 1, 158, 70}, {1, 73, 158, 70},

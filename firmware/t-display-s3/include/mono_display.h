@@ -18,11 +18,28 @@ public:
     void startTransition(bool forward)
     {
         memcpy(previous, pixels, sizeof(pixels));
+        memcpy(previousRed, redPixels, sizeof(redPixels));
         previousImage = currentImage;
         offset = forward ? int(Width) : -int(Width);
     }
 
     float offset = 0;
+
+    void clearBuffer()
+    {
+        U8G2::clearBuffer();
+        memset(redPixels, 0, sizeof(redPixels));
+    }
+
+    void drawRedText(int x, int baseline, const char *text)
+    {
+        // Keep the glyph mask separate so white focus outlines retain priority.
+        // Both masks move with Axeuh's page transition; no extra LCD repaint.
+        setDrawColor(1);
+        getU8g2()->tile_buf_ptr = redPixels;
+        drawUTF8(x, baseline, text);
+        getU8g2()->tile_buf_ptr = pixels;
+    }
 
     void drawHomeFocus(int x, int y, int width, int height)
     {
@@ -74,13 +91,17 @@ public:
         for (int x = 0; x < int(Width); ++x) {
             int sourceX = x - shift;
             const uint8_t *source = pixels;
+            const uint8_t *red = redPixels;
             const Image *picture = &currentImage;
             if (sourceX < 0 || sourceX >= int(Width)) {
                 source = previous;
+                red = previousRed;
                 picture = &previousImage;
                 sourceX += shift > 0 ? int(Width) : -int(Width);
             }
-            row[x] = source[(y / 8) * Width + sourceX] & (1u << (y % 8)) ? 0xFFFF : 0;
+            unsigned index = (y / 8) * Width + sourceX;
+            uint8_t bit = 1u << (y % 8);
+            row[x] = source[index] & bit ? 0xFFFF : red[index] & bit ? 0xF800 : 0;
             if (picture->visible && sourceX >= picture->x && sourceX < picture->x + 96
                 && int(y) >= picture->y && int(y) < picture->y + 96)
                 row[x] = picture->pixels[(y - picture->y) * 96 + sourceX - picture->x];
@@ -103,6 +124,8 @@ private:
     Image currentImage, previousImage;
     uint8_t pixels[Width * TileRows]{};
     uint8_t previous[Width * TileRows]{};
+    uint8_t redPixels[Width * TileRows]{};
+    uint8_t previousRed[Width * TileRows]{};
 
     static uint8_t gpioCallback(u8x8_t *, uint8_t, uint8_t, void *) { return 1; }
     static uint8_t displayCallback(u8x8_t *screen, uint8_t message, uint8_t, void *)

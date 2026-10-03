@@ -38,6 +38,7 @@ public sealed partial class OverviewViewModel : ObservableObject
     [ObservableProperty] private string muteGlyph = "\uE7BA";
     [ObservableProperty] private string muteHint = "正在读取声音状态";
     [ObservableProperty] private bool canToggleMute;
+    [ObservableProperty] private Visibility gamePlayingVisibility = Visibility.Collapsed;
 
     public OverviewViewModel(AutomationCoordinator coordinator, UiLogSink sink, AppHost host)
     {
@@ -45,6 +46,7 @@ public sealed partial class OverviewViewModel : ObservableObject
         _host = host;
         host.AudioBridge.Changed += () => _dq.TryEnqueue(RefreshAudio);
         RefreshAudio();
+        RefreshGameStatus();
         // Match the game and S3: tech/workbench, pharmacy/armor.
         foreach (var key in new[] { FacilityKey.TechCenter, FacilityKey.Workbench,
                      FacilityKey.PharmacyLab, FacilityKey.ArmorStation })
@@ -61,9 +63,14 @@ public sealed partial class OverviewViewModel : ObservableObject
         {
             var now = DateTimeOffset.Now;
             foreach (var f in Facilities) f.Tick(now);
+            RefreshGameStatus();
         };
         _ticker.Start();
     }
+
+    private void RefreshGameStatus() =>
+        GamePlayingVisibility = _host.SteamStatus.Snapshot(_host.Settings.SteamActivity).State == "Playing"
+            ? Visibility.Visible : Visibility.Collapsed;
 
     private void RefreshAudio()
     {
