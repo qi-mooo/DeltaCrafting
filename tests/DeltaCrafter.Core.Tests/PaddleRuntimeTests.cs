@@ -19,6 +19,34 @@ public sealed class WindowsOcrFactAttribute : FactAttribute
 public sealed class PaddleRuntimeTests
 {
     [WindowsOcrFact]
+    public async Task Actual_baldr_title_recovers_from_added_letter_and_isolated_noise_at_both_resolutions()
+    {
+        const string expected = "OLIGHT Baldr Pro R多功能手电";
+        CatalogItem[] catalog = [new() { Name = expected }, new() { Name = "OLIGHT WARRIOR 3S战术手电" },
+            new() { Name = "OLIGHT Odin S战术手电" }];
+        // 183 在 2026-10-03 15:29 的失败画面，只保留标题带，不含账号信息。
+        using var crop = Cv2.ImRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", "title-baldr-flashlight.png"));
+        using var original = new Mat(1080, 1920, MatType.CV_8UC3, Scalar.Black);
+        using (var destination = new Mat(original, new Rect(624, 144, crop.Width, crop.Height)))
+            crop.CopyTo(destination);
+        var anchors = new JsonStoreBrick().Load<AnchorTable>(Path.Combine(AppContext.BaseDirectory, "Data", "anchors.json"));
+        var area = ItemTitleOcr.AreaFor(expected, anchors.Screen(AnchorKeys.Production).Roi(AnchorKeys.RoiDetailTitle));
+        using var log = new LoggerConfiguration().CreateLogger();
+        var ocr = new PaddleOcrBrick();
+        var probe = new ScreenProbe(new(), new(), ocr, new(), () => anchors, "", log);
+        foreach (int width in new[] { 1920, 2560 })
+        {
+            var frame = FrameAt(original, width);
+            var primary = OcrMatchFilter.Filter(ItemTitleOcr.Normalize(await ocr.ReadAsync(frame, area)), [expected]);
+            Assert.False(CatalogNameResolver.Matches(catalog, primary.FullText, expected));
+            string title = await probe.ReadFrameRoiAsync(frame, area, expected);
+            Assert.True(CatalogNameResolver.Matches(catalog, title, expected), $"{width}px: {title}");
+            Assert.False(CatalogNameResolver.Matches(catalog, title, catalog[1].Name));
+            Assert.False(CatalogNameResolver.Matches(catalog, "OLIGHTE Baldr Pro R多功能手电", expected));
+        }
+    }
+
+    [WindowsOcrFact]
     public async Task Actual_grip_replenish_button_uses_production_pipeline_at_both_resolutions()
     {
         // 183 在 2026-10-03 10:21 的失败画面，只保存操作按钮区域。

@@ -161,8 +161,16 @@ public sealed class ScreenProbe
             iconMasks: ProductionListOcrLayout.IconMasks(area)));
     }
 
-    public async Task<string> ReadFrameRoiAsync(CapturedFrame frame, NRect roi, string expectedName) =>
-        (await ReadItemAsync(frame, roi, [expectedName], itemTitle: true)).FullText;
+    public async Task<string> ReadFrameRoiAsync(CapturedFrame frame, NRect roi, string expectedName)
+    {
+        var title = await ReadItemAsync(frame, roi, [expectedName], itemTitle: true);
+        if (CatalogNameResolver.Canonical(title.FullText) == CatalogNameResolver.Canonical(expectedName))
+            return title.FullText;
+        // 某些字体在 2x 缩放后会多出字母。只重新识别同一帧、同一区域，
+        // 不猜测名称；两个尺度都保持原置信度，最后仍由目录完整匹配确认。
+        _log.Debug("详情标题未完整匹配，使用 1.5x 复核：{Title}", title.FullText);
+        return (await ReadItemAsync(frame, roi, [expectedName], upscale: 1.5, itemTitle: true)).FullText;
+    }
 
     public async Task<string> ReadProductionButtonAsync(CapturedFrame frame, NRect roi)
     {
@@ -206,6 +214,15 @@ public sealed class ScreenProbe
         result = OcrMatchFilter.Filter(result, expectedNames, slot,
             line => SlotOcrLayout.IsCountdownText(line, roi, frame.Width, frame.Height))
             with { SourceText = raw.FullText };
+        if (itemTitle)
+        {
+            // 独立的乱码行可能使首次数量清理退出；筛除无关行后再处理完整
+            // 「名称 * 数量」，防止把数量当成名称。绝不删除名称里的字母。
+            var title = ItemTitleOcr.Normalize(result);
+            if (title.FullText != result.FullText)
+                _log.Debug("详情标题筛选后去除数量后缀：{Title}", title.FullText);
+            result = title with { SourceText = raw.FullText };
+        }
         _log.Debug("OCR 目标筛选(匹配度>{Threshold}%)：{Text}; 倒计时未读清={Unreadable}",
             OcrMatchFilter.MinimumMatchPercent, result.FullText.Replace('\n', '|'), result.HasUnreadableCountdown);
         if (result.HasTextBelowConfidence(minimumConfidence))
