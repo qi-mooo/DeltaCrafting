@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Principal;
 using System.Text;
 using Serilog;
 
@@ -18,21 +19,46 @@ public sealed class AutostartBrick
 
     public AutostartBrick(ILogger log) => _log = log.ForContext<AutostartBrick>();
 
-    public bool IsEnabled() => Run("/Query", "/TN", TaskName).ExitCode == 0;
+    public bool IsEnabled() => ReadTaskXml() is { } xml && AutostartTaskDefinition.IsEnabled(xml);
+
+    public void EnsureCurrent(string exePath)
+    {
+        string? xml = ReadTaskXml();
+        if (xml is null || !AutostartTaskDefinition.IsEnabled(xml)) return;
+        using var identity = WindowsIdentity.GetCurrent();
+        if (!AutostartTaskDefinition.IsCurrent(xml, exePath, CurrentUserSid(), identity.Name)) Enable(exePath);
+    }
+
+    private string? ReadTaskXml()
+    {
+        var r = Run("/Query", "/TN", TaskName, "/XML");
+        return r.ExitCode == 0 ? r.Output : null;
+    }
+
+    private static string CurrentUserSid()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return identity.User?.Value ?? throw new InvalidOperationException("无法获取自启任务用户。");
+    }
 
     public void Enable(string exePath)
     {
-        var r = Run("/Create", "/F", "/RL", "HIGHEST", "/SC", "ONLOGON",
-            "/TN", TaskName, "/TR", $"\"{exePath}\" --minimized");
-        if (r.ExitCode != 0)
-            throw new InvalidOperationException($"创建开机自启任务失败(退出码 {r.ExitCode}):{r.Output}");
-        _log.Information("已创建开机自启计划任务。");
+        string xmlPath = Path.Combine(Path.GetTempPath(), $"DeltaCrafter-autostart-{Guid.NewGuid():N}.xml");
+        try
+        {
+            File.WriteAllText(xmlPath, AutostartTaskDefinition.Build(exePath, CurrentUserSid()), Encoding.Unicode);
+            var r = Run("/Create", "/F", "/TN", TaskName, "/XML", xmlPath);
+            if (r.ExitCode != 0)
+                throw new InvalidOperationException($"创建开机自启任务失败(退出码 {r.ExitCode}):{r.Output}");
+            _log.Information("已配置当前用户登录后延迟 30 秒自启，失败后重试，不限制供电和运行时长。");
+        }
+        finally { File.Delete(xmlPath); }
     }
 
     public void Disable()
     {
         var r = Run("/Delete", "/F", "/TN", TaskName);
-        if (r.ExitCode != 0 && IsEnabled())
+        if (r.ExitCode != 0 && ReadTaskXml() is not null)
             throw new InvalidOperationException($"删除开机自启任务失败(退出码 {r.ExitCode}):{r.Output}");
         _log.Information("已移除开机自启计划任务。");
     }
@@ -54,8 +80,9 @@ public sealed class AutostartBrick
 
         using var p = Process.Start(psi)
             ?? throw new InvalidOperationException("无法启动 schtasks.exe。");
-        string output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+        var stdout = p.StandardOutput.ReadToEndAsync();
+        var stderr = p.StandardError.ReadToEndAsync();
         p.WaitForExit();
-        return (p.ExitCode, output.Trim());
+        return (p.ExitCode, (stdout.GetAwaiter().GetResult() + stderr.GetAwaiter().GetResult()).Trim());
     }
 }

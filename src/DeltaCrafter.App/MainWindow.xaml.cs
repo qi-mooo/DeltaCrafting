@@ -62,7 +62,8 @@ public sealed partial class MainWindow : Window
         if (!_exitRequested && AppHost.Current.Settings.CloseToTray)
         {
             e.Cancel = true;
-            sender.Hide();
+            if (AppHost.Current.IsTrayAvailable) sender.Hide();
+            else RestoreFromTray();
             return;
         }
         AppHost.Current.Shutdown();

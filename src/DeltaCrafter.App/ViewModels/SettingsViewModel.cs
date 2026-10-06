@@ -52,7 +52,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         _theme = theme;
         gamePath = S.GamePath;
         windowRuleText = DescribeRule();
-        try { _autostartEnabled = host.Autostart.IsEnabled(); }
+        try
+        {
+            _autostartEnabled = host.Autostart.IsEnabled();
+            if (_autostartEnabled) host.Autostart.EnsureCurrent(Environment.ProcessPath!);
+        }
         catch (Exception ex) { AutostartError = ex.Message; }
         host.DeviceApi.Changed += () =>
         {

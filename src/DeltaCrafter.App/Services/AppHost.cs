@@ -37,6 +37,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     public SteamStatusMonitor SteamStatus { get; }
     public AudioBridgeCoordinator AudioBridge { get; }
     public CancellationToken AppStopToken => _appStop.Token;
+    public bool IsTrayAvailable => _tray?.IsAvailable == true;
 
     public ShellViewModel ShellVm { get; }
     public OverviewViewModel OverviewVm { get; }
@@ -350,7 +351,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         DeviceApi.Apply();
         _tray = new TrayService(window,
             runNow: () => _ = Task.Run(() => Coordinator.RunOnceAsync("托盘触发", CancellationToken.None)),
-            exit: window.RequestExit);
+            exit: window.RequestExit, log: Log);
     }
 
     public void SaveSettings() => Store.Save(Paths.SettingsPath, Settings);
