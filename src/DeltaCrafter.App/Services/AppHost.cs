@@ -32,6 +32,12 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     public AutomationCoordinator Coordinator { get; }
     public UpdateService Updater { get; }
     public ProfitPlanService ProfitPlan { get; }
+    public DeviceApiService DeviceApi { get; }
+    public DataToolsService DataTools { get; } = new();
+    public SteamStatusMonitor SteamStatus { get; }
+    public AudioBridgeCoordinator AudioBridge { get; }
+    public CancellationToken AppStopToken => _appStop.Token;
+    public bool IsTrayAvailable => _tray?.IsAvailable == true;
 
     public ShellViewModel ShellVm { get; }
     public OverviewViewModel OverviewVm { get; }
@@ -44,6 +50,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     private ThemeService? _theme;
     private MainWindow? _mainWindow;
     private bool _isShutdown;
+    private readonly Task _audioTask;
 
     public static void Initialize() => Current = new AppHost();
 
@@ -79,9 +86,17 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
             Log.Information("制造计划配置已升级到 schema {Schema};旧版全局制造模式已迁移并移除。",
                 Plan.SchemaVersion);
         Catalog = Store.Load<ItemCatalog>(Paths.ItemsPath);
+        ApplyCachedItemMetadata();
+        var bundledPeriods = Store.Load<ItemCatalog>(Path.Combine(AppContext.BaseDirectory, "Data", "manufacture-periods.json"));
+        if (ManufacturePeriods.Merge(Catalog, bundledPeriods, overwrite: false) > 0)
+        {
+            File.Copy(Paths.ItemsPath, Paths.ItemsPath + ".before-periods.bak", overwrite: true);
+            Store.Save(Paths.ItemsPath, Catalog);
+        }
 
         var clock = new SystemClock();
-        var ocr = OcrBrick.CreateSimplifiedChinese(); // 缺中文包在此抛出,由 App 弹窗给指引
+        SteamStatus = new SteamStatusMonitor(new SteamActivityClient(), clock);
+        var ocr = new PaddleOcrBrick();
         WindowBrick = new GameWindowBrick();
         var capture = new ScreenCaptureBrick();
         var input = new InputBrick();
@@ -92,30 +107,74 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
 
         var probe = new ScreenProbe(WindowBrick, capture, ocr, input, LoadAnchors, Paths.ShotsDir, Log);
         var runner = new StepRunner(probe, Log);
-        var launch = new LaunchFlow(process, WindowBrick, probe, input, () => Settings, Log);
+        var launch = new LaunchFlow(process, WindowBrick, probe, input, runner, () => Settings, Log);
         var nav = new SpecOpsNavFlow(probe, runner);
-        var collect = new CollectFlow(probe, runner, input, this, Log);
-        var craft = new CraftStartFlow(probe, runner, input, Log);
+        var collect = new CollectFlow(probe, runner, input, this, this, Log);
+        var craft = new CraftStartFlow(probe, runner, input, this, Log);
         var abort = new AbortFlow(probe, runner, input, Log);
-        var scan = new CatalogScanFlow(probe, runner, input, Log);
+        var scan = new CatalogScanFlow(probe, runner, input, this, Log);
         var shutdown = new ShutdownFlow(process, WindowBrick, probe, runner, Log);
-        var engine = new ScheduleEngine(Store, Paths.StatePath, clock, Log);
+        var engine = new ScheduleEngine(Store, Paths.StatePath, clock, Log,
+            (key, name) => ManufacturePeriods.SecondsFor(ItemsFor(key), name, Settings.ManufactureApi.LevelFor(key)));
 
         Coordinator = new AutomationCoordinator(launch, nav, collect, craft, abort, scan, this,
             this, this, shutdown, engine, probe, WindowBrick, SleepGuard, () => Settings, () => Plan,
-            Notifier, clock, Log);
+            Notifier, clock, Log, prepareCraft: (plan, ct) => ProfitPlan!.PrepareCraftAsync(plan, ct));
 
         Updater = new UpdateService(this, new UpdateCoordinator(), Log);
+        AudioBridge = new AudioBridgeCoordinator(Paths.Root, Log);
 
         ShellVm = new ShellViewModel(Coordinator);
         OverviewVm = new OverviewViewModel(Coordinator, UiSink, this);
         PlanVm = new PlanViewModel(this);
         LogVm = new LogViewModel(this);
-        // 服务在 VM 之后构造(应用推荐时要刷新 PlanVm),循环随调度循环一起启动。
-        ProfitPlan = new ProfitPlanService(this, new ProfitPlanCoordinator(), Log);
+        // 推荐仅在制造前或手动刷新时查询;构造时不访问数据帝。
+        ProfitPlan = new ProfitPlanService(this, Log);
+        DeviceApi = new DeviceApiService(this);
 
         _ = Task.Run(() => Coordinator.RunSchedulerLoopAsync(_appStop.Token));
-        _ = Task.Run(() => ProfitPlan.RunLoopAsync(_appStop.Token));
+        _ = Task.Run(() => RunSteamStatusLoopAsync(_appStop.Token));
+        _audioTask = Task.Run(() => AudioBridge.RunAsync(_appStop.Token));
+    }
+
+    private void ApplyCachedItemMetadata()
+    {
+        if (!File.Exists(Paths.ItemMetadataPath)) return;
+        try
+        {
+            var metadata = Store.Load<ItemMetadataSnapshot>(Paths.ItemMetadataPath);
+            if (metadata.Items is null || metadata.Items.Count == 0)
+                throw new InvalidDataException("基础物品缓存为空。");
+            int changed = ItemMetadataCatalog.Apply(Catalog, metadata);
+            int retired = ItemMetadataCatalog.RemoveRetiredLegacyAmmo(Catalog);
+            if (changed == 0 && retired == 0) return;
+            File.Copy(Paths.ItemsPath, Paths.ItemsPath + ".metadata.bak", overwrite: true);
+            Store.Save(Paths.ItemsPath, Catalog);
+            Log.Information("已使用本地基础物品接口缓存补全 {Count} 个目录条目的元数据。", changed);
+            if (retired > 0) Log.Information("已移除 {Count} 个旧赛季弹药候选，原计划保持不变。", retired);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            Log.Warning("无法应用基础物品缓存:{Reason}", ex.Message);
+        }
+    }
+
+    private async Task RunSteamStatusLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (true)
+            {
+                if (Settings.DeviceApi.Enabled || Settings.SteamActivity.Enabled)
+                    await SteamStatus.RefreshAsync(Settings.SteamActivity, ct);
+                await Task.Delay(TimeSpan.FromSeconds(30), ct);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            Log.Error("Steam 状态显示更新已停止,请重启客户端。");
+        }
     }
 
     private void UpgradeDataFileIfNewer<T>(string fileName, string localPath, Func<T, int> revision)
@@ -151,18 +210,15 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         }
     }
 
-    private bool _restoreWindowAfterRun;
-
-    /// <summary>IAppWindowGuard:执行期间最小化助手窗口(仅当此刻可见),结束后恢复。
-    /// 可在一轮执行中被反复调用(观察每遍都会再压一次,防用户中途唤起窗口盖住游戏):
-    /// 恢复意愿只置位不清零(闩锁),窗口已最小化时为无操作,结束时恢复到「曾可见」状态。</summary>
+    /// <summary>IAppWindowGuard:执行期间最小化助手窗口(仅当此刻可见),结束后最大化。
+    /// 可在一轮执行中被反复调用,避免用户中途唤起窗口盖住游戏。
+    /// 从托盘或自启后台开始的任务,结束后同样显示并最大化窗口。</summary>
     public void MinimizeForRun()
     {
         var window = _mainWindow;
         window?.DispatcherQueue.TryEnqueue(() =>
         {
             if (!window.AppWindow.IsVisible) return;
-            _restoreWindowAfterRun = true;
             if (window.AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter p)
                 p.Minimize();
         });
@@ -173,16 +229,50 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         var window = _mainWindow;
         window?.DispatcherQueue.TryEnqueue(() =>
         {
-            if (!_restoreWindowAfterRun) return;
-            _restoreWindowAfterRun = false;
-            if (window.AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter p)
-                p.Restore();
+            window.RestoreFromTray();
+            Log.Information("任务结束，助手窗口已显示并最大化。");
         });
     }
 
     /// <summary>目录读写共用一把锁:合并写入在自动化线程,查询在 UI 线程与自动化线程
     /// 都有(计划页解析、利润推荐应用、槽位名归一化),防止枚举中变更导致崩溃。</summary>
     private readonly object _catalogGate = new();
+
+    public IReadOnlyList<CatalogItem> ItemsFor(FacilityKey key)
+    {
+        lock (_catalogGate) return Catalog.For(key).ToArray();
+    }
+
+    public void ReplaceCatalog(ItemCatalog catalog)
+    {
+        lock (_catalogGate)
+        {
+            // 接口仍缺失的补充配方保留已缓存周期，新响应提供的周期优先。
+            ManufacturePeriods.Merge(catalog, Catalog, overwrite: false);
+            File.Copy(Paths.ItemsPath, Paths.ItemsPath + ".before-api.bak", overwrite: true);
+            Store.Save(Paths.ItemsPath, catalog);
+            Catalog.Facilities = catalog.Facilities;
+            Catalog.Source = catalog.Source;
+            Catalog.UpdatedAt = catalog.UpdatedAt;
+            Catalog.Revision = catalog.Revision;
+        }
+        Coordinator.RefreshRecipeDurations();
+        PlanVm.RebuildFromCatalog();
+    }
+
+    public void MergeManufacturePeriods(ManufactureMarketSnapshot snapshot)
+    {
+        var periods = new ItemCatalog { Facilities = new()
+        {
+            [FacilityKeys.JsonKey(snapshot.Facility)] = snapshot.Items.Select(i => i.ToCatalogItem(snapshot.Level)).ToList(),
+        } };
+        lock (_catalogGate)
+        {
+            if (ManufacturePeriods.Merge(Catalog, periods, overwrite: true) > 0)
+                Store.Save(Paths.ItemsPath, Catalog);
+        }
+        Coordinator.RefreshRecipeDurations();
+    }
 
     /// <summary>
     /// ICatalogSink:扫描结果合并入目录,存盘并刷新计划页下拉。
@@ -253,9 +343,10 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         _theme = new ThemeService(window);
         _theme.Apply(Settings.Theme);
         SettingsVm = new SettingsViewModel(this, _theme);
+        DeviceApi.Apply();
         _tray = new TrayService(window,
             runNow: () => _ = Task.Run(() => Coordinator.RunOnceAsync("托盘触发", CancellationToken.None)),
-            exit: window.RequestExit);
+            exit: window.RequestExit, log: Log);
     }
 
     public void SaveSettings() => Store.Save(Paths.SettingsPath, Settings);
@@ -285,6 +376,9 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         _isShutdown = true;
         Log.Information("应用退出。");
         _appStop.Cancel();
+        try { _audioTask.Wait(TimeSpan.FromSeconds(5)); }
+        catch (Exception ex) { Log.Warning(ex, "音频桥退出时发生异常。"); }
+        DeviceApi.Dispose();
         _tray?.Dispose();
         SleepGuard.Dispose();
         Notifier.Unregister();

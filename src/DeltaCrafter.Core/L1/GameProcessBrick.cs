@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using DeltaCrafter.Core.L1.Win32;
+using DeltaCrafter.Core.L0;
 using Serilog;
 
 namespace DeltaCrafter.Core.L1;
@@ -13,6 +14,43 @@ public sealed class GameProcessBrick
     private readonly ILogger _log;
 
     public GameProcessBrick(ILogger log) => _log = log.ForContext<GameProcessBrick>();
+
+    public static GameProcessIdentity? ReadIdentity(int pid)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return !process.HasExited && process.MainModule?.FileName is { } path
+                ? new(pid, process.StartTime.ToUniversalTime(), path) : null;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException
+            or ArgumentException or NotSupportedException) { return null; }
+    }
+
+    /// <summary>通过本机 Steam 启动已校验的本地安装;窗口仍须通过进程路径校验。</summary>
+    public void LaunchSteam(SteamGameInstallation installation)
+    {
+        try { Process.Start(CreateSteamStartInfo(installation))?.Dispose(); }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            throw new InvalidOperationException("无法启动本机 Steam,请确认 Steam 客户端可正常打开并已登录。", ex);
+        }
+        _log.Information("已请求本机 Steam 启动 App {AppId},游戏目录:{Directory}",
+            installation.AppId, installation.InstallDirectory);
+    }
+
+    internal static ProcessStartInfo CreateSteamStartInfo(SteamGameInstallation installation)
+    {
+        var info = new ProcessStartInfo
+        {
+            FileName = installation.SteamExe,
+            WorkingDirectory = Path.GetDirectoryName(installation.SteamExe)!,
+            UseShellExecute = true,
+        };
+        info.ArgumentList.Add("-applaunch");
+        info.ArgumentList.Add(SteamInstallBrick.NormalizeAppId(installation.AppId));
+        return info;
+    }
 
     /// <summary>启动游戏/启动器。路径未配置或不存在直接抛错——这类配置错误必须暴露给用户。</summary>
     public void Launch(string gamePath)

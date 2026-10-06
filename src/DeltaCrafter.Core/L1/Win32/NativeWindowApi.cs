@@ -8,6 +8,14 @@ internal struct RECT { public int Left, Top, Right, Bottom; }
 [StructLayout(LayoutKind.Sequential)]
 internal struct POINT { public int X, Y; }
 
+[StructLayout(LayoutKind.Sequential)]
+internal struct WINDOWPLACEMENT
+{
+    public uint Length, Flags, ShowCmd;
+    public POINT MinPosition, MaxPosition;
+    public RECT NormalPosition;
+}
+
 /// <summary>
 /// 窗口查找/几何/前台化相关 Win32 声明。
 /// 约束:本应用清单声明 PerMonitorV2,因此这里所有坐标均为物理像素,禁止再做 DPI 换算。
@@ -51,6 +59,9 @@ internal static partial class NativeWindowApi
 
     [DllImport("user32.dll")]
     internal static extern bool IsIconic(nint hWnd);
+
+    [DllImport("user32.dll")]
+    internal static extern bool GetWindowPlacement(nint hWnd, ref WINDOWPLACEMENT placement);
 
     [DllImport("user32.dll")]
     internal static extern int GetSystemMetrics(int nIndex);

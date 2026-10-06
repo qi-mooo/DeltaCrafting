@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DeltaCrafter.App.Services;
@@ -18,6 +19,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly AppHost _host;
     private readonly ThemeService _theme;
     private bool _autostartEnabled;
+
+    [ObservableProperty] private string steamActivityStatus = "尚未检查";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasAutostartError))]
@@ -49,17 +52,210 @@ public sealed partial class SettingsViewModel : ObservableObject
         _theme = theme;
         gamePath = S.GamePath;
         windowRuleText = DescribeRule();
-        try { _autostartEnabled = host.Autostart.IsEnabled(); }
+        try
+        {
+            _autostartEnabled = host.Autostart.IsEnabled();
+            if (_autostartEnabled) host.Autostart.EnsureCurrent(Environment.ProcessPath!);
+        }
         catch (Exception ex) { AutostartError = ex.Message; }
+        host.DeviceApi.Changed += () =>
+        {
+            OnPropertyChanged(nameof(DeviceApiStatus));
+            OnPropertyChanged(nameof(DeviceFirmwareStatus));
+        };
+        host.ProfitPlan.Changed += () =>
+        {
+            OnPropertyChanged(nameof(ManufactureDataStatus));
+            RefreshManufactureDataCommand.NotifyCanExecuteChanged();
+        };
     }
 
     private AppSettings S => _host.Settings;
     private void Save() => _host.SaveSettings();
 
+    public string ManufactureToken
+    {
+        get => S.ManufactureApi.Token;
+        set
+        {
+            string token = value?.Trim() ?? "";
+            if (token == S.ManufactureApi.Token) return;
+            S.ManufactureApi.Token = token;
+            Save(); _host.ProfitPlan.SettingsChanged(); OnPropertyChanged();
+        }
+    }
+
+    public double TechLevel { get => S.ManufactureApi.LevelFor(FacilityKey.TechCenter); set => SetLevel(FacilityKey.TechCenter, value); }
+    public double WorkbenchLevel { get => S.ManufactureApi.LevelFor(FacilityKey.Workbench); set => SetLevel(FacilityKey.Workbench, value); }
+    public double PharmacyLevel { get => S.ManufactureApi.LevelFor(FacilityKey.PharmacyLab); set => SetLevel(FacilityKey.PharmacyLab, value); }
+    public double ArmorLevel { get => S.ManufactureApi.LevelFor(FacilityKey.ArmorStation); set => SetLevel(FacilityKey.ArmorStation, value); }
+
+    private void SetLevel(FacilityKey key, double value)
+    {
+        if (!double.IsFinite(value)) return;
+        int level = Math.Clamp((int)value, 1, 3);
+        if (S.ManufactureApi.LevelFor(key) == level) return;
+        S.ManufactureApi.FacilityLevels[FacilityKeys.JsonKey(key)] = level;
+        Save(); _host.ProfitPlan.SettingsChanged();
+    }
+
+    public string ManufactureDataStatus => _host.ProfitPlan.DataRefresh.Detail;
+    private bool CanRefreshManufactureData() => !_host.ProfitPlan.DataRefresh.IsRunning;
+
+    [RelayCommand(CanExecute = nameof(CanRefreshManufactureData))]
+    private void RefreshManufactureData() => _host.ProfitPlan.TryRefreshData();
+
+    public string DeviceApiStatus => _host.DeviceApi.StatusText;
+    public string DeviceFirmwareStatus => _host.DeviceApi.FirmwareStatus;
+
+    [RelayCommand]
+    private async Task ImportDeviceFirmwareAsync()
+    {
+        nint hwnd = App.MainWindowRef is { } w ? WinRT.Interop.WindowNative.GetWindowHandle(w) : 0;
+        string? file = Win32Dialogs.PickFirmwareFile(hwnd);
+        if (file is not null) await _host.DeviceApi.ImportFirmwareAsync(file);
+    }
+    public string DeviceApiKey => S.DeviceApi.ApiKey;
+
+    public bool DeviceApiEnabled
+    {
+        get => S.DeviceApi.Enabled;
+        set
+        {
+            if (S.DeviceApi.Enabled == value) return;
+            if (value && string.IsNullOrEmpty(S.DeviceApi.ApiKey)) GenerateDeviceApiKey();
+            S.DeviceApi.Enabled = value;
+            ApplyDeviceApi();
+            OnPropertyChanged();
+        }
+    }
+
+    public double DeviceApiPort
+    {
+        get => S.DeviceApi.Port;
+        set
+        {
+            if (!double.IsFinite(value)) return;
+            int port = (int)Math.Clamp(value, 1024, 65535);
+            if (port == S.DeviceApi.Port) return;
+            S.DeviceApi.Port = port;
+            ApplyDeviceApi();
+            OnPropertyChanged();
+        }
+    }
+
+    public bool DeviceApiAllowControl
+    {
+        get => S.DeviceApi.AllowControl;
+        set
+        {
+            if (S.DeviceApi.AllowControl == value) return;
+            S.DeviceApi.AllowControl = value;
+            ApplyDeviceApi();
+            OnPropertyChanged();
+        }
+    }
+
+    [RelayCommand]
+    private void GenerateDeviceApiKey()
+    {
+        S.DeviceApi.ApiKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        ApplyDeviceApi();
+        OnPropertyChanged(nameof(DeviceApiKey));
+    }
+
+    [RelayCommand]
+    private void CopyDeviceApiKey()
+    {
+        if (string.IsNullOrEmpty(DeviceApiKey)) GenerateDeviceApiKey();
+        var data = new Windows.ApplicationModel.DataTransfer.DataPackage();
+        data.SetText(DeviceApiKey);
+        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data);
+    }
+
+    private void ApplyDeviceApi()
+    {
+        Save();
+        _host.DeviceApi.Apply();
+        OnPropertyChanged(nameof(DeviceApiStatus));
+    }
+
     partial void OnGamePathChanged(string value)
     {
         S.GamePath = value ?? "";
         Save();
+    }
+
+    public int LaunchModeIndex
+    {
+        get => (int)S.LaunchMode;
+        set
+        {
+            if (value is < 0 or > 1 || value == (int)S.LaunchMode) return;
+            S.LaunchMode = (GameLaunchMode)value;
+            Save();
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(LauncherSettingsVisibility));
+            OnPropertyChanged(nameof(SteamSettingsVisibility));
+        }
+    }
+
+    public Visibility LauncherSettingsVisibility => S.LaunchMode == GameLaunchMode.Launcher ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility SteamSettingsVisibility => S.LaunchMode == GameLaunchMode.Steam ? Visibility.Visible : Visibility.Collapsed;
+
+    public string SteamAppId
+    {
+        get => S.SteamAppId;
+        set { S.SteamAppId = value?.Trim() ?? ""; Save(); OnPropertyChanged(); }
+    }
+
+    public string SteamPathDescription => string.IsNullOrWhiteSpace(S.SteamPath) ? "自动检测本机 Steam 客户端" : S.SteamPath;
+
+    public bool SteamActivityEnabled
+    {
+        get => S.SteamActivity.Enabled;
+        set { S.SteamActivity.Enabled = value; Save(); OnPropertyChanged(); }
+    }
+
+    public string SteamActivityId
+    {
+        get => S.SteamActivity.SteamId;
+        set { S.SteamActivity.SteamId = value?.Trim() ?? ""; Save(); OnPropertyChanged(); SteamActivityStatus = "尚未检查"; }
+    }
+
+    public string SteamActivityApiKey
+    {
+        get => S.SteamActivity.ApiKey;
+        set { S.SteamActivity.ApiKey = value?.Trim() ?? ""; Save(); OnPropertyChanged(); SteamActivityStatus = "尚未检查"; }
+    }
+
+    [RelayCommand]
+    private async Task CheckSteamActivityAsync()
+    {
+        string key = SteamActivityApiKey, id = SteamActivityId;
+        SteamActivityStatus = "正在查询 Steam…";
+        var result = await new SteamActivityClient().CheckAsync(key, id, CancellationToken.None);
+        if (key != SteamActivityApiKey || id != SteamActivityId) return;
+        SteamActivityStatus = result.Detail;
+    }
+
+    [RelayCommand]
+    private void BrowseSteamPath()
+    {
+        nint hwnd = App.MainWindowRef is { } w ? WinRT.Interop.WindowNative.GetWindowHandle(w) : 0;
+        var picked = Win32Dialogs.PickExeFile(hwnd);
+        if (picked is null) return;
+        S.SteamPath = picked;
+        Save();
+        OnPropertyChanged(nameof(SteamPathDescription));
+    }
+
+    [RelayCommand]
+    private void ResetSteamPath()
+    {
+        S.SteamPath = "";
+        Save();
+        OnPropertyChanged(nameof(SteamPathDescription));
     }
 
     public double LaunchTimeoutSeconds

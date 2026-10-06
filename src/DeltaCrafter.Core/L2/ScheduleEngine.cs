@@ -15,28 +15,66 @@ public sealed class ScheduleEngine
     private readonly string _statePath;
     private readonly IClock _clock;
     private readonly ILogger _log;
+    private readonly Func<FacilityKey, string, long?>? _recipeDuration;
+    private readonly object _stateGate = new();
 
     public ScheduleState State { get; }
 
-    public ScheduleEngine(JsonStoreBrick store, string statePath, IClock clock, ILogger log)
+    public ScheduleEngine(JsonStoreBrick store, string statePath, IClock clock, ILogger log,
+        Func<FacilityKey, string, long?>? recipeDuration = null)
     {
         _store = store;
         _statePath = statePath;
         _clock = clock;
         _log = log.ForContext<ScheduleEngine>();
+        _recipeDuration = recipeDuration;
         State = store.LoadOrCreate(statePath, ScheduleState.CreateDefault);
+        RefreshRecipeDurations();
     }
 
     public void RecordObservation(FacilityKey key, FacilityPhase phase, string itemName,
-        DateTimeOffset? readyAt, string? manualReason)
+        DateTimeOffset? readyAt, string? manualReason, bool startedNow = false)
     {
-        var rt = State.For(key);
-        rt.Phase = phase;
-        rt.ItemName = itemName;
-        rt.ReadyAt = readyAt;
-        rt.ManualReason = manualReason;
-        rt.ObservedAt = _clock.Now;
-        Save();
+        lock (_stateGate)
+        {
+            var rt = State.For(key);
+            bool sameCraft = phase == FacilityPhase.Crafting && rt.Phase == phase
+                && rt.ReadyAt is { } previousReady && readyAt is { } nextReady
+                && Math.Abs((nextReady - previousReady).TotalSeconds) <= 120;
+            // OCR can spell the same item differently; a continuous crafting
+            // observation with the same completion time retains its known start.
+            rt.StartedAt = startedNow && phase == FacilityPhase.Crafting ? _clock.Now
+                : sameCraft ? rt.StartedAt : null;
+            rt.RecipeTotalSeconds = phase == FacilityPhase.Crafting
+                ? _recipeDuration?.Invoke(key, itemName)
+                    ?? (sameCraft && !startedNow && CatalogNameResolver.Canonical(rt.ItemName)
+                        == CatalogNameResolver.Canonical(itemName) ? rt.RecipeTotalSeconds : null)
+                : null;
+            rt.Phase = phase;
+            rt.ItemName = itemName;
+            rt.ReadyAt = readyAt;
+            rt.ManualReason = manualReason;
+            rt.ObservedAt = _clock.Now;
+            Save();
+        }
+    }
+
+    /// <summary>目录刷新/升级后补齐现有任务周期，保持 OCR 完成时刻和调度状态。</summary>
+    public void RefreshRecipeDurations()
+    {
+        if (_recipeDuration is null) return;
+        lock (_stateGate)
+        {
+            bool changed = false;
+            foreach (var rt in State.Facilities.Where(r => r.Phase == FacilityPhase.Crafting))
+            {
+                var seconds = _recipeDuration(rt.Key, rt.ItemName);
+                if (seconds is not > 0 || rt.RecipeTotalSeconds == seconds) continue;
+                rt.RecipeTotalSeconds = seconds;
+                changed = true;
+            }
+            if (changed) Save();
+        }
     }
 
     /// <summary>
@@ -46,43 +84,73 @@ public sealed class ScheduleEngine
     /// </summary>
     public DateTimeOffset? ComputeNextRunAt(CraftPlanConfig plan, AppSettings settings)
     {
-        var now = _clock.Now;
-        DateTimeOffset? next = null;
-        foreach (var fp in plan.Facilities.Where(f => f.Enabled))
+        lock (_stateGate)
         {
-            var rt = State.For(fp.Key);
-            DateTimeOffset? candidate = rt.Phase switch
+            var now = _clock.Now;
+            DateTimeOffset? next = null;
+            foreach (var fp in plan.Facilities.Where(f => f.Enabled))
             {
-                FacilityPhase.Crafting when rt.ReadyAt is { } ready =>
-                    ready + TimeSpan.FromSeconds(settings.RunBufferSeconds),
-                FacilityPhase.Crafting => now, // 制造中但没有读数,重新观察
-                FacilityPhase.ReadyToCollect or FacilityPhase.Idle or FacilityPhase.Unknown => now,
-                FacilityPhase.NeedsManual => null,
-                _ => null,
-            };
-            if (candidate is { } c && (next is null || c < next)) next = c;
-        }
+                var rt = State.For(fp.Key);
+                DateTimeOffset? candidate = rt.Phase switch
+                {
+                    FacilityPhase.Crafting when rt.ReadyAt is { } ready =>
+                        ready + TimeSpan.FromSeconds(settings.RunBufferSeconds),
+                    FacilityPhase.Crafting => now, // 制造中但没有读数,重新观察
+                    FacilityPhase.ReadyToCollect or FacilityPhase.Idle or FacilityPhase.Unknown => now,
+                    FacilityPhase.NeedsManual => null,
+                    _ => null,
+                };
+                if (candidate is { } c && (next is null || c < next)) next = c;
+            }
 
-        if (next is { } n && State.FailureBackoffUntil is { } backoff && backoff > n)
-            next = backoff;
-        return next;
+            if (next is { } n && State.FailureBackoffUntil is { } backoff && backoff > n)
+                next = backoff;
+            return next;
+        }
     }
 
     public void MarkRunStarted()
     {
-        State.LastRunAt = _clock.Now;
-        Save();
+        lock (_stateGate)
+        {
+            State.LastRunAt = _clock.Now;
+            Save();
+        }
     }
 
     public void MarkRunFinished(string summary, bool failed, int failureRetryMinutes)
     {
-        State.LastRunSummary = summary;
-        State.LastRunFailed = failed;
-        State.FailureBackoffUntil = failed ? _clock.Now.AddMinutes(failureRetryMinutes) : null;
-        if (failed)
-            _log.Warning("本轮失败,{Minutes} 分钟后才会再次自动尝试。", failureRetryMinutes);
-        Save();
+        lock (_stateGate)
+        {
+            State.LastRunSummary = summary;
+            State.LastRunFailed = failed;
+            State.FailureBackoffUntil = failed ? _clock.Now.AddMinutes(failureRetryMinutes) : null;
+            if (failed)
+                _log.Warning("本轮失败,{Minutes} 分钟后才会再次自动尝试。", failureRetryMinutes);
+            Save();
+        }
     }
 
-    public void Save() => _store.Save(_statePath, State);
+    public ScheduleState Snapshot()
+    {
+        lock (_stateGate)
+            return new ScheduleState
+            {
+                LastRunAt = State.LastRunAt,
+                LastRunSummary = State.LastRunSummary,
+                LastRunFailed = State.LastRunFailed,
+                FailureBackoffUntil = State.FailureBackoffUntil,
+                Facilities = State.Facilities.Select(f => new FacilityRuntime
+                {
+                    Key = f.Key, Phase = f.Phase, ItemName = f.ItemName,
+                    ReadyAt = f.ReadyAt, StartedAt = f.StartedAt, RecipeTotalSeconds = f.RecipeTotalSeconds,
+                    ManualReason = f.ManualReason, ObservedAt = f.ObservedAt,
+                }).ToList(),
+            };
+    }
+
+    public void Save()
+    {
+        lock (_stateGate) _store.Save(_statePath, State);
+    }
 }

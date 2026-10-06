@@ -33,8 +33,11 @@ public sealed partial class AutomationCoordinator : IDisposable
     private readonly INotifier _notifier;
     private readonly IClock _clock;
     private readonly ILogger _log;
+    private readonly SteamActivityGuard _steamActivity;
+    private readonly Func<FacilityPlan, CancellationToken, Task>? _prepareCraft;
     private readonly SemaphoreSlim _runLock = new(1, 1);
     private CancellationTokenSource? _runCts;
+    private readonly object _runCtsGate = new();
 
     public event Action<CoordinatorStatus>? StatusChanged;
     public CoordinatorStatus Status { get; private set; } = new(EngineMode.Idle, "空闲", null);
@@ -46,7 +49,8 @@ public sealed partial class AutomationCoordinator : IDisposable
         ScheduleEngine engine,
         ScreenProbe probe, GameWindowBrick windowBrick, SleepGuardBrick sleepGuard,
         Func<AppSettings> settings, Func<CraftPlanConfig> plan, INotifier notifier,
-        IClock clock, ILogger log)
+        IClock clock, ILogger log, SteamActivityGuard? steamActivity = null,
+        Func<FacilityPlan, CancellationToken, Task>? prepareCraft = null)
     {
         _launch = launch; _nav = nav; _collect = collect; _craft = craft; _abort = abort;
         _scan = scan; _catalogSink = catalogSink; _catalog = catalogLookup;
@@ -55,19 +59,24 @@ public sealed partial class AutomationCoordinator : IDisposable
         _engine = engine; _probe = probe; _windowBrick = windowBrick; _sleepGuard = sleepGuard;
         _settings = settings; _plan = plan; _notifier = notifier; _clock = clock;
         _log = log.ForContext<AutomationCoordinator>();
+        _steamActivity = steamActivity ?? new SteamActivityGuard(new SteamActivityClient(), clock, launch.HasAssistantStartedGame);
+        _prepareCraft = prepareCraft;
     }
 
     /// <summary>UI 读取的设施状态快照(浅拷贝,避免与执行线程共享可变对象)。</summary>
-    public IReadOnlyList<FacilityRuntime> FacilitySnapshot() =>
-        _engine.State.Facilities.Select(f => new FacilityRuntime
-        {
-            Key = f.Key, Phase = f.Phase, ItemName = f.ItemName,
-            ReadyAt = f.ReadyAt, ManualReason = f.ManualReason, ObservedAt = f.ObservedAt,
-        }).ToList();
+    public IReadOnlyList<FacilityRuntime> FacilitySnapshot() => _engine.Snapshot().Facilities;
+
+    public ScheduleState ScheduleSnapshot() => _engine.Snapshot();
+
+    public void RefreshRecipeDurations()
+    {
+        _engine.RefreshRecipeDurations();
+        StatusChanged?.Invoke(Status);
+    }
 
     public (DateTimeOffset? LastRunAt, string? Summary, bool Failed) LastRunInfo()
     {
-        var s = _engine.State;
+        var s = _engine.Snapshot();
         return (s.LastRunAt, s.LastRunSummary, s.LastRunFailed);
     }
 
@@ -80,6 +89,7 @@ public sealed partial class AutomationCoordinator : IDisposable
     /// 手动),避免安装程序在半截制造流程中结束游戏进程。可逆:更新失败即解除。
     /// 已在执行的一轮不受影响——调用方应等其自然结束。</summary>
     private volatile bool _runsBlocked;
+    public bool RunsBlocked => _runsBlocked;
     public async Task BlockNewRunsAndWaitAsync(CancellationToken ct)
     {
         _runsBlocked = true;
@@ -125,21 +135,21 @@ public sealed partial class AutomationCoordinator : IDisposable
             while (await timer.WaitForNextTickAsync(appStop))
             {
                 var s = _settings();
-                var next = _engine.ComputeNextRunAt(_plan(), s);
+                var waiting = WaitingStatus();
+                var next = waiting.NextRunAt;
                 _sleepGuard.SetActive(IsRunning || (s.AutoLoopEnabled && s.PreventSleepWhileWaiting));
                 if (!IsRunning)
-                    Publish(s.AutoLoopEnabled
-                        ? new CoordinatorStatus(EngineMode.WaitingSchedule, "等待下次执行", next)
-                        : new CoordinatorStatus(EngineMode.Idle, "自动循环未开启", null));
+                    Publish(waiting);
                 if (s.AutoLoopEnabled && next is { } n && !IsRunning && !_runsBlocked)
                 {
                     if (_clock.Now >= n)
                         _ = RunOnceAsync("定时触发", CancellationToken.None);
-                    else if (_clock.Now >= n.AddSeconds(-PrewarmLeadSeconds)
+                    else if (!s.SteamActivity.Enabled && _clock.Now >= n.AddSeconds(-PrewarmLeadSeconds)
                              && _prewarmedFor != n
-                             && _windowBrick.FindGameClient(s.WindowMatch) is null)
+                             && (s.LaunchMode == GameLaunchMode.Steam || _windowBrick.FindGameClient(s.WindowMatch) is null))
                     {
                         // 每个目标时刻只尝试一次预启动;失败会通知,正式轮到点仍会自行启动。
+                        // Steam 本机安装检查交给受保护的 LaunchFlow,避免配置错误终止调度循环。
                         _prewarmedFor = n;
                         _ = PrewarmAsync();
                     }
@@ -147,6 +157,21 @@ public sealed partial class AutomationCoordinator : IDisposable
             }
         }
         catch (OperationCanceledException) { /* 应用退出 */ }
+    }
+
+    internal CoordinatorStatus WaitingStatus()
+    {
+        var settings = _settings();
+        var next = settings.AutoLoopEnabled ? _engine.ComputeNextRunAt(_plan(), settings) : null;
+        if (_steamActivity.GetBlock(settings.SteamActivity) is { } block)
+        {
+            if (next is { } n && n < block.RetryAt) next = block.RetryAt;
+            return new(settings.AutoLoopEnabled ? EngineMode.WaitingSchedule : EngineMode.Idle,
+                $"{block.Detail}; {block.RetryAt:HH:mm:ss} 后重试", next);
+        }
+        return settings.AutoLoopEnabled
+            ? new(EngineMode.WaitingSchedule, "等待下次执行", next)
+            : new(EngineMode.Idle, "自动循环未开启", null);
     }
 
     /// <summary>预启动:只把游戏带到大厅就收手,不进特勤处、不动任何设施。
@@ -160,7 +185,10 @@ public sealed partial class AutomationCoordinator : IDisposable
                 report.Add("游戏已预启动至大厅,等待到点执行");
             });
 
-    public void RequestStop() => _runCts?.Cancel();
+    public void RequestStop()
+    {
+        lock (_runCtsGate) _runCts?.Cancel();
+    }
 
     /// <summary>中止指定设施的当前制造(总览页「取消」)。成功后把该设施置为空闲,
     /// 下一轮会按(修正后的)计划重新开工。不自动关游戏——留给用户核对/改物品。</summary>
@@ -177,13 +205,23 @@ public sealed partial class AutomationCoordinator : IDisposable
             });
 
     public Task<RunReport> RunOnceAsync(string trigger, CancellationToken external) =>
-        ExecuteGuardedAsync(trigger, affectsSchedule: true, requiresCalibration: true, RunRoundAsync);
+        ExecuteGuardedAsync(trigger, affectsSchedule: true, requiresCalibration: true, RunRoundAsync, external);
 
     /// <summary>「识别当前任务」:上号观察四个设施,把画面上的状态/物品/剩余时间原样写入调度,
     /// 不领取、不开工。面向首次接管——特勤处里已有制造中的任务时,先同步进度再进入循环;
     /// 画面即事实:之前的「需人工」标记也会被本次观察结果覆盖。结束后按设置处置游戏。</summary>
     public Task<RunReport> SyncFacilitiesAsync(string trigger, CancellationToken external) =>
-        ExecuteGuardedAsync(trigger, affectsSchedule: true, requiresCalibration: true, SyncRoundAsync);
+        ExecuteGuardedAsync(trigger, affectsSchedule: true, requiresCalibration: true, SyncRoundAsync, external);
+
+    public Task<RunReport> CloseGameAsync(CancellationToken external = default) =>
+        ExecuteGuardedAsync("关闭本机游戏", affectsSchedule: false, requiresCalibration: false, async (report, ct) =>
+        {
+            Publish(new(EngineMode.Running, "正在关闭本机游戏…", null));
+            var game = _launch.FindRunningClient(includeMinimized: true);
+            if (game is not null) await _shutdown.ApplyAsync(AfterRunAction.CloseGame, game.Hwnd, ct);
+            _steamActivity.ClearBlock();
+            report.Add(game is null ? "本机游戏未运行" : "本机游戏已关闭");
+        }, external, bypassSteam: true, manageWindow: false);
 
     private async Task SyncRoundAsync(RunReport report, CancellationToken ct)
     {
@@ -273,8 +311,8 @@ public sealed partial class AutomationCoordinator : IDisposable
         {
             var o = final[fp.Key];
             string item = DisplayItem(fp.Key, o.ItemName);
-            _engine.RecordObservation(fp.Key, o.Phase,
-                item.Length > 0 ? item : fp.ItemName,
+            // 未识别出当前物品时不能拿下一轮计划替代，否则会套用错误的制造周期。
+            _engine.RecordObservation(fp.Key, o.Phase, item,
                 o.Phase == FacilityPhase.Crafting && o.Remaining is { } r ? _clock.Now + r : null,
                 null);
         }
@@ -286,6 +324,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         RunReport report, HashSet<FacilityKey> blocked, CancellationToken ct)
     {
         string name = FacilityKeys.DisplayName(fp.Key);
+        await PrepareCraftAsync(fp, ct);
         if (string.IsNullOrWhiteSpace(fp.ItemName))
         {
             _engine.RecordObservation(fp.Key, FacilityPhase.NeedsManual, "", null, "未配置制造物品");
@@ -298,6 +337,8 @@ public sealed partial class AutomationCoordinator : IDisposable
             autoReplenishMaterials, ct);
         if (result.Started)
         {
+            _engine.RecordObservation(fp.Key, FacilityPhase.Crafting, fp.ItemName,
+                _clock.Now + result.Remaining!.Value, null, startedNow: true);
             report.Add($"{name}已开始「{fp.ItemName}」(剩余 {Fmt(result.Remaining!.Value)})");
         }
         else
@@ -308,9 +349,20 @@ public sealed partial class AutomationCoordinator : IDisposable
         }
     }
 
-    private async Task<RunReport> ExecuteGuardedAsync(string trigger, bool affectsSchedule,
-        bool requiresCalibration, Func<RunReport, CancellationToken, Task> body)
+    internal Task PrepareCraftAsync(FacilityPlan plan, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
+        if (plan.Mode != CraftMode.HourlyProfit) return Task.CompletedTask;
+        Publish(new(EngineMode.Running, $"查询{FacilityKeys.DisplayName(plan.Key)}每小时利润…", null));
+        return _prepareCraft?.Invoke(plan, ct)
+            ?? throw new InvalidOperationException("制造前行情查询服务未配置。");
+    }
+
+    private async Task<RunReport> ExecuteGuardedAsync(string trigger, bool affectsSchedule,
+        bool requiresCalibration, Func<RunReport, CancellationToken, Task> body,
+        CancellationToken external = default, bool bypassSteam = false, bool manageWindow = true)
+    {
+        external.ThrowIfCancellationRequested();
         var report = new RunReport(trigger);
         if (_runsBlocked)
         {
@@ -331,11 +383,23 @@ public sealed partial class AutomationCoordinator : IDisposable
             report.Add("更新安装进行中,本次触发被忽略");
             return report;
         }
-        _runCts = new CancellationTokenSource();
-        _sleepGuard.SetActive(true);
-        _windowGuard.MinimizeForRun(); // 防止助手窗口盖住游戏,污染屏幕拷贝识别
+        lock (_runCtsGate) _runCts = CancellationTokenSource.CreateLinkedTokenSource(external);
+        bool started = false;
         try
         {
+            _runCts.Token.ThrowIfCancellationRequested();
+            if (!bypassSteam && await _steamActivity.CheckAsync(_settings().SteamActivity, _runCts.Token) is { } block)
+            {
+                report.Add($"{block.Detail}; 本次未执行,5 分钟后重试");
+                _log.Information("[{Trigger}]暂缓: {Reason};下次检查 {RetryAt:HH:mm:ss}。",
+                    trigger, block.Detail, block.RetryAt);
+                Publish(WaitingStatus());
+                return report;
+            }
+            _runCts.Token.ThrowIfCancellationRequested();
+            _sleepGuard.SetActive(true);
+            started = true;
+            if (manageWindow) _windowGuard.MinimizeForRun(); // 防止助手窗口盖住游戏,污染屏幕拷贝识别
             _log.Information("开始执行[{Trigger}]。", trigger);
             if (requiresCalibration && !_probe.Anchors.Calibrated)
                 throw new StepFailedException("前置检查",
@@ -357,7 +421,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         {
             report.AddFailure("已手动停止");
             _log.Information("[{Trigger}]被手动停止。", trigger);
-            if (affectsSchedule) // 手动停止不进入失败退避,由用户决定何时再跑
+            if (affectsSchedule && started) // 手动停止不进入失败退避,由用户决定何时再跑
                 _engine.MarkRunFinished(report.Summary(), failed: false, _settings().FailureRetryMinutes);
             Publish(new CoordinatorStatus(EngineMode.Idle, "已手动停止", null));
         }
@@ -365,7 +429,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         {
             report.AddFailure(ex.Message);
             _log.Error(ex, "[{Trigger}]因仓库空间不足中止。", trigger);
-            if (affectsSchedule)
+            if (affectsSchedule && started)
                 _engine.MarkRunFinished(report.Summary(), failed: true, _settings().FailureRetryMinutes);
             _notifier.Notify("仓库空间不足",
                 "补齐材料或领取制造物品失败，请及时清理游戏仓库后再运行。");
@@ -376,7 +440,7 @@ public sealed partial class AutomationCoordinator : IDisposable
         {
             report.AddFailure(ex.Message);
             _log.Error(ex, "[{Trigger}]执行失败。", trigger);
-            if (affectsSchedule)
+            if (affectsSchedule && started)
                 _engine.MarkRunFinished(report.Summary(), failed: true, _settings().FailureRetryMinutes);
             _notifier.Notify("特勤处执行失败", ex.Message);
             // 故意不关游戏:保留失败现场供人工检查。
@@ -385,9 +449,12 @@ public sealed partial class AutomationCoordinator : IDisposable
         }
         finally
         {
-            _windowGuard.RestoreAfterRun();
-            _runCts?.Dispose();
-            _runCts = null;
+            if (started && manageWindow) _windowGuard.RestoreAfterRun();
+            lock (_runCtsGate)
+            {
+                _runCts?.Dispose();
+                _runCts = null;
+            }
             _runLock.Release();
         }
         return report;
@@ -407,5 +474,8 @@ public sealed partial class AutomationCoordinator : IDisposable
     private static string Fmt(TimeSpan t) =>
         $"{(int)t.TotalHours:00}:{t.Minutes:00}:{t.Seconds:00}";
 
-    public void Dispose() => _runCts?.Dispose();
+    public void Dispose()
+    {
+        lock (_runCtsGate) _runCts?.Dispose();
+    }
 }

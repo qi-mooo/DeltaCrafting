@@ -12,6 +12,7 @@ public sealed class PlanFacilityModel : ObservableObject
     private readonly Action _save;
     private readonly Func<string, string?> _resolveMatchName;
     private readonly Action<FacilityKey, CraftMode> _modeChanged;
+    private readonly IReadOnlyList<CatalogItem> _items;
 
     public string Name { get; }
     public IReadOnlyList<string> Suggestions { get; }
@@ -19,7 +20,7 @@ public sealed class PlanFacilityModel : ObservableObject
     /// <summary>只有当前设施的自定义模式允许手选物品。</summary>
     public bool ItemEditable => _plan.Mode == CraftMode.Custom;
 
-    public PlanFacilityModel(FacilityPlan plan, IReadOnlyList<string> suggestions,
+    public PlanFacilityModel(FacilityPlan plan, IReadOnlyList<CatalogItem> items,
         Func<string, string?> resolveMatchName, Action save,
         Action<FacilityKey, CraftMode> modeChanged)
     {
@@ -28,7 +29,8 @@ public sealed class PlanFacilityModel : ObservableObject
         _resolveMatchName = resolveMatchName;
         _modeChanged = modeChanged;
         Name = FacilityKeys.DisplayName(plan.Key);
-        Suggestions = suggestions;
+        _items = items;
+        Suggestions = items.Select(CatalogItemLabel.Format).ToArray();
     }
 
     public bool Enabled
@@ -52,7 +54,18 @@ public sealed class PlanFacilityModel : ObservableObject
                 return;
             _plan.SetCustomSelection(itemName, matchName);
             OnPropertyChanged();
+            OnPropertyChanged(nameof(ItemDisplayName));
             _save();
+        }
+    }
+
+    public string ItemDisplayName
+    {
+        get => CatalogItemLabel.ForName(_items, ItemName);
+        set
+        {
+            if (value == ItemDisplayName) return;
+            ItemName = CatalogItemLabel.ResolveSelection(_items, value ?? "");
         }
     }
 
@@ -73,6 +86,7 @@ public sealed class PlanFacilityModel : ObservableObject
             OnPropertyChanged();
             OnPropertyChanged(nameof(ItemEditable));
             OnPropertyChanged(nameof(ItemName));
+            OnPropertyChanged(nameof(ItemDisplayName));
             _save();
             _modeChanged(_plan.Key, mode);
         }
@@ -119,6 +133,14 @@ public sealed partial class PlanViewModel : ObservableObject
             Facilities.Add(CreateModel(key));
     }
 
+    public void UpdateDeviceFacility(FacilityKey key, bool? enabled, CraftMode? mode, string? itemName = null)
+    {
+        var row = Facilities[Array.IndexOf(DisplayOrder, key)];
+        if (enabled is { } value) row.Enabled = value;
+        if (mode is { } selected) row.ModeIndex = (int)selected;
+        if (itemName is { } item) row.ItemName = item;
+    }
+
     /// <summary>利润推荐替换了部分设施的物品后,只重建受影响的卡片:未受影响的卡片
     /// 保留搜索框输入状态,不因后台自动填充被整页重建打断。</summary>
     public void RefreshFacilities(IReadOnlyCollection<FacilityKey> keys)
@@ -129,13 +151,13 @@ public sealed partial class PlanViewModel : ObservableObject
     }
 
     private PlanFacilityModel CreateModel(FacilityKey key) =>
-        new(_host.Plan.For(key), _host.CatalogNamesFor(key),
+        new(_host.Plan.For(key), _host.ItemsFor(key),
             display => _host.ResolveCatalogMatchKey(key, display), _host.SavePlan,
             OnFacilityModeChanged);
 
     /// <summary>至少一个设施启用利润模式时显示说明横幅。</summary>
     public bool IsProfitMode =>
-        _host.Plan.Facilities.Any(f => f.Mode != CraftMode.Custom);
+        _host.Plan.Facilities.Any(f => f.Mode == CraftMode.HourlyProfit);
 
     public string ProfitBannerTitle => "设施利润推荐已启用";
 
@@ -143,9 +165,8 @@ public sealed partial class PlanViewModel : ObservableObject
     {
         get
         {
-            const string baseText = "行情在应用启动后预热并于每个整点后台更新;选择利润模式时优先使用最近缓存,缓存为空则立即获取;自定义物品的设施仍可手选。";
             string status = _host.ProfitPlan.LastStatus;
-            return status.Length > 0 ? baseText + "\n" + status : baseText;
+            return status.Length > 0 ? status : "三角洲数据帝行情尚未更新";
         }
     }
 
@@ -159,7 +180,6 @@ public sealed partial class PlanViewModel : ObservableObject
         OnPropertyChanged(nameof(IsProfitMode));
         OnPropertyChanged(nameof(ProfitBannerTitle));
         OnPropertyChanged(nameof(ProfitBannerMessage));
-        _host.ProfitPlan.OnFacilityModeChanged(key, mode);
     }
 
     /// <summary>利润推荐服务每次刷新(成功或失败)后调用,更新横幅里的最近结论。</summary>

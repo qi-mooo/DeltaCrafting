@@ -24,3 +24,7 @@ HANDOFF.md
 
 # 含游戏账号 UID 的本机分辨率校准截图，仅用于 OCR/锚点自检。
 /1k截图/
+/.firmware-sdk/
+**/.pio/
+firmware/**/include/config.local.h
+__pycache__/

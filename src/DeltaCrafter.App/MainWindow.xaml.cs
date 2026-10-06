@@ -45,6 +45,8 @@ public sealed partial class MainWindow : Window
     public void RestoreFromTray()
     {
         AppWindow.Show();
+        if (AppWindow.Presenter is OverlappedPresenter presenter)
+            presenter.Maximize();
         Activate();
     }
 
@@ -60,7 +62,8 @@ public sealed partial class MainWindow : Window
         if (!_exitRequested && AppHost.Current.Settings.CloseToTray)
         {
             e.Cancel = true;
-            sender.Hide();
+            if (AppHost.Current.IsTrayAvailable) sender.Hide();
+            else RestoreFromTray();
             return;
         }
         AppHost.Current.Shutdown();
@@ -74,6 +77,7 @@ public sealed partial class MainWindow : Window
             "overview" => typeof(OverviewPage),
             "plan" => typeof(PlanPage),
             "logs" => typeof(LogPage),
+            "tools" => typeof(ToolsPage),
             "settings" => typeof(SettingsPage),
             _ => null,
         };

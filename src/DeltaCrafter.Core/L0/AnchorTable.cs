@@ -29,6 +29,8 @@ public sealed class TextProbe
 public sealed class ScreenSpec
 {
     public TextProbe Probe { get; set; } = new();
+    /// <summary>同一帧必须同时命中的附加探针,用于区分按钮相同的不同模式。</summary>
+    public List<TextProbe> AdditionalProbes { get; set; } = [];
     public Dictionary<string, NPoint> Points { get; set; } = [];
     public Dictionary<string, NRect> Rois { get; set; } = [];
 
@@ -78,12 +80,15 @@ public sealed class AnchorTable
 public static class AnchorKeys
 {
     public const string ModeSelect = "mode-select";
+    public const string ModeSelectPlay = "mode-select-play";
+    public const string ModeExitMenu = "mode-exit-menu";
     public const string PromoAnnounce = "promo-announce";
     public const string Safehouse = "safehouse";
     public const string Lobby = "lobby";
     public const string SpecOpsHome = "specops-home";
     public const string Production = "production";
     public const string ReplenishPopup = "replenish-popup";
+    public const string ReplenishPriceChange = "replenish-price-change";
     public const string CollectResult = "collect-result";
     public const string AbortConfirm = "abort-confirm";
     public const string WarehouseFull = "warehouse-full";

@@ -5,9 +5,9 @@
     xmlns:controls="using:DeltaCrafter.App.Controls">
 
     <Border Style="{StaticResource CardBorderStyle}"
-            Width="{StaticResource TokenFacilityCardWidth}"
+            HorizontalAlignment="Stretch"
             MinHeight="{StaticResource TokenFacilityCardHeight}">
-        <Grid RowSpacing="8">
+        <Grid RowSpacing="12">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -15,11 +15,16 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0">
+            <Grid Grid.Row="0" ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
                 <TextBlock Text="{x:Bind Model.Name, Mode=OneWay}"
                            Style="{StaticResource CardTitleTextStyle}"
+                           FontSize="18"
                            HorizontalAlignment="Left" />
-                <controls:StatusBadge Text="{x:Bind Model.PhaseText, Mode=OneWay}"
+                <controls:StatusBadge Grid.Column="1" Text="{x:Bind Model.PhaseText, Mode=OneWay}"
                                       Level="{x:Bind Model.BadgeLevel, Mode=OneWay}"
                                       HorizontalAlignment="Right" />
             </Grid>
@@ -27,12 +32,26 @@
             <TextBlock Grid.Row="1"
                        Text="{x:Bind Model.ItemName, Mode=OneWay}"
                        Style="{StaticResource BodyTextBlockStyle}"
+                       FontSize="16" MinHeight="24"
+                       TextWrapping="NoWrap" MaxLines="1"
+                       ToolTipService.ToolTip="{x:Bind Model.ItemName, Mode=OneWay}"
                        TextTrimming="CharacterEllipsis" />
 
-            <TextBlock Grid.Row="2"
-                       Text="{x:Bind Model.CountdownText, Mode=OneWay}"
-                       Style="{StaticResource NumericTextStyle}"
-                       VerticalAlignment="Center" />
+            <StackPanel Grid.Row="2" Spacing="10" VerticalAlignment="Center">
+                <TextBlock Text="{x:Bind Model.CountdownText, Mode=OneWay}"
+                           FontSize="28" TextWrapping="NoWrap"
+                           Style="{StaticResource NumericTextStyle}" />
+                <Grid ColumnSpacing="8" Visibility="{x:Bind Model.ProgressVisibility, Mode=OneWay}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="40" />
+                    </Grid.ColumnDefinitions>
+                    <ProgressBar Minimum="0" Maximum="100" Height="6" VerticalAlignment="Center"
+                                 Value="{x:Bind Model.ProgressValue, Mode=OneWay}" />
+                    <TextBlock Grid.Column="1" Text="{x:Bind Model.ProgressText, Mode=OneWay}"
+                               Style="{StaticResource SecondaryTextStyle}" HorizontalAlignment="Right" />
+                </Grid>
+            </StackPanel>
 
             <Grid Grid.Row="3" ColumnSpacing="8" VerticalAlignment="Center">
                 <Grid.ColumnDefinitions>
@@ -43,6 +62,7 @@
                            Text="{x:Bind Model.ReadyAtText, Mode=OneWay}"
                            Style="{StaticResource SecondaryTextStyle}"
                            VerticalAlignment="Center"
+                           TextWrapping="NoWrap" MaxLines="1"
                            TextTrimming="CharacterEllipsis" />
                 <!-- 仅"制造中"显示;取消=游戏内点「中止」,销毁性操作,点击前二次确认 -->
                 <Button Grid.Column="1"
