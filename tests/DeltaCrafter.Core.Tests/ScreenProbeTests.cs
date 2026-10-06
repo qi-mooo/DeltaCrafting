@@ -29,6 +29,23 @@ public sealed class ScreenProbeTests
     [Theory]
     [InlineData(1920, 1080)]
     [InlineData(2560, 1440)]
+    public void Price_change_requires_dialog_title_and_pays_inside_total_button(int width, int height)
+    {
+        var spec = Anchors.Screen(AnchorKeys.ReplenishPriceChange);
+        Assert.True(Anchors.Revision >= 12);
+        Assert.True(ScreenProbe.MatchesScreenTexts(spec, ["价格变动提醒"]));
+        Assert.False(ScreenProbe.MatchesScreenTexts(spec, ["一键补齐清单"]));
+        Assert.False(ScreenProbe.MatchesScreenTexts(spec, ["购买成功"]));
+        Assert.False(ScreenProbe.MatchesScreenTexts(spec, [""]));
+        var (x, y) = PixelMapper.ToPixel(spec.Point(AnchorKeys.PointBuy), 0, 0, width, height);
+        double scale = width / 1920.0;
+        Assert.InRange(x / scale, 826, 1094);
+        Assert.InRange(y / scale, 728, 780);
+    }
+
+    [Theory]
+    [InlineData(1920, 1080)]
+    [InlineData(2560, 1440)]
     public void Item_title_excludes_quality_icon_toolbar_and_price_row(int width, int height)
     {
         var (x, y, w, h) = PixelMapper.ToPixelRect(

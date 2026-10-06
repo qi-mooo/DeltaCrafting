@@ -19,6 +19,25 @@ public sealed class WindowsOcrFactAttribute : FactAttribute
 public sealed class PaddleRuntimeTests
 {
     [WindowsOcrFact]
+    public async Task Actual_price_change_dialog_is_recognized_at_both_resolutions()
+    {
+        // 183 2026-10-07 补料失败现场，只保留弹窗标题，不含账号或支付信息。
+        using var original = Cv2.ImRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", "navigation-replenish-price-change.png"));
+        var anchors = new JsonStoreBrick().Load<AnchorTable>(Path.Combine(AppContext.BaseDirectory, "Data", "anchors.json"));
+        using var log = new LoggerConfiguration().CreateLogger();
+        var probe = new ScreenProbe(new(), new(), new PaddleOcrBrick(), new(), () => anchors, "", log);
+        foreach (int width in new[] { 1920, 2560 })
+        {
+            var frame = FrameAt(original, width);
+            var spec = anchors.Screen(AnchorKeys.ReplenishPriceChange);
+            var texts = await probe.ReadScreenTextsAsync(frame, spec);
+            Assert.True(ScreenProbe.MatchesScreenTexts(spec, texts), $"{width}px: {string.Join(" | ", texts)}");
+            Assert.False(ScreenProbe.MatchesScreenTexts(anchors.Screen(AnchorKeys.ReplenishPopup), texts));
+            Assert.False(ScreenProbe.MatchesScreenTexts(anchors.Screen(AnchorKeys.Production), texts));
+        }
+    }
+
+    [WindowsOcrFact]
     public async Task Actual_baldr_title_recovers_from_added_letter_and_isolated_noise_at_both_resolutions()
     {
         const string expected = "OLIGHT Baldr Pro R多功能手电";

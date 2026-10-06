@@ -6,8 +6,8 @@
   // safehouse →Tab→ lobby →点顶栏特勤处→ specops-home;
   // 点设施槽位 → production(空闲)或 collect-result(完成)。
   "calibrated": true,
-  "revision": 11,
-  "calibratedOn": "2560×1440 实机标定；2026-09-28 1920×1080 新版首卡前往游玩与退出菜单 OCR 验证；物品标题排除图标和价格(rev11)",
+  "revision": 12,
+  "calibratedOn": "2560×1440 实机标定；2026-09-28 1920×1080 新版首卡前往游玩与退出菜单 OCR 验证；物品标题排除图标和价格；2026-10-07 补料价格变动提醒(rev12)",
 
   "keywords": {
     "idle": ["空闲中", "空闲"],
@@ -107,6 +107,12 @@
     // 实测「键」字常被 OCR 吞掉(读成「一补齐清单」),判定词取「补齐清单」抗丢字。
     "replenish-popup": {
       "probe": { "roi": { "x": 0.19, "y": 0.20, "w": 0.17, "h": 0.10 }, "mustContain": "补齐清单" },
+      "points": { "buy": { "x": 0.50, "y": 0.699 } },
+      "rois": {}
+    },
+    // 补料支付时价格再次变化:保留未成交材料勾选,底部总价按钮按现价继续支付。
+    "replenish-price-change": {
+      "probe": { "roi": { "x": 0.21, "y": 0.211, "w": 0.13, "h": 0.049 }, "mustContain": "价格变动提醒", "upscale": 1.5 },
       "points": { "buy": { "x": 0.50, "y": 0.699 } },
       "rois": {}
     },
