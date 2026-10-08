@@ -26,6 +26,9 @@ with tempfile.TemporaryDirectory(prefix="s3-ui-test-") as temporary:
          "-o", build / "auto-sleep"])
     run([build / "auto-sleep"])
     run([cxx, "-std=c++17", "-I" + str(project / "include"),
+         project / "tests/ui_resume_test.cpp", "-o", build / "ui-resume"])
+    run([build / "ui-resume"])
+    run([cxx, "-std=c++17", "-I" + str(project / "include"),
          "-I" + str(project / ".pio/libdeps/deltacrafter-monitor/ArduinoJson/src"),
          project / "tests/sound_control_test.cpp", "-o", build / "sound-control"])
     run([build / "sound-control"])
@@ -50,4 +53,4 @@ with tempfile.TemporaryDirectory(prefix="s3-ui-test-") as temporary:
          "-I" + str(project / "tests/stubs"), "-I" + str(project / "include"),
          project / "tests/mono_display_test.cpp", build / "u8g2.a", "-o", build / "display"])
     run([build / "display"])
-print("Navigation, buttons, brightness, deep-sleep timing/wake/resume, sound state/USB host gating, program switching/RESET, interrupted OTA recovery, display bounds and transitions passed.")
+print("Navigation, buttons, brightness, deep-sleep timing/wake/page resume, sound state/USB host gating, program switching/RESET, interrupted OTA recovery, display bounds and transitions passed.")

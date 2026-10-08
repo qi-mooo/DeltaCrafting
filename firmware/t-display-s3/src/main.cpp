@@ -11,6 +11,8 @@
 #include "lcd_init.h"
 #include "device_config.h"
 #include "ui_state.h"
+#include "ui_resume.h"
+#include "ui_resume_store.h"
 #include "ui_button.h"
 #include "ui_indicators.h"
 #include "ui_marquee.h"
@@ -70,30 +72,28 @@ struct Request {
 };
 const char *const TOOL_KEYS[] = {"password", "market", "gun", "gun-keys"};
 const char *const TOOL_NAMES[] = {"今日密码", "当前集市物品", "改枪码", "选择枪械"};
-struct ToolEntry { String id, title, code, password, date, price, author, category; std::vector<String> lines; };
-struct ToolData {
-    std::vector<ToolEntry> entries;
-    String detail, error;
-    uint8_t tool = 0;
-    uint16_t page = 1, pages = 1;
-    bool next = false, battlefield = false;
-};
-ToolData sharedTool, toolData, weaponData;
-bool gunBattlefield = false;
-String gunCategory, gunWeapon;
-String imageError, sharedImageError, imageId, sharedImageId;
-std::vector<uint16_t> toolImage, sharedImage;
+using ToolEntry = UiResume::ToolEntry<String>;
+using ToolData = UiResume::ToolData<String>;
+using ItemList = UiResume::ItemList<String>;
+UiResume::State<String> resumeState;
+UiResumeStore resumeStore;
+bool resumeStoreReady = false;
+ToolData sharedTool;
+ToolData &toolData = resumeState.tools, &weaponData = resumeState.weapons;
+bool &gunBattlefield = resumeState.gunBattlefield;
+String &gunCategory = resumeState.gunCategory, &gunWeapon = resumeState.gunWeapon;
+String &imageError = resumeState.imageError, &imageId = resumeState.imageId;
+String sharedImageError, sharedImageId;
+std::vector<uint16_t> &toolImage = resumeState.image;
+std::vector<uint16_t> sharedImage;
 bool imageReady = false, imageLoading = false;
 float toolFocusX = 1, toolFocusY = 27, toolFocusW = 318, toolFocusH = 27, toolScroll = 0;
 bool toolReady = false, toolLoading = false;
-uint8_t toolSelected = 0;
-std::vector<String> toolLines;
-struct ItemList {
-    std::vector<String> names, labels;
-    String selected, error;
-};
+uint8_t &toolSelected = resumeState.toolSelected;
+std::vector<String> &toolLines = resumeState.toolLines;
 constexpr uint8_t MAX_ITEMS = 254; // Axeuh uses an 8-bit row count; reserve a return row.
-ItemList sharedItems, itemList;
+ItemList sharedItems;
+ItemList &itemList = resumeState.items;
 bool itemsReady = false, itemLoading = false, itemSaving = false;
 int itemSaveResult = -1;
 TFT_eSPI display;
@@ -121,7 +121,7 @@ SoundControl::State sharedSound;
 UiButton cycleButton, confirmButton;
 UiHoldConfirm itemHold;
 bool pendingHold = false;
-UiState ui;
+UiState &ui = resumeState.ui;
 UiMarquee itemMarquees[4];
 bool requestPending = false;
 uint32_t batteryMv = 0;
@@ -1119,8 +1119,10 @@ void draw()
     uiEngine.IN_now = canvas.offset == 0 ? uiEngine.handleInput() : STOP;
     UiPage before = ui.page;
     Snapshot s = readSnapshot();
-    ui.customMode = s.facilities[ui.facility()].craftMode == "Custom";
-    ui.hourlyMode = s.facilities[ui.facility()].craftMode == "HourlyProfit";
+    if (s.valid) {
+        ui.customMode = s.facilities[ui.facility()].craftMode == "Custom";
+        ui.hourlyMode = s.facilities[ui.facility()].craftMode == "HourlyProfit";
+    }
     if (ui.page == UiPage::Facility && ui.row >= ui.count()) ui.row = ui.count() - 1;
     xSemaphoreTake(stateMutex, portMAX_DELAY);
     bool receivedItems = itemsReady;
@@ -1289,7 +1291,7 @@ void openToolDetail()
     toolLines.clear();
     auto wrap = [](const String &text) {
         String remaining = text;
-        while (!remaining.isEmpty()) {
+        while (!remaining.isEmpty() && toolLines.size() < 253) {
             String line = clipped(remaining, 264);
             if (line.isEmpty()) break;
             toolLines.push_back(line);
@@ -1475,11 +1477,11 @@ void handleButtons()
 void handleAutoSleep()
 {
     xSemaphoreTake(stateMutex, portMAX_DELAY);
-    bool busy = requestPending || firmwareView.busy;
+    bool busy = requestPending || firmwareView.busy || itemsReady || toolReady || imageReady || itemSaveResult >= 0;
     xSemaphoreGive(stateMutex);
     uint32_t now = millis();
     if (!autoSleep.due(now, !digitalRead(UI_CYCLE_PIN) || !digitalRead(UI_CONFIRM_PIN),
-        busy || sleepBlockedByOta || canvas.offset != 0)) return;
+        busy || itemLoading || itemSaving || toolLoading || imageLoading || sleepBlockedByOta || canvas.offset != 0)) return;
     if (DeltaOta::loadJob().stage != DeltaOta::Stage::None) {
         autoSleep.activity(now);
         return;
@@ -1490,7 +1492,22 @@ void handleAutoSleep()
         && digitalRead(UI_CYCLE_PIN) && digitalRead(UI_CONFIRM_PIN)) delay(10);
     bool idle = (!networkTaskHandle || networkParked.load())
         && digitalRead(UI_CYCLE_PIN) && digitalRead(UI_CONFIRM_PIN);
-    if (idle && DeviceSleep::prepare(false)) DeviceSleep::enter(display, brightness);
+    // A poll can finish while parking. Do not snapshot before draw() consumes
+    // its response or a pending save result; the next loop will settle the UI.
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    idle = idle && !itemsReady && !toolReady && !imageReady && itemSaveResult < 0 && !requestPending;
+    xSemaphoreGive(stateMutex);
+    if (idle && DeviceSleep::prepare(false)) {
+        if (resumeStoreReady && UiResume::save(resumeStore, resumeState)) {
+            if (digitalRead(UI_CYCLE_PIN) && digitalRead(UI_CONFIRM_PIN)) DeviceSleep::enter(display, brightness);
+            resumeStore.clear();
+        } else {
+            sleepRequested.store(false);
+            autoSleep.activity(millis());
+            setNotice("页面保存失败,稍后重试休眠");
+            return;
+        }
+    }
     sleepRequested.store(false);
     autoSleep.activity(millis());
     if (idle) setNotice("休眠准备失败,稍后重试");
@@ -1512,7 +1529,8 @@ void setup()
 {
     DeviceSleep::releasePins();
     Serial.begin(115200);
-    bool resumeAudio = SleepResume::consume(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1);
+    bool deepWake = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT1;
+    bool resumeAudio = SleepResume::consume(deepWake);
     if (resumeAudio && DeltaOta::loadJob().stage == DeltaOta::Stage::None
         && DevicePrograms::enterAudio() == ESP_OK) ESP.restart();
     String firmwareBootError;
@@ -1578,6 +1596,19 @@ void setup()
     uiEngine.set(&mainPanel);
     uiEngine.set(&statusBar);
     uiEngine.set(readInput);
+    resumeStoreReady = resumeStore.begin();
+    bool restored = resumeStoreReady && UiResume::restore(resumeStore, deepWake && !sleepBlockedByOta, resumeState);
+    if (restored) {
+        positionMenu();
+        focusX = ui.home == 5 ? 230 : ui.home == 4 ? 1 : 1 + (ui.home % 2) * 160;
+        focusY = ui.home >= 4 ? 145 : 1 + (ui.home / 2) * 72;
+        focusW = ui.home == 5 ? 89 : ui.home == 4 ? 228 : 158;
+        focusH = ui.home >= 4 ? 25 : 70;
+        if (ui.page == UiPage::Brightness) brightness.preview(ui.row);
+        if (ui.page == UiPage::Firmware) firmwareView.detail = "已恢复页面,请重新检查更新";
+    }
+    Serial.printf("UI resume: %s, page=%u, row=%u, home=%u\n", restored ? "restored" : "home",
+        unsigned(ui.page), ui.row, ui.home);
     DeviceConfig::setScreenCapture(captureScreen);
     DeviceConfig::setFirmwareControl(serialFirmwareControl);
     if (!firmwareBootError.isEmpty()) setNotice(firmwareBootError);
