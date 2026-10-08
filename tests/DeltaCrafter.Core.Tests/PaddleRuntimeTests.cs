@@ -19,6 +19,33 @@ public sealed class WindowsOcrFactAttribute : FactAttribute
 public sealed class PaddleRuntimeTests
 {
     [WindowsOcrFact]
+    public async Task Lobby_is_recognized_when_music_popup_covers_ready_button()
+    {
+        // 183 2026-10-09 06:14 失败现场，仅保留两个导航探针与被遮挡的按钮区域。
+        using var original = Cv2.ImRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", "navigation-lobby-covered.png"));
+        var anchors = new JsonStoreBrick().Load<AnchorTable>(Path.Combine(AppContext.BaseDirectory, "Data", "anchors.json"));
+        using var log = new LoggerConfiguration().CreateLogger();
+        var probe = new ScreenProbe(new(), new(), new PaddleOcrBrick(), new(), () => anchors, "", log);
+        var spec = anchors.Screen(AnchorKeys.Lobby);
+        foreach (int width in new[] { 1920, 2560 })
+        {
+            var frame = FrameAt(original, width);
+            var primaryOnly = new ScreenSpec { Probe = spec.Probe };
+            Assert.False(ScreenProbe.MatchesScreenTexts(primaryOnly, await probe.ReadScreenTextsAsync(frame, primaryOnly)));
+            var texts = await probe.ReadScreenTextsAsync(frame, spec);
+            Assert.True(ScreenProbe.MatchesScreenTexts(spec, texts), $"{width}px: {string.Join(" | ", texts)}");
+            Assert.Equal(2, texts.Count);
+            // The top navigation also exists elsewhere. Without the lobby-only
+            // shortcut, it must not skip loading or trigger a navigation click.
+            var missingShortcut = frame with { Bgra = (byte[])frame.Bgra.Clone() };
+            var (x, y, w, h) = PixelMapper.ToPixelRect(spec.AlternativeProbeGroups[0][0].Roi, width, width * 9 / 16);
+            for (int row = y; row < y + h; ++row)
+                Array.Clear(missingShortcut.Bgra, (row * width + x) * 4, w * 4);
+            Assert.Empty(await probe.ReadScreenTextsAsync(missingShortcut, spec));
+        }
+    }
+
+    [WindowsOcrFact]
     public async Task Actual_price_change_dialog_is_recognized_at_both_resolutions()
     {
         // 183 2026-10-07 补料失败现场，只保留弹窗标题，不含账号或支付信息。

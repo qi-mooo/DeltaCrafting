@@ -27,6 +27,37 @@ public sealed class ScreenProbeTests
         Path.Combine(AppContext.BaseDirectory, "Data", "anchors.json"));
 
     [Theory]
+    [InlineData("进入特勤处", "特勤处", true)]
+    [InlineData("进入特勤处", "", false)]
+    [InlineData("", "特勤处", false)]
+    [InlineData("开始游戏", "特勤处", false)]
+    [InlineData("退出游戏", "特勤处", false)]
+    [InlineData("进入特勤处", "仓库", false)]
+    [InlineData("特勤处", "进入特勤处", false)]
+    public void Covered_lobby_button_requires_complete_independent_evidence(string shortcut, string tab, bool expected)
+    {
+        Assert.True(Anchors.Revision >= 13);
+        Assert.Equal(expected, ScreenProbe.MatchesScreenTexts(Anchors.Screen(AnchorKeys.Lobby), [shortcut, tab]));
+    }
+
+    [Fact]
+    public void Alternative_groups_do_not_accept_empty_partial_or_mixed_evidence()
+    {
+        var spec = new ScreenSpec {
+            Probe = new() { MustContain = "行前备战" },
+            AlternativeProbeGroups = [[],
+                [new() { MustContain = "进入特勤处" }, new() { MustContain = "特勤处" }],
+                [new() { MustContain = "退出游戏" }, new() { MustContain = "返回" }]],
+        };
+        Assert.False(ScreenProbe.MatchesScreenTexts(spec, []));
+        Assert.False(ScreenProbe.MatchesScreenTexts(spec, ["进入特勤处"]));
+        Assert.False(ScreenProbe.MatchesScreenTexts(spec, ["进入特勤处", "返回"]));
+        Assert.False(ScreenProbe.MatchesScreenTexts(spec, ["退出游戏", "特勤处"]));
+        Assert.True(ScreenProbe.MatchesScreenTexts(spec, ["退出游戏", "返回"]));
+        Assert.True(ScreenProbe.MatchesScreenTexts(spec, ["行前备战"]));
+    }
+
+    [Theory]
     [InlineData(1920, 1080)]
     [InlineData(2560, 1440)]
     public void Price_change_requires_dialog_title_and_pays_inside_total_button(int width, int height)

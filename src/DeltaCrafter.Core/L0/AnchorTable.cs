@@ -31,6 +31,8 @@ public sealed class ScreenSpec
     public TextProbe Probe { get; set; } = new();
     /// <summary>同一帧必须同时命中的附加探针,用于区分按钮相同的不同模式。</summary>
     public List<TextProbe> AdditionalProbes { get; set; } = [];
+    /// <summary>主探针被遮挡时的替代组合；组内须全部命中，不能拼接不同组的证据。</summary>
+    public List<List<TextProbe>> AlternativeProbeGroups { get; set; } = [];
     public Dictionary<string, NPoint> Points { get; set; } = [];
     public Dictionary<string, NRect> Rois { get; set; } = [];
 

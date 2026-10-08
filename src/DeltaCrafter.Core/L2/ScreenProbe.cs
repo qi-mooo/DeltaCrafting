@@ -83,7 +83,19 @@ public sealed class ScreenProbe
 
     public async Task<IReadOnlyList<string>> ReadScreenTextsAsync(CapturedFrame frame, ScreenSpec spec)
     {
-        var probes = new[] { spec.Probe }.Concat(spec.AdditionalProbes);
+        IReadOnlyList<string> texts = [];
+        foreach (var probes in ProbeGroups(spec))
+        {
+            if (probes.Count == 0) continue;
+            texts = await ReadProbeGroupAsync(frame, probes);
+            if (MatchesProbeGroup(probes, texts)) return texts;
+        }
+        // 不将失败组合的部分读数当作另一组合的成功证据。
+        return [];
+    }
+
+    private async Task<IReadOnlyList<string>> ReadProbeGroupAsync(CapturedFrame frame, IReadOnlyList<TextProbe> probes)
+    {
         var texts = new List<string>();
         foreach (var probe in probes)
         {
@@ -99,10 +111,18 @@ public sealed class ScreenProbe
     }
 
     internal static bool MatchesScreenTexts(ScreenSpec spec, IReadOnlyList<string> texts)
+        => ProbeGroups(spec).Any(probes => MatchesProbeGroup(probes, texts));
+
+    private static IEnumerable<IReadOnlyList<TextProbe>> ProbeGroups(ScreenSpec spec)
     {
-        var probes = new[] { spec.Probe }.Concat(spec.AdditionalProbes).ToArray();
-        if (texts.Count != probes.Length) return false;
-        for (int i = 0; i < probes.Length; i++)
+        yield return new[] { spec.Probe }.Concat(spec.AdditionalProbes).ToArray();
+        foreach (var group in spec.AlternativeProbeGroups) yield return group;
+    }
+
+    private static bool MatchesProbeGroup(IReadOnlyList<TextProbe> probes, IReadOnlyList<string> texts)
+    {
+        if (probes.Count == 0 || texts.Count != probes.Count) return false;
+        for (int i = 0; i < probes.Count; i++)
         {
             string expected = Normalize(probes[i].MustContain);
             if (expected.Length == 0 || !Normalize(texts[i]).Contains(expected, StringComparison.Ordinal)) return false;
