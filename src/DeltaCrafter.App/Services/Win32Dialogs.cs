@@ -17,7 +17,7 @@ public static class Win32Dialogs
         "选择游戏可执行文件", "可执行文件 (*.exe)\0*.exe\0所有文件 (*.*)\0*.*\0\0");
 
     public static string? PickFirmwareFile(nint ownerHwnd) => PickFile(ownerHwnd,
-        "导入 S3 固件包", "S3 固件包 (*.zip)\0*.zip\0\0");
+        "导入设备固件包", "设备固件包 (*.zip)\0*.zip\0\0");
 
     private static string? PickFile(nint ownerHwnd, string title, string filter)
     {

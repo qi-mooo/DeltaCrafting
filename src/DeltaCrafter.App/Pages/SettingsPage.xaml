@@ -263,6 +263,17 @@
                     </controls:SettingCard.Slot>
                 </controls:SettingCard>
 
+                <controls:SettingCard Glyph="&#xE896;" Header="Harp USB 在线固件"
+                                      Description="{x:Bind Vm.HarpFirmwareStatus, Mode=OneWay}">
+                    <controls:SettingCard.Slot>
+                        <Button Command="{x:Bind Vm.ImportHarpFirmwareCommand}"
+                                AutomationProperties.AutomationId="ImportHarpFirmwareButton"
+                                ToolTipService.ToolTip="导入 Harp 固件 ZIP" AutomationProperties.Name="导入 Harp 固件 ZIP">
+                            <FontIcon Glyph="&#xE8B5;" />
+                        </Button>
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+
                 <!-- 关于 -->
                 <Border Style="{StaticResource CardBorderStyle}" Margin="0,12,0,0">
                     <StackPanel Spacing="6">

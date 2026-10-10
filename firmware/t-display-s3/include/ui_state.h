@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include "ui_list_layout.h"
 
-enum class UiPage : uint8_t { Home, Facility, Global, CraftMode, AfterRun, Items, Tools, ToolList, ToolDetail, GunMode, GunQuery, Firmware, Brightness, AutoSleep };
+enum class UiPage : uint8_t { Home, Facility, Global, CraftMode, AfterRun, Items, Tools, ToolList, ToolDetail, GunMode, GunQuery, Firmware, Brightness, AutoSleep, Harp, HarpSongs, HarpFirmware };
 
 struct UiState {
     UiPage page = UiPage::Home;
@@ -18,7 +18,9 @@ struct UiState {
 
     uint8_t count() const
     {
-        return page == UiPage::Home ? 6 : page == UiPage::Tools ? 5
+        return page == UiPage::Home ? 6 : page == UiPage::Tools ? 6
+            : page == UiPage::Harp ? 9 : page == UiPage::HarpSongs ? toolCount + 3
+            : page == UiPage::HarpFirmware ? 3
             : page == UiPage::Brightness ? 11
             : page == UiPage::AutoSleep ? 7
             : page == UiPage::GunMode || page == UiPage::GunQuery || page == UiPage::Firmware ? 3

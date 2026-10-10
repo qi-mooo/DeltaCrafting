@@ -62,6 +62,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(DeviceApiStatus));
             OnPropertyChanged(nameof(DeviceFirmwareStatus));
+            OnPropertyChanged(nameof(HarpFirmwareStatus));
         };
         host.ProfitPlan.Changed += () =>
         {
@@ -107,6 +108,15 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public string DeviceApiStatus => _host.DeviceApi.StatusText;
     public string DeviceFirmwareStatus => _host.DeviceApi.FirmwareStatus;
+    public string HarpFirmwareStatus => _host.DeviceApi.HarpFirmwareStatus;
+
+    [RelayCommand]
+    private async Task ImportHarpFirmwareAsync()
+    {
+        nint hwnd = App.MainWindowRef is { } w ? WinRT.Interop.WindowNative.GetWindowHandle(w) : 0;
+        string? file = Win32Dialogs.PickFirmwareFile(hwnd);
+        if (file is not null) await _host.DeviceApi.ImportHarpFirmwareAsync(file);
+    }
 
     [RelayCommand]
     private async Task ImportDeviceFirmwareAsync()

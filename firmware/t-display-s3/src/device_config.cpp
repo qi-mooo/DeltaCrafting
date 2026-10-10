@@ -5,6 +5,7 @@
 #include <Preferences.h>
 #include <WiFi.h>
 #include <DeltaOta.h>
+#include "harp_control.h"
 
 namespace DeviceConfig {
 namespace {
@@ -48,6 +49,36 @@ void processLine(const String &line)
         return;
     }
     const char *command = doc["command"] | "";
+    if (strcmp(command, "harp-configure") == 0) {
+        String error;
+        bool ok = HarpControl::configure(doc, error);
+        doc.clear(); doc["ok"] = ok;
+        if (ok) doc["restart"] = true; else doc["error"] = error;
+        serializeJson(doc, Serial); Serial.println();
+        if (ok) { Serial.flush(); delay(300); ESP.restart(); }
+        return;
+    }
+    if (strcmp(command, "wifi-configure") == 0) {
+        if (!doc["wifiSsid"].is<const char *>() || !doc["wifiPassword"].is<const char *>()
+            || doc["wifiSsid"].as<String>().isEmpty() || doc["wifiSsid"].as<String>().length() > 32
+            || doc["wifiPassword"].as<String>().length() > 64) {
+            Serial.println("{\"ok\":false,\"error\":\"invalid_wifi_configuration\"}"); return;
+        }
+        Preferences p;
+        bool ok = p.begin("delta-monitor", false);
+        DynamicJsonDocument saved(2048);
+        if (ok) deserializeJson(saved, p.getString("config", "{}"));
+        saved["wifiSsid"] = doc["wifiSsid"];
+        saved["wifiPassword"] = doc["wifiPassword"];
+        if (!saved.containsKey("baseUrl")) saved["baseUrl"] = url;
+        if (!saved.containsKey("apiKey")) saved["apiKey"] = key;
+        String value; serializeJson(saved, value);
+        if (ok) ok = p.putString("config", value) == value.length();
+        p.end();
+        Serial.println(ok ? "{\"ok\":true,\"restart\":true}" : "{\"ok\":false,\"error\":\"storage_write_failed\"}");
+        if (ok) { Serial.flush(); delay(300); ESP.restart(); }
+        return;
+    }
     if ((strcmp(command, "firmware-check") == 0 || strcmp(command, "firmware-install") == 0) && firmwareControl) {
         bool accepted = firmwareControl(strcmp(command, "firmware-install") == 0);
         Serial.println(accepted ? "{\"ok\":true,\"queued\":true}" : "{\"ok\":false,\"error\":\"check_first_or_busy\"}");
@@ -70,6 +101,7 @@ void processLine(const String &line)
         doc["ip"] = WiFi.localIP().toString();
         doc["apiOnline"] = apiOnline;
         doc["soundControlOnline"] = soundOnline;
+        doc["harpConfigured"] = HarpControl::configured();
         doc["error"] = apiError;
         doc["facilities"] = facilities;
         doc["freeHeap"] = ESP.getFreeHeap();

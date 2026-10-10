@@ -46,12 +46,17 @@ int main()
     ui.move(-1);
     assert(ui.home == 5);
     ui.open(ui.homeDestination());
-    assert(ui.page == UiPage::Tools && ui.count() == 5 && !ui.settingsHint());
-    ui.open(UiPage::Tools, 3); // Dedicated audio program, followed by return.
+    assert(ui.page == UiPage::Tools && ui.count() == 6 && !ui.settingsHint());
+    ui.open(UiPage::Tools, 3); // Audio, harp player, then return.
     ui.move(1);
     assert(ui.row == 4);
     ui.move(1);
+    assert(ui.row == 5);
+    ui.move(1);
     assert(ui.row == 0);
+    ui.open(UiPage::Harp, 8); ui.move(1); assert(ui.row == 0 && ui.count() == 9);
+    ui.open(UiPage::HarpFirmware, 2); ui.move(1); assert(ui.row == 0 && ui.count() == 3);
+    ui.toolCount = 32; ui.open(UiPage::HarpSongs, 34); ui.move(1); assert(ui.row == 0 && ui.count() == 35);
     ui.open(UiPage::Home);
     ui.move(-1);
     assert(ui.home == 4);

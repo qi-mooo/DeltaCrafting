@@ -39,6 +39,21 @@ jobs:
           pio run -d firmware/t-display-s3
       - name: Verify display and updater recovery
         run: python firmware/t-display-s3/tests/run_native.py
+      - name: Build and verify Harp USB firmware
+        run: |
+          pio run -d firmware/esp32-usb-player
+          python firmware/esp32-usb-player/tests/run_native.py
+          python firmware/esp32-usb-player/package.py
+      - name: Upload Harp USB firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeltaHarp-esp32s3-usb-${{ github.sha }}
+          include-hidden-files: true
+          path: |
+            firmware/esp32-usb-player/.pio/build/esp32-usb-player/DeltaHarp-esp32s3-usb.zip
+            firmware/esp32-usb-player/.pio/build/esp32-usb-player/DeltaHarp-esp32s3-usb.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload ESP32-S3 firmware
         uses: actions/upload-artifact@v4
         with:

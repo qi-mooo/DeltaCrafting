@@ -3,6 +3,15 @@
 LILYGO T-Display-S3 固件，通过 Wi-Fi 显示 DeltaCrafter 四个制造设施、中文物品名、
 制造倒计时与自动循环状态。使用桌面客户端内置的配对 API。
 
+v27 新增「工具 → 口琴播放器」，控制独立 ESP32-S3 Dongle 从 SD 卡读取 MIDI，
+选择曲目、播放/暂停/继续、停止、速度、循环、刷新曲库和切换 USB 读卡器。
+播放器控制使用独立网络任务和配对配置，不依赖桌面制造 API 在线。
+完整硬件说明、USB/LAN 配对命令和播放器 API 见
+[USB 播放器文档](../esp32-usb-player/README.md)。
+可直接连接 Dongle 热点，也可两块板接入同一个 2.4 GHz 局域网。
+新增串口 `wifi-configure` 可单独保存 Wi-Fi，`harp-configure` 保存播放器地址和密钥；
+原有制造 API 配置保留。进入播放器页面期间禁用自动休眠。
+
 ## 使用 CI 固件
 
 在 GitHub Actions 的 CI 页面下载 `DeltaCrafter-esp32s3-<提交哈希>` artifact，

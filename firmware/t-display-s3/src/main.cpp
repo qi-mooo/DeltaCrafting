@@ -23,6 +23,7 @@
 #include "device_sleep.h"
 #include "sound_control.h"
 #include "sound_wifi_handoff.h"
+#include "harp_control.h"
 #include <DeltaOta.h>
 
 #if TFT_WIDTH != 170 || TFT_HEIGHT != 320 || TFT_WR != 8 || TFT_RD != 9 || TFT_BL != 38
@@ -127,6 +128,8 @@ bool requestPending = false;
 uint32_t batteryMv = 0;
 struct FirmwareView { String version, detail; bool ready = false, busy = false; int percent = 0; };
 FirmwareView firmwareView;
+HarpControl::State harpView;
+String harpSelectedPath, harpSelectedName;
 DeltaOta::Manifest firmwareManifest;
 
 FirmwareView readFirmware()
@@ -560,6 +563,10 @@ void networkTask(void *)
         }
         bool hasCommand = xQueueReceive(commands, &request, pdMS_TO_TICKS(50)) == pdTRUE;
         bool connected = WiFi.status() == WL_CONNECTED;
+        if (!connected && millis() - lastWifiAttempt >= 10000) {
+            WiFi.reconnect();
+            lastWifiAttempt = millis();
+        }
         ItemList fetched;
         fetched.error = "设备离线";
         ToolData fetchedTool;
@@ -965,6 +972,24 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
     if (ui.page != UiPage::Home)
         for (auto &marquee : itemMarquees) marquee.reset();
     if (ui.page == UiPage::ToolList || ui.page == UiPage::ToolDetail || ui.page == UiPage::GunMode || ui.page == UiPage::GunQuery) { drawToolPage(s); return; }
+    if (ui.page == UiPage::HarpFirmware) {
+        const auto &f=harpView.firmware;
+        textAt(8,18,104,"Harp 更新");
+        canvas.setFont(u8g2_font_wqy12_t_gb2312);
+        textAt(118,18,194,f.current.isEmpty()?"当前版本待查询":"当前 "+f.current);
+        canvas.setFont(u8g2_font_wqy16_t_gb2312); canvas.drawHLine(0,24,320);
+        if(f.busy) {
+            textAt(8,51,304,f.detail); border(8,69,304,14,false);
+            if(f.percent>0) canvas.drawBox(10,71,300*f.percent/100,10);
+            textAt(8,112,304,String(f.percent)+"%");
+            textAt(8,143,304,"保持两块板供电和 App 在线");
+        } else {
+            menuRow(0,f.ready?"安装 "+f.version:"安装更新 (请先检查)");
+            menuRow(1,"检查更新"); menuRow(2,"返回播放器"); drawSettingsMenu();
+            textAt(8,165,304,f.detail.isEmpty()?"固件由 Windows App 提供":f.detail);
+        }
+        return;
+    }
     if (ui.page == UiPage::Firmware) {
         auto f = readFirmware();
         textAt(8, 18, 80, "固件更新");
@@ -1013,6 +1038,8 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             : ui.page == UiPage::Brightness ? "屏幕亮度"
             : ui.page == UiPage::AutoSleep ? "自动休眠"
             : ui.page == UiPage::Tools ? "工具"
+            : ui.page == UiPage::Harp ? "口琴播放器"
+            : ui.page == UiPage::HarpSongs ? "SD 曲库"
             : ui.page == UiPage::ToolList || ui.page == UiPage::ToolDetail ? TOOL_NAMES[ui.tool]
             : ui.page == UiPage::Items ? String(NAMES[ui.facility()]) + " / 制造物品"
             : ui.page == UiPage::CraftMode ? String(NAMES[ui.facility()]) + " / 制造模式"
@@ -1023,7 +1050,23 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
         if (ui.page == UiPage::Tools) {
             for (uint8_t i = 0; i < 3; ++i) menuRow(i, TOOL_NAMES[i]);
             menuRow(3, "声音控制");
-            menuRow(4, "返回主界面");
+            menuRow(4, "口琴播放器");
+            menuRow(5, "返回主界面");
+        } else if (ui.page == UiPage::Harp) {
+            menuRow(0, harpSelectedName.isEmpty() ? "选择曲目" : "曲目: " + harpSelectedName);
+            menuRow(1, harpView.state == "playing" || harpView.state == "countdown" ? "暂停" : harpView.state == "paused" ? "继续" : "播放");
+            menuRow(2, "停止");
+            menuRow(3, String("速度: ") + harpView.speed + "%");
+            menuRow(4, String("循环: ") + (harpView.loop ? "开" : "关"));
+            menuRow(5, "挂载曲库 / 刷新");
+            menuRow(6, "停止并连接 USB 读卡器");
+            menuRow(7, "Harp 固件更新");
+            menuRow(8, "返回工具");
+        } else if (ui.page == UiPage::HarpSongs) {
+            for (unsigned i = 0; i < harpView.songs.size(); ++i) menuRow(i, harpView.songs[i].name);
+            menuRow(ui.toolCount, "上一页");
+            menuRow(ui.toolCount + 1, "下一页");
+            menuRow(ui.toolCount + 2, "返回播放器");
         } else if (ui.page == UiPage::Facility) {
             menuRow(0, String("设施: ") + (!s.valid ? "未知" : f.enabled ? "启用" : "停用"));
             menuRow(1, String("制造模式: ") + craftModeName(f.craftMode));
@@ -1065,7 +1108,11 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             menuRow(3, "返回全局设置");
         }
         drawSettingsMenu();
-        String hint = ui.page == UiPage::Brightness ? (brightnessError.isEmpty() ? "循环预览 / 单击确认保存" : brightnessError)
+        String hint = ui.page == UiPage::Harp || ui.page == UiPage::HarpSongs
+            ? (!harpView.error.isEmpty() ? harpView.error : harpView.storage == "usb" ? "请先在电脑弹出 SD 卡"
+                : harpView.pending || harpView.busy ? "正在处理..." : harpView.state == "countdown" ? "倒计时: " + String((harpView.countdownMs + 999) / 1000)
+                : String(harpView.elapsedMs / 1000) + " / " + String(harpView.durationMs / 1000) + " s  " + harpView.state)
+            : ui.page == UiPage::Brightness ? (brightnessError.isEmpty() ? "循环预览 / 单击确认保存" : brightnessError)
             : ui.page == UiPage::AutoSleep ? (sleepError.isEmpty() ? "休眠断网 / 循环键唤醒" : sleepError)
             : !s.notice.isEmpty() && millis() - s.noticeAt < 5000 ? s.notice
             : ui.page == UiPage::ToolList ? (toolLoading ? "正在查询数据帝" : !toolData.error.isEmpty() ? toolData.error
@@ -1118,6 +1165,17 @@ void draw()
     // and the framebuffer capture stay on the same task as drawing.
     uiEngine.IN_now = canvas.offset == 0 ? uiEngine.handleInput() : STOP;
     UiPage before = ui.page;
+    bool harpPage = ui.page == UiPage::Harp || ui.page == UiPage::HarpSongs || ui.page == UiPage::HarpFirmware;
+    HarpControl::visible(harpPage);
+    if (harpPage) {
+        int previousOffset = harpView.offset;
+        harpView = HarpControl::snapshot();
+        if (ui.page == UiPage::HarpSongs) {
+            if (previousOffset != harpView.offset) ui.row = 0;
+            ui.toolCount = harpView.songs.size();
+            if (ui.row >= ui.count()) ui.row = ui.count() - 1;
+        }
+    }
     Snapshot s = readSnapshot();
     if (s.valid) {
         ui.customMode = s.facilities[ui.facility()].craftMode == "Custom";
@@ -1157,7 +1215,8 @@ void draw()
     }
     if (canvas.offset == 0 && !receivedItems && !receivedTool && saved < 0) {
         bool blocked = (ui.page == UiPage::Items && (itemLoading || itemSaving))
-            || (ui.page == UiPage::Firmware && readFirmware().busy);
+            || (ui.page == UiPage::Firmware && readFirmware().busy)
+            || (ui.page == UiPage::HarpFirmware && harpView.firmware.busy);
         if (!blocked) {
             if (pendingHold) activateSelection(true);
             else if (uiEngine.IN_now == DOWN) {
@@ -1173,7 +1232,7 @@ void draw()
         if (before == UiPage::Brightness) brightness.cancel();
         bool forward = ui.page != UiPage::Home
             && before != UiPage::CraftMode && before != UiPage::AfterRun && before != UiPage::Items
-            && before != UiPage::Firmware && before != UiPage::Brightness && before != UiPage::AutoSleep
+            && before != UiPage::Firmware && before != UiPage::HarpFirmware && before != UiPage::Brightness && before != UiPage::AutoSleep
             && before != UiPage::ToolDetail && !(before == UiPage::ToolList && ui.page == UiPage::Tools);
         canvas.startTransition(forward);
         positionMenu();
@@ -1341,6 +1400,38 @@ bool serialFirmwareControl(bool install)
 
 void activateSelection(bool held)
 {
+    if(ui.page==UiPage::HarpFirmware) {
+        if(harpView.firmware.busy) return;
+        if(ui.row==2) ui.open(UiPage::Harp,7);
+        else if(ui.row==1) HarpControl::submit(HarpControl::Action::CheckFirmware);
+        else if(harpView.firmware.ready) HarpControl::submit(HarpControl::Action::InstallFirmware);
+        return;
+    }
+    if (ui.page == UiPage::Harp) {
+        using HarpControl::Action;
+        if (ui.row == 0) { ui.toolCount = harpView.songs.size(); ui.open(UiPage::HarpSongs); HarpControl::submit(Action::Songs, "", harpView.offset); }
+        else if (ui.row == 1) {
+            if (harpView.state == "playing" || harpView.state == "countdown") HarpControl::submit(Action::Pause);
+            else if (harpView.state == "paused") HarpControl::submit(Action::Resume);
+            else if (!harpSelectedPath.isEmpty()) HarpControl::submit(Action::Play, harpSelectedPath);
+        } else if (ui.row == 2) HarpControl::submit(Action::Stop);
+        else if (ui.row == 3) HarpControl::submit(Action::Speed, "", harpView.speed >= 200 ? 50 : harpView.speed + 25);
+        else if (ui.row == 4) HarpControl::submit(Action::Loop, "", !harpView.loop);
+        else if (ui.row == 5) HarpControl::submit(Action::Refresh);
+        else if (ui.row == 6) HarpControl::submit(Action::Usb);
+        else if (ui.row == 7) { ui.open(UiPage::HarpFirmware,1); HarpControl::submit(Action::CheckFirmware); }
+        else ui.open(UiPage::Tools, 4);
+        return;
+    }
+    if (ui.page == UiPage::HarpSongs) {
+        if (ui.row < harpView.songs.size()) {
+            harpSelectedPath = harpView.songs[ui.row].path; harpSelectedName = harpView.songs[ui.row].name;
+            ui.open(UiPage::Harp, 1);
+        } else if (ui.row == ui.toolCount && harpView.offset > 0) HarpControl::submit(HarpControl::Action::Songs, "", max(0, harpView.offset - 32));
+        else if (ui.row == ui.toolCount + 1 && harpView.offset + 32 < harpView.total) HarpControl::submit(HarpControl::Action::Songs, "", harpView.offset + 32);
+        else if (ui.row == ui.toolCount + 2) ui.open(UiPage::Harp);
+        return;
+    }
     if (ui.page == UiPage::AutoSleep) {
         if (ui.row == AutoSleep::Count) ui.open(UiPage::Global, 9);
         else if (autoSleep.save(ui.row, millis())) { setNotice("休眠设置已保存"); ui.open(UiPage::Global, 9); }
@@ -1366,6 +1457,7 @@ void activateSelection(bool held)
     } else if (ui.page == UiPage::Tools) {
         if (ui.row == 2) ui.open(UiPage::GunMode);
         else if (ui.row < 2) loadTool(ui.row);
+        else if (ui.row == 4) { ui.open(UiPage::Harp); HarpControl::visible(true); }
         else if (ui.row == 3) {
             if (DeltaOta::loadJob().stage != DeltaOta::Stage::None) {
                 setNotice("请先在全局设置完成固件更新");
@@ -1476,6 +1568,9 @@ void handleButtons()
 
 void handleAutoSleep()
 {
+    // Keep transport controls available while this remote player is open.
+    // Its catalogue is volatile and is not part of the existing resume image.
+    if (ui.page == UiPage::Harp || ui.page == UiPage::HarpSongs || ui.page == UiPage::HarpFirmware) return;
     xSemaphoreTake(stateMutex, portMAX_DELAY);
     bool busy = requestPending || firmwareView.busy || itemsReady || toolReady || imageReady || itemSaveResult >= 0;
     xSemaphoreGive(stateMutex);
@@ -1537,6 +1632,7 @@ void setup()
     DeltaOta::monitorBoot(firmwareBootError);
     sleepBlockedByOta = DeltaOta::loadJob().stage != DeltaOta::Stage::None;
     DeviceConfig::load();
+    HarpControl::begin();
     pinMode(15, OUTPUT);
     digitalWrite(15, HIGH);
     pinMode(UI_CONFIRM_PIN, INPUT_PULLUP);
