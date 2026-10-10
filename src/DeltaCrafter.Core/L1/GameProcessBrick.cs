@@ -100,7 +100,8 @@ public sealed class GameProcessBrick
             {
                 _log.Warning("游戏未在 {Grace}s 内响应关闭请求,强制结束进程树。", grace.TotalSeconds);
                 proc.Kill(entireProcessTree: true);
-                proc.WaitForExit(5000);
+                if (!proc.WaitForExit(5000))
+                    throw new StepFailedException("关闭游戏", "结束进程后游戏仍未退出，不能继续启动或重试。");
             }
             _log.Information("游戏已关闭。");
         }

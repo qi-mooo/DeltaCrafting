@@ -73,9 +73,12 @@ public sealed class ScreenProbe
 
     /// <summary>是否处于指定界面:探针区域 OCR 文本包含约定关键字。</summary>
     public async Task<bool> IsOnAsync(nint hwnd, string screenName)
+        => await IsOnFrameAsync(Capture(hwnd), screenName);
+
+    internal async Task<bool> IsOnFrameAsync(CapturedFrame frame, string screenName)
     {
         var spec = Screen(screenName);
-        var texts = await ReadScreenTextsAsync(Capture(hwnd), spec);
+        var texts = await ReadScreenTextsAsync(frame, spec);
         bool on = MatchesScreenTexts(spec, texts);
         _log.Debug("界面判定 {Screen}:{Result}(读到:{Text})", screenName, on, Compact(string.Join(" | ", texts)));
         return on;
@@ -143,6 +146,8 @@ public sealed class ScreenProbe
     public void ClickFramePoint(nint hwnd, double frameX, double frameY)
     {
         var rect = _window.ClientRectOnScreen(hwnd);
+        _log.Debug("点击识别物品 → 客户区({X:0},{Y:0})，屏幕({ScreenX},{ScreenY})",
+            frameX, frameY, rect.Left + (int)Math.Round(frameX), rect.Top + (int)Math.Round(frameY));
         _input.ClickAt(rect.Left + (int)Math.Round(frameX), rect.Top + (int)Math.Round(frameY));
     }
 

@@ -43,13 +43,15 @@ public sealed class CollectFlow
     {
         var spec = _probe.Screen(AnchorKeys.SpecOpsHome);
         var rois = FacilityKeys.All.Select(k => spec.Roi(AnchorKeys.FacilitySlot(k))).ToArray();
-        var expectedNames = FacilityKeys.All.Select(k =>
-            (IReadOnlyList<string>)OcrMatchFilter.CatalogTargets(_catalog.ItemsFor(k))).ToArray();
+        var catalogs = FacilityKeys.All.Select(k => ObservedItemCatalog.For(k, _catalog.ItemsFor(k))).ToArray();
+        var expectedNames = catalogs.Select(items =>
+            (IReadOnlyList<string>)OcrMatchFilter.CatalogTargets(items)).ToArray();
         const int MaxPasses = 5;
         const int PassDelayMs = 700;
 
         var agreed = new Dictionary<FacilityKey, (FacilityObservation Obs, long CapMs)>();
         var claims = new Dictionary<FacilityKey, (FacilityObservation Obs, long CapMs)>();
+        var lastReasons = new Dictionary<FacilityKey, string>();
 
         for (int pass = 1; pass <= MaxPasses; pass++)
         {
@@ -66,6 +68,8 @@ public sealed class CollectFlow
                 var key = FacilityKeys.All[i];
                 if (agreed.ContainsKey(key)) continue;
                 var obs = Classify(readings[i], _probe.Anchors.Keywords);
+                string reason = readings[i].HasUnreadableCountdown ? "倒计时未读清"
+                    : obs.Phase == FacilityPhase.Unknown ? $"无法分类，读到「{ScreenProbe.Normalize(readings[i].FullText)}」" : "";
                 if (obs.ItemName.Length > 0)
                 {
                     string? resolved;
@@ -73,7 +77,8 @@ public sealed class CollectFlow
                         resolved = BlkAmmoMatcher.ReadSlotGrade(frame, rois[i]) is { } grade
                             ? BlkAmmoIdentity.Name(grade) : null;
                     else
-                        resolved = _catalog.ResolveDisplayName(key, obs.ItemName);
+                        resolved = CatalogNameResolver.Resolve(catalogs[i], obs.ItemName);
+                    if (resolved is null) reason = $"物品「{obs.ItemName}」未完整匹配目录或品质未确认";
                     obs = obs with { ItemName = resolved ?? "" };
                     // 可领取不能仅凭目录外噪声判断;制造中仍可保留可靠倒计时。
                     if (resolved is null && obs.Phase == FacilityPhase.ReadyToCollect)
@@ -81,7 +86,11 @@ public sealed class CollectFlow
                 }
                 _log.Debug("{Facility} 槽位(第{Pass}遍 {Scale:0.#}x):{Phase} {Raw}",
                     FacilityKeys.DisplayName(key), pass, upscale, obs.Phase, ScreenProbe.Normalize(readings[i].FullText));
-                if (obs.Phase == FacilityPhase.Unknown) continue; // 读空/读数被误读:不投票,已有一票保留
+                if (obs.Phase == FacilityPhase.Unknown)
+                {
+                    lastReasons[key] = reason;
+                    continue; // 读空/读数被误读:不投票,已有一票保留
+                }
 
                 if (claims.TryGetValue(key, out var prev))
                 {
@@ -126,7 +135,7 @@ public sealed class CollectFlow
         var unresolved = FacilityKeys.All.Where(k => !agreed.ContainsKey(k)).Select(k =>
             claims.TryGetValue(k, out var c)
                 ? $"{FacilityKeys.DisplayName(k)}(最后判定 {c.Obs.Phase},未获第二票)"
-                : $"{FacilityKeys.DisplayName(k)}(始终读空)");
+                : $"{FacilityKeys.DisplayName(k)}({lastReasons.GetValueOrDefault(k, "未读到有效内容")})");
         var (png, dumpText) = await _probe.DumpAsync(hwnd, "fail-观察设施槽位");
         throw new StepFailedException("观察设施状态",
             $"连续 {MaxPasses} 遍读取仍有槽位无法得到一致判定:{string.Join("、", unresolved)}。" +

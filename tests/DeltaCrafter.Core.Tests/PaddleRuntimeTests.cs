@@ -19,6 +19,24 @@ public sealed class WindowsOcrFactAttribute : FactAttribute
 public sealed class PaddleRuntimeTests
 {
     [WindowsOcrFact]
+    public async Task Empty_blueprint_requires_prompt_and_production_filter_on_actual_frame()
+    {
+        using var original = Cv2.ImRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", "navigation-production-empty.png"));
+        var anchors = new JsonStoreBrick().Load<AnchorTable>(Path.Combine(AppContext.BaseDirectory, "Data", "anchors.json"));
+        using var log = new LoggerConfiguration().CreateLogger();
+        var probe = new ScreenProbe(new(), new(), new PaddleOcrBrick(), new(), () => anchors, "", log);
+        foreach (int width in new[] { 1920, 2560 })
+        {
+            var frame = FrameAt(original, width);
+            var spec = anchors.Screen(AnchorKeys.ProductionEmpty);
+            var texts = await probe.ReadScreenTextsAsync(frame, spec);
+            Assert.True(ScreenProbe.MatchesScreenTexts(spec, texts), $"{width}px: {string.Join(" | ", texts)}");
+            Assert.False(ScreenProbe.MatchesScreenTexts(spec, ["请放入生产图纸", ""]));
+            Assert.False(ScreenProbe.MatchesScreenTexts(spec, ["", "全部类型"]));
+        }
+    }
+
+    [WindowsOcrFact]
     public async Task Lobby_is_recognized_when_music_popup_covers_ready_button()
     {
         // 183 2026-10-09 06:14 失败现场，仅保留两个导航探针与被遮挡的按钮区域。

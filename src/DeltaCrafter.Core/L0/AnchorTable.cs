@@ -89,6 +89,7 @@ public static class AnchorKeys
     public const string Lobby = "lobby";
     public const string SpecOpsHome = "specops-home";
     public const string Production = "production";
+    public const string ProductionEmpty = "production-empty";
     public const string ReplenishPopup = "replenish-popup";
     public const string ReplenishPriceChange = "replenish-price-change";
     public const string CollectResult = "collect-result";
