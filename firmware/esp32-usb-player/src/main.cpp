@@ -11,6 +11,7 @@
 #include "storage.h"
 #include "player.h"
 #include "firmware_update.h"
+#include "discovery.h"
 
 namespace {
 USBCDC console;
@@ -19,6 +20,7 @@ Player player(storage);
 WebServer server(80);
 String ssid, password, token, serialLine, bootError;
 FirmwareUpdate updater(server,player,storage,token);
+HarpDiscovery discovery;
 CardPins pins;
 bool serialOverflow = false, ready = false;
 String deviceId;
@@ -106,6 +108,7 @@ bool options(JsonDocument &doc, PlayerRequest &r) {
 void routes() {
     const char *headers[] = {"Authorization"}; server.collectHeaders(headers,1);
     updater.begin();
+    discovery.begin(server,deviceId,token);
     server.on("/api/v1/status",HTTP_GET,[] { if (authorized()) { DynamicJsonDocument d(2048); statusJson(d); respond(200,d); } });
     server.on("/api/v1/songs",HTTP_GET,[] {
         if (!authorized()) return;
@@ -257,5 +260,5 @@ void loop() {
             serialLine=""; serialOverflow=false;
         } else if (serialLine.length()<2048) serialLine+=c; else serialOverflow=true;
     }
-    server.handleClient(); updater.tick(); delay(1);
+    server.handleClient(); updater.tick(); discovery.tick(); delay(1);
 }

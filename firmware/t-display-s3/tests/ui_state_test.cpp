@@ -54,7 +54,8 @@ int main()
     assert(ui.row == 5);
     ui.move(1);
     assert(ui.row == 0);
-    ui.open(UiPage::Harp, 8); ui.move(1); assert(ui.row == 0 && ui.count() == 9);
+    ui.open(UiPage::Harp, 9); ui.move(1); assert(ui.row == 0 && ui.count() == 10);
+    ui.toolCount = 16; ui.open(UiPage::HarpDevices,17); ui.move(1); assert(ui.row==0 && ui.count()==18);
     ui.open(UiPage::HarpFirmware, 2); ui.move(1); assert(ui.row == 0 && ui.count() == 3);
     ui.toolCount = 32; ui.open(UiPage::HarpSongs, 34); ui.move(1); assert(ui.row == 0 && ui.count() == 35);
     ui.open(UiPage::Home);

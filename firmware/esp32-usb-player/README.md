@@ -3,6 +3,7 @@
 已完成的硬件实测与尚未验证项见 [本次验证记录](VERIFIED.md)。
 日常使用：复制 MIDI 到 `DELTAHARP` → 电脑弹出磁盘 → 屏幕刷新曲库 → 选择并播放。
 USB 板已支持 HTTP 固件更新；屏幕固件在原有 T-Display 项目中新增口琴播放器菜单。
+屏幕 v29 的「工具 → 口琴播放器 → Harp 固件更新」可检查 Windows App 内附的播放器固件并安装。
 
 ESP32-S3 Dongle reads MIDI from its onboard SD card and outputs USB keyboard and
 mouse reports using the HarpAutoPlayer note mapping. The computer does not parse
@@ -44,45 +45,42 @@ Only one owner accesses the filesystem at a time. A play/refresh request while
 the computer owns the disk returns `eject_sd_on_computer_first`. Unmounting only
 a partition may not send a USB media-eject command; on macOS use `diskutil eject
 /dev/diskN` after confirming that disk is the Dongle. Reboot also returns to reader
-mode. Eject before firmware updates or Wi-Fi provisioning, which restart USB.
+mode. From v3 the firmware begin API prepares media on the S3 itself: after a two-second
+device-I/O quiet period it synchronizes the card and withdraws USB MSC media.
+No Windows disk operation is used. This cannot flush writes still cached by the
+computer; finish copying files before updating. Wi-Fi provisioning still requires OS eject.
 
 ## Pairing and control
 
-Run these from this directory with Python 3.9+ and `pyserial` installed:
+Player v3 supports UDP broadcast discovery on port **40110**. No USB serial pairing
+or manual copying of player addresses/API keys is required in normal use.
 
-```sh
-python3 -m pip install pyserial
-python3 control.py --port /dev/cu.usbmodemXXXX info
-python3 control.py --port /dev/cu.usbmodemXXXX pair
-```
+1. Keep the player, Windows client and screen on the same reachable 2.4 GHz LAN.
+   Wi-Fi provisioning is separate from pairing; the existing player already has
+   its Wi-Fi settings in NVS. Broadcast cannot cross isolated guest networks/VLANs.
+2. Windows: Settings > T-Display-S3 > Harp player > Scan, select a device, Connect.
+3. Screen v29: Tools > Harp Player > Scan / Connect player, select a device.
+4. First network pairing opens a 60-second window on boot. Otherwise hold the
+   player's BOOT button for one second while running, then scan again and connect.
+   Windows and the screen can both pair within that window. Do not hold BOOT during reset.
+5. Pairing is saved by stable device ID. Later scans recover changed DHCP addresses;
+   the desktop resolves the selected ID again before checking/installing firmware.
 
-`pair` writes `player.local.json` with owner-only permissions. It contains the
-API key, AP name and AP password, and is gitignored. The player creates a private
-2.4 GHz AP named `DeltaHarp-<device suffix>` at `192.168.4.1`. Its credentials
-are generated on first boot and kept in NVS. They are never included in firmware.
+Discovery responds to a random nonce with public ID/name/version and a short-lived
+pairing challenge. It never broadcasts the API key. While the physical pairing
+window is open, `POST /api/v1/pair` exchanges the ID/challenge for a key over the
+trusted LAN. Existing controllers reuse their saved key outside the window.
+HTTP is local plaintext; the pairing window grants local network peers access.
 
-Flash the updated T-Display firmware and use its own USB serial port:
+Player firmware v2 can first be updated to v3 using existing saved credentials.
+USB serial commands remain optional maintenance tools for Wi-Fi provisioning and
+recovery. They are not part of the normal pairing flow. The generated private
+player AP and its credentials are retained; LAN broadcast discovery assumes that
+both devices have already joined the same network.
 
-```sh
-python3 control.py --port /dev/cu.DISPLAY pair-display --direct
-```
-
-This pairs the screen and joins it directly to the Dongle's AP; no router or
-desktop DeltaCrafter API is required for the player. Direct mode changes the
-screen's Wi-Fi network. Existing desktop monitoring still needs its original
-network and desktop API. To keep both available, put both boards on the same
-2.4 GHz LAN instead:
-
-```sh
-python3 control.py --port /dev/cu.PLAYER wifi YourNetwork
-python3 control.py --port /dev/cu.PLAYER pair
-python3 control.py --port /dev/cu.DISPLAY pair-display
-```
-
-Configure the screen's Wi-Fi with its existing setup tool or the new
-`{"command":"wifi-configure","wifiSsid":"...","wifiPassword":"..."}` command.
-The Dongle Wi-Fi password is entered hidden at the CLI. On a LAN, reserve its
-IP in the router or supply a stable URL with `--url http://delta-harp.local`.
+CLI network pairing: `python3 control.py discover`, then
+`python3 control.py pair-network <deviceId>` while the pairing window is open.
+Credentials are saved in ignored `player.local.json`, never printed.
 
 CLI commands use Wi-Fi by default. Adding `--port` uses USB serial instead,
 which is also useful for a computer without a working Wi-Fi adapter:
@@ -156,8 +154,54 @@ mode. Alternatively format the identified removable disk with the OS exFAT tool.
 
 ## Firmware update over HTTP
 
+### From the T-Display and Windows App
+
+Use display firmware v29 or later and player firmware v3 or later for discovery. Windows App
+release packages include `Firmware/DeltaHarp-esp32s3-usb.zip`; the app validates
+and loads it on startup. Import replacements under Settings > T-Display-S3 >
+Harp USB online firmware. Scan and connect the player there, then use Check / Install in the desktop app,
+even without a screen connected. The client retrieves and saves pairing automatically.
+
+For screen controls, also enable the desktop device API and Allow device control.
+Pair the screen to the desktop and player separately. Desktop and screen must
+select the same player ID; all devices must be reachable on the LAN. Directly
+connecting only to the player's AP cannot reach the desktop on its original LAN.
+
+Open Tools > Harp Player > Harp firmware update. Windows calls the player begin
+API; **USB S3 prepares its own SD/USB state**. It stops playback, waits for device
+I/O to settle, syncs accepted writes, hides MSC media, and starts OTA. Active SD
+I/O returns `sd_io_busy`; Windows waits and retries only this explicit busy result.
+No Windows eject or USB pairing is involved. This drains only writes already
+received by the S3, not unsubmitted computer caches; finish file copying first.
+The screen submits check/install commands and polls progress.
+**Windows sends the image directly to the player. The screen never relays firmware.**
+The desktop job continues when the screen returns to its menu or disconnects.
+Windows verifies the pinned image, sends chunks, resolves lost acknowledgements,
+commits once and confirms the new partition and version after reboot.
+Same-version reinstall is allowed; downgrades and incompatible targets are refused.
+Closing the desktop app interrupts an unfinished upload. Check again to retry.
+Reboot returns the card to USB reader mode.
+
+Desktop job endpoints use the **desktop** key and require Allow control:
+
+- `POST /api/v1/harp/update/action`: `action` (`check` or `install`), a fresh
+  32-character hex `requestId`; install also requires the last successful `checkId`.
+  Optional `playerId` must match the paired device; legacy `playerUrl` only checks the
+  configured address. Neither can select another target.
+  Returns 202 when accepted, 200 for the same request, or 409 for conflicts.
+- `GET /api/v1/harp/update`: `requestId`, `checkId`, `playerId`, `playerUrl`, `phase`, `current`,
+  `version`, `busy`, `ready`, `percent`, `detail`. No player credentials or image bytes.
+
+The lower-level desktop `/api/v1/harp/firmware` and `/api/v1/harp/firmware-image`
+endpoints remain available for tools. They are not used by the screen update flow.
+The destination endpoints below use the **player's** key. See the
+[Harp project overview](../../docs/Harp项目说明.md) and [verification limits](VERIFIED.md).
+
+### Direct API or command line
+
 From `delta-harp-v2`, the USB player also supports system firmware updates over
-the authenticated API. Eject the SD disk in the OS first, then run:
+the authenticated API. v3 prepares storage itself; old v2 still requires OS eject
+for its first upgrade to v3. Run:
 
 ```sh
 python3 control.py firmware
@@ -185,7 +229,10 @@ lost response before retrying. After 30 seconds without an accepted session
 request, the unfinished update is aborted and playback controls become available.
 
 Begin stops playback, releases HID, and blocks playback/storage/configuration
-changes until commit or abort. Data is written only to the inactive app slot.
+changes until commit or abort. v3 advertises `autoStoragePrepare=true` and handles
+USB media withdrawal itself after two seconds without device read/write activity.
+A failed update, abort or inactivity timeout re-exposes media if OTA hid it.
+It does not mount or change the host filesystem and cannot flush host-side caches. Data is written only to the inactive app slot.
 Commit checks size, SHA-256, the embedded player/board/layout marker and ESP-IDF's
 image checksum/chip validation before changing the boot partition. Wrong-board,
 truncated or corrupt images never become the selected boot image. An interrupted

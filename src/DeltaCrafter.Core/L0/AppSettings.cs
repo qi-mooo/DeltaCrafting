@@ -93,6 +93,7 @@ public sealed class AppSettings
     public bool DeveloperMode { get; set; }
 
     public DeviceApiSettings DeviceApi { get; set; } = new();
+    public HarpPlayerSettings HarpPlayer { get; set; } = new();
 
     public WindowMatchRule WindowMatch { get; set; } = new();
 }

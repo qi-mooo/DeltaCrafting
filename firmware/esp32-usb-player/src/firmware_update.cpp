@@ -11,6 +11,7 @@ void FirmwareUpdate::status(JsonObject d) {
     d["maxBytes"]=next?next->size:0; d["chunkBytes"]=sizeof(buffer);
     d["phase"]=phase; d["received"]=received; d["size"]=expected; d["error"]=failure;
     d["busy"]=busy(); d["restart"]=rebootAt!=0;
+    d["autoStoragePrepare"]=true;
 }
 void FirmwareUpdate::send(int code, const char *error) {
     DynamicJsonDocument d(1536); d["ok"]=code<300;
@@ -40,6 +41,7 @@ void FirmwareUpdate::fail(const char *error) {
     if (active) esp_ota_abort(handle);
     if (hashing) { mbedtls_sha256_free(&hash); hashing=false; }
     active=false; phase="error"; failure=error; id="";
+    storage.restoreUsbAfterUpdate();
     player.endMaintenance();
 }
 void FirmwareUpdate::prepare() {
@@ -54,10 +56,8 @@ void FirmwareUpdate::prepare() {
     for (unsigned i=0;i<digest.length();++i) valid=valid && isHexadecimalDigit(digest[i]);
     if (!target || !d["size"].is<uint32_t>() || d["size"].as<uint32_t>()<288
         || d["size"].as<uint32_t>()>target->size || !valid) { send(400,"invalid_size_or_sha256"); return; }
-    if (storage.owner()==CardOwner::Host) { send(409,"eject_sd_on_computer_first"); return; }
     if (!player.beginMaintenance()) { send(409,"player_stop_timeout"); return; }
-    // Re-check after draining commands: an earlier Export may have exposed USB.
-    if (storage.owner()==CardOwner::Host) { player.endMaintenance(); send(409,"eject_sd_on_computer_first"); return; }
+    if(!storage.suspendUsbForUpdate()) { player.endMaintenance(); send(409,storage.error().c_str()); return; }
     expected=d["size"]; expectedHash=digest; received=0; failure=""; image=FirmwareImageCheck{};
     esp_err_t result=esp_ota_begin(target,expected,&handle);
     if (result!=ESP_OK) { fail("ota_begin_failed"); send(500); return; }

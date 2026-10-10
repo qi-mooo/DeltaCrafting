@@ -274,6 +274,29 @@
                     </controls:SettingCard.Slot>
                 </controls:SettingCard>
 
+                <controls:SettingCard Glyph="&#xE968;" Header="Harp 播放器"
+                                      Description="{x:Bind Vm.HarpDiscoveryStatus, Mode=OneWay}">
+                    <controls:SettingCard.Slot>
+                        <StackPanel Spacing="8">
+                            <ComboBox Width="300" ItemsSource="{x:Bind Vm.HarpDevices}" DisplayMemberPath="Label"
+                                      SelectedItem="{x:Bind Vm.SelectedHarpDevice, Mode=TwoWay}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="扫描" Command="{x:Bind Vm.ScanHarpCommand}" />
+                                <Button Content="连接" Command="{x:Bind Vm.ConnectHarpCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+                <controls:SettingCard Glyph="&#xE895;" Header="更新 Harp 播放器"
+                                      Description="{x:Bind Vm.HarpUpdateStatus, Mode=OneWay}">
+                    <controls:SettingCard.Slot>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="检查更新" Command="{x:Bind Vm.CheckHarpUpdateCommand}" />
+                            <Button Content="安装" Command="{x:Bind Vm.InstallHarpUpdateCommand}" />
+                        </StackPanel>
+                    </controls:SettingCard.Slot>
+                </controls:SettingCard>
+
                 <!-- 关于 -->
                 <Border Style="{StaticResource CardBorderStyle}" Margin="0,12,0,0">
                     <StackPanel Spacing="6">

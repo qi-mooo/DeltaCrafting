@@ -20,6 +20,8 @@ public:
     bool begin(const CardPins &pins);
     bool claim();
     bool exportUsb();
+    bool suspendUsbForUpdate();
+    void restoreUsbAfterUpdate();
     bool formatExfat();
     bool list(std::vector<Song> &songs);
     FsVolume volume;
@@ -44,6 +46,9 @@ private:
     USBMSC msc;
     SemaphoreHandle_t mutex = nullptr;
     std::atomic<CardOwner> owner_{CardOwner::Missing};
+    std::atomic<uint32_t> pendingIo{0};
+    uint32_t lastIo=0;
+    bool updateSuspended=false;
     String error_, cardId;
     static Storage *instance;
     int32_t transfer(uint32_t lba, uint32_t offset, uint8_t *buffer, uint32_t size, bool write);

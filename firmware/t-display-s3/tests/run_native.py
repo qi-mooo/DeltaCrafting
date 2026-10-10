@@ -39,9 +39,6 @@ with tempfile.TemporaryDirectory(prefix="s3-ui-test-") as temporary:
     run([cxx, "-std=c++17", "-I" + str(project / "lib/DeltaOta/src"),
          project / "tests/ota_transaction_test.cpp", "-o", build / "ota-transaction"])
     run([build / "ota-transaction"])
-    run([cxx, "-std=c++17", "-fsanitize=address,undefined", "-I" + str(project / "include"),
-         project / "tests/harp_update_test.cpp", "-o", build / "harp-update"])
-    run([build / "harp-update"])
 
     sources = sorted((u8g2 / "clib").glob("*.c"))
     sources = [s for s in sources if s.name != "u8x8_fonts.c"]

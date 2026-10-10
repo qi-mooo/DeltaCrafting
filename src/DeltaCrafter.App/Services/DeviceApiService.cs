@@ -16,6 +16,8 @@ public sealed class DeviceApiService : IDisposable
     private Task? _remoteRun;
     private readonly DeviceFirmwareStore _firmware;
     private readonly DeviceFirmwareStore _harpFirmware;
+    private readonly HarpFirmwareUpdater _harpUpdater;
+    public HarpUpdateState HarpUpdate => _harpUpdater.State;
     public string FirmwareStatus { get; private set; } = "尚未准备 S3 固件包";
     public string HarpFirmwareStatus { get; private set; } = "尚未准备 Harp USB 固件包";
 
@@ -27,6 +29,9 @@ public sealed class DeviceApiService : IDisposable
         _host = host;
         _firmware = new DeviceFirmwareStore(Path.Combine(host.Paths.Root, "firmware"));
         _harpFirmware = new DeviceFirmwareStore(Path.Combine(host.Paths.Root, "harp-firmware"), DeviceFirmwareTarget.Harp);
+        _harpUpdater = new(_harpFirmware);
+        _harpUpdater.Configure(host.Settings.HarpPlayer);
+        _harpUpdater.Changed += () => _dispatcher.TryEnqueue(() => Changed?.Invoke());
         if (_harpFirmware.Current is { } harp) HarpFirmwareStatus = "可供更新: " + harp.FirmwareVersion;
         if (_firmware.Current is { } current) FirmwareStatus = "可供更新: " + current.FirmwareVersion;
         _api = new DeviceApiCoordinator(
@@ -37,7 +42,7 @@ public sealed class DeviceApiService : IDisposable
             {
                 string token = await OnUiAsync(() => _host.Settings.ManufactureApi.Token, ct);
                 return await _host.DataTools.FetchAsync(query, token, ct);
-            }, (code, ct) => OnUiAsync(() => _host.DataTools.CopyGunCode(code), ct), _host.DataTools.ImageAsync, _firmware, _harpFirmware);
+            }, (code, ct) => OnUiAsync(() => _host.DataTools.CopyGunCode(code), ct), _host.DataTools.ImageAsync, _firmware, _harpFirmware, _harpUpdater);
         _api.Changed += () => _dispatcher.TryEnqueue(() => Changed?.Invoke());
         string bundle = Path.Combine(AppContext.BaseDirectory, "Firmware", "DeltaCrafter-esp32s3.zip");
         if (File.Exists(bundle)) _ = ImportFirmwareAsync(bundle, onlyNewer: true);
@@ -62,6 +67,15 @@ public sealed class DeviceApiService : IDisposable
     }
 
     public void Apply() => _api.Apply(_host.Settings.DeviceApi);
+
+    public bool ConfigureHarp(HarpPlayerSettings settings) => _harpUpdater.Configure(settings);
+
+    public string StartHarpUpdate(bool install)
+    {
+        var result = _harpUpdater.Submit(new(install ? "install" : "check", Guid.NewGuid().ToString("N"), HarpUpdate.CheckId));
+        Changed?.Invoke();
+        return result.State.Detail;
+    }
 
     public async Task ImportHarpFirmwareAsync(string path, bool onlyNewer = false)
     {
@@ -214,5 +228,6 @@ public sealed class DeviceApiService : IDisposable
     {
         _shutdown.Cancel();
         _api.Dispose();
+        _harpUpdater.Dispose();
     }
 }

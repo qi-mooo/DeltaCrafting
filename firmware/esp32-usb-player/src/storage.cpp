@@ -74,11 +74,13 @@ bool Storage::begin(const CardPins &pins) {
     // Register MSC even without media so USB CDC diagnostics remain accessible.
     msc.begin(blocks ? sectors() : 1, 512);
     owner_ = blocks ? CardOwner::Host : CardOwner::Missing;
+    lastIo=millis();
     msc.mediaPresent(blocks != nullptr);
     return blocks != nullptr;
 }
 int32_t Storage::transfer(uint32_t lba, uint32_t offset, uint8_t *buffer, uint32_t size, bool write) {
     if (!mutex) return -1;
+    ++pendingIo;
     xSemaphoreTake(mutex, portMAX_DELAY);
     uint64_t pos = uint64_t(lba) * 512 + offset;
     bool ok = owner() == CardOwner::Host && blocks && pos + size <= uint64_t(sectors()) * 512;
@@ -94,8 +96,27 @@ int32_t Storage::transfer(uint32_t lba, uint32_t offset, uint8_t *buffer, uint32
         done += n; pos += n;
     }
     if (ok && write) ok = blocks->syncDevice();
+    lastIo=millis(); --pendingIo;
     xSemaphoreGive(mutex);
     return ok ? int32_t(size) : -1;
+}
+bool Storage::suspendUsbForUpdate() {
+    // Called only after the player worker has parked. Never mount or modify the
+    // host filesystem. This drains device I/O, not unsubmitted host write caches.
+    if(!mutex || xSemaphoreTake(mutex,pdMS_TO_TICKS(100))!=pdTRUE) { error_="sd_io_busy"; return false; }
+    bool ok=true;
+    if(owner()==CardOwner::Host) {
+        if(pendingIo.load() || millis()-lastIo<2000) { error_="sd_io_busy"; ok=false; }
+        else if(!blocks->syncDevice()) { error_="sd_sync_failed"; ok=false; }
+        else { msc.mediaPresent(false); owner_=CardOwner::Ejected; updateSuspended=true; error_=""; }
+    }
+    xSemaphoreGive(mutex); return ok;
+}
+void Storage::restoreUsbAfterUpdate() {
+    if(!mutex) return;
+    xSemaphoreTake(mutex,portMAX_DELAY);
+    if(updateSuspended) { owner_=CardOwner::Host; msc.mediaPresent(true); updateSuspended=false; }
+    xSemaphoreGive(mutex);
 }
 bool Storage::claim() {
     if (owner() == CardOwner::Player) return true;

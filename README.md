@@ -70,6 +70,14 @@ DeltaCrafter 用于按照预先设定的计划管理《三角洲行动》国服�
 Windows 发布包包含对应固件，设置页也支持导入固件 ZIP；旧 S3 首次需要 USB 升级到 v16。
 详情见 [在线更新与首次安装](firmware/t-display-s3/README.md#wi-fi-在线更新)。
 
+屏幕 v29 的「工具 → 口琴播放器 → Harp 固件更新」可检查并更新独立 USB MIDI 播放器。
+Windows 发布包同时内附 `Firmware/DeltaHarp-esp32s3-usb.zip`，设置页支持导入固件、扫描配对播放器和直接更新。
+客户端调用 API 让 USB S3 自行准备 SD/USB 状态，再直接推送固件，屏幕只发起操作并显示进度。
+播放器 v3 支持局域网广播扫描与网络配对，无需通过 USB 配对。Harp 硬件、原程序解析和 API 见
+[Harp 项目说明](docs/Harp项目说明.md)。
+三者连接同一局域网，开启设备 API 和允许控制后即可使用；详见
+[Harp 更新与配对](firmware/t-display-s3/README.md#harp-播放器在线更新)。
+
 ## 功能特性
 
 - **制造循环：**自动进入特勤处、识别四个设施、领取完成品并按计划续造。

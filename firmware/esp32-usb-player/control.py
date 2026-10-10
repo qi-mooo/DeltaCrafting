@@ -6,6 +6,8 @@ import getpass
 import hashlib
 import json
 import os
+import socket
+import secrets
 from pathlib import Path
 import struct
 import time
@@ -60,6 +62,58 @@ def api(config, path, body=None, timeout=8):
             return json.load(response)
     except urllib.error.HTTPError as error:
         raise RuntimeError(f"HTTP {error.code}: {error.read().decode()}") from None
+
+
+def discover():
+    nonce = secrets.token_hex(16)
+    query = json.dumps({"type": "delta-harp-discover", "protocol": 1, "nonce": nonce}).encode()
+    devices = {}
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+        udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        udp.bind(("0.0.0.0", 0))
+        udp.settimeout(0.15)
+        for _ in range(3):
+            udp.sendto(query, ("255.255.255.255", 40110))
+            until = time.monotonic() + 0.9
+            while time.monotonic() < until:
+                try:
+                    data, sender = udp.recvfrom(1025)
+                    d = json.loads(data)
+                    identity = d.get("deviceId", "")
+                    if len(data) > 1024 or sender[1] != 40110 or d.get("type") != "delta-harp-device" or d.get("nonce") != nonce:
+                        continue
+                    if d.get("protocol") != 1 or d.get("board") != "esp32-s3-dongle-fn8" or d.get("port") != 80:
+                        continue
+                    if len(identity) != 12 or any(c not in "0123456789abcdefABCDEF" for c in identity):
+                        continue
+                    d["url"] = "http://" + sender[0]
+                    devices[identity] = d
+                except (socket.timeout, ValueError, AttributeError):
+                    continue
+    return list(devices.values())
+
+
+def pair_network(identity, config_path):
+    rows = [d for d in discover() if d["deviceId"] == identity]
+    if len(rows) != 1:
+        raise RuntimeError("Player not found; check the LAN and v3 firmware.")
+    device = rows[0]
+    if not device.get("pairable"):
+        raise RuntimeError("Hold the player's BOOT button for one second, then retry.")
+    request = urllib.request.Request(device["url"] + "/api/v1/pair",
+        data=json.dumps({"deviceId": identity, "challenge": device["challenge"]}).encode(),
+        headers={"Content-Type": "application/json"})
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    with opener.open(request, timeout=5) as response:
+        paired = json.loads(response.read(2049))
+    key = paired.get("apiKey", "")
+    if not paired.get("ok") or paired.get("deviceId") != identity or not 32 <= len(key) <= 64 or not key.isascii() or not key.isalnum():
+        raise RuntimeError("Invalid pairing response.")
+    save_config(config_path, {"url": device["url"], "deviceId": identity, "apiKey": key})
+    return {"ok": True, "deviceId": identity, "url": device["url"], "message": "Network pairing saved; credentials not printed."}
 
 
 def update_firmware(config, path):
@@ -157,6 +211,9 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("info", "pair", "status", "pause", "resume", "stop", "refresh", "usb"):
         sub.add_parser(name)
+    sub.add_parser("discover")
+    network = sub.add_parser("pair-network")
+    network.add_argument("device_id")
     songs = sub.add_parser("songs")
     songs.add_argument("--offset", type=int, default=0)
     wifi = sub.add_parser("wifi")
@@ -180,7 +237,11 @@ def main():
         p.add_argument("--transpose", type=int, choices=range(-24, 25), metavar="-24..24")
         p.add_argument("--loop", action=argparse.BooleanOptionalAction, default=None)
     args = parser.parse_args()
-    if args.command == "make-demo":
+    if args.command == "discover":
+        result = [{k: v for k, v in d.items() if k not in ("challenge", "nonce")} for d in discover()]
+    elif args.command == "pair-network":
+        result = pair_network(args.device_id, args.config)
+    elif args.command == "make-demo":
         result = demo(args.path)
     elif args.command in ("info", "pair", "wifi"):
         if not args.port:
