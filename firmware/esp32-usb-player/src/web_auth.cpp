@@ -6,10 +6,17 @@
 #include <mbedtls/pkcs5.h>
 
 namespace {
-constexpr uint32_t SessionMs=12u*60*60*1000;
 String randomHex(unsigned bytes) {
     String result; result.reserve(bytes*2);
     for(unsigned i=0;i<bytes;++i) { char hex[3]; snprintf(hex,sizeof(hex),"%02x",unsigned(esp_random()&255)); result+=hex; }
+    return result;
+}
+String sessionHash(const String &token) {
+    unsigned char hash[32];
+    if(mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
+        reinterpret_cast<const unsigned char *>(token.c_str()),token.length(),hash)) return "";
+    String result; result.reserve(64);
+    for(auto b:hash) { char hex[3]; snprintf(hex,sizeof(hex),"%02x",b); result+=hex; }
     return result;
 }
 String derive(const String &password,const String &salt) {
@@ -34,23 +41,33 @@ bool equal(const String &a,const String &b) {
 }
 void WebAuth::begin() {
     Preferences p; if(!p.begin("harp-web",true)) return;
-    StaticJsonDocument<256> d;
+    StaticJsonDocument<1536> d;
     if(!deserializeJson(d,p.getString("auth","{}"))) {
         salt=d["salt"] | ""; verifier=d["hash"] | "";
+        unsigned i=0;
+        for(auto value:d["sessions"].as<JsonArray>()) {
+            String hash=value | "";
+            if(hash.length()==64 && i<sessions.size()) sessions[i++]=hash;
+        }
     }
     p.end();
+}
+bool WebAuth::save(const String &nextSalt,const String &nextVerifier,const Sessions &nextSessions) {
+    StaticJsonDocument<1536> d; d["salt"]=nextSalt; d["hash"]=nextVerifier;
+    auto rows=d.createNestedArray("sessions");
+    for(const auto &hash:nextSessions) if(!hash.isEmpty()) rows.add(hash);
+    if(d.overflowed()) return false;
+    String value; serializeJson(d,value);
+    Preferences p; if(!p.begin("harp-web",false)) return false;
+    bool saved=p.putString("auth",value)==value.length(); p.end(); return saved;
 }
 bool WebAuth::setPassword(const String &password) {
     if(password.length()<8 || password.length()>64) return false;
     String nextSalt=randomHex(16),nextHash=derive(password,nextSalt);
     if(nextHash.isEmpty()) return false;
-    StaticJsonDocument<256> d; d["salt"]=nextSalt; d["hash"]=nextHash;
-    String value; serializeJson(d,value);
-    Preferences p; if(!p.begin("harp-web",false)) return false;
-    bool saved=p.putString("auth",value)==value.length(); p.end();
-    if(!saved) return false;
+    if(!save(nextSalt,nextHash,{})) return false;
     salt=nextSalt; verifier=nextHash; failures=0; blocked=false;
-    for(auto &s:sessions) s={};
+    for(auto &s:sessions) s="";
     return true;
 }
 String WebAuth::login(const String &password,uint32_t now) {
@@ -61,21 +78,25 @@ String WebAuth::login(const String &password,uint32_t now) {
         return "";
     }
     failures=0;
-    Session *slot=&sessions[0];
-    for(auto &s:sessions) {
-        if(s.token.isEmpty() || uint32_t(now-s.touched)>=SessionMs) { slot=&s; break; }
-        if(uint32_t(now-s.touched)>uint32_t(now-slot->touched)) slot=&s;
-    }
-    slot->token=randomHex(32); slot->touched=now; return slot->token;
+    String token=randomHex(32),hash=sessionHash(token);
+    if(hash.isEmpty()) return "";
+    Sessions next=sessions;
+    for(unsigned i=next.size()-1;i>0;--i) next[i]=next[i-1];
+    next[0]=hash;
+    if(!save(salt,verifier,next)) return "";
+    sessions=std::move(next); return token;
 }
-bool WebAuth::authorized(const String &session,uint32_t now) {
+bool WebAuth::authorized(const String &session,uint32_t) {
     if(session.length()!=64) return false;
-    for(auto &s:sessions) if(!s.token.isEmpty() && equal(s.token,session)) {
-        if(uint32_t(now-s.touched)>=SessionMs) { s={}; return false; }
-        s.touched=now; return true;
-    }
+    String hash=sessionHash(session);
+    for(const auto &saved:sessions) if(!saved.isEmpty() && equal(saved,hash)) return true;
     return false;
 }
-void WebAuth::logout(const String &session) {
-    for(auto &s:sessions) if(!s.token.isEmpty() && equal(s.token,session)) s={};
+bool WebAuth::logout(const String &session) {
+    if(session.length()!=64) return true;
+    String hash=sessionHash(session); Sessions next=sessions; bool found=false;
+    for(auto &saved:next) if(!saved.isEmpty() && equal(saved,hash)) { saved=""; found=true; }
+    if(!found) return true;
+    if(!save(salt,verifier,next)) return false;
+    sessions=std::move(next); return true;
 }

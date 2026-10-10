@@ -20,7 +20,7 @@ struct UiState {
     uint8_t count() const
     {
         return page == UiPage::Home ? 6 : page == UiPage::Tools ? 6
-            : page == UiPage::Harp ? 4 : page == UiPage::HarpSongs ? toolCount + 3
+            : page == UiPage::Harp ? 4 : page == UiPage::HarpSongs ? toolCount + 1
             : page == UiPage::HarpDevices ? toolCount + 2
             : page == UiPage::HarpFirmware || page == UiPage::SystemUpdate ? 3
             : page == UiPage::Brightness ? 11

@@ -64,19 +64,29 @@ void poll(bool songs) {
     shared.busy=d["busy"] | false; shared.loop=d["loop"] | false;
     shared.speed=d["speed"] | 100; shared.elapsedMs=d["elapsedMs"] | 0u;
     shared.durationMs=d["durationMs"] | 0u; shared.countdownMs=d["countdownMs"] | 0u;
-    int offset=shared.offset;
     xSemaphoreGive(mutex);
     if (!songs) return;
     DynamicJsonDocument list(20000);
-    String path="/api/v1/favorites?offset="+String(offset);
-    if (!http(path.c_str(),list) || !list["songs"].is<JsonArray>() || list["songs"].size()>32) return;
     std::vector<Song> rows;
-    for (auto item : list["songs"].as<JsonArray>()) {
-        if (!item["path"].is<const char *>() || !item["name"].is<const char *>()) return;
-        rows.push_back({item["path"].as<String>(),item["name"].as<String>()});
-    }
+    int offset=0,total=-1;
+    // The wire API is paged, but the screen shows one bounded favorites list.
+    do {
+        list.clear(); String path="/api/v1/favorites?offset="+String(offset);
+        if(!http(path.c_str(),list) || !list["songs"].is<JsonArray>() || !list["total"].is<int>()) return;
+        int pageTotal=list["total"];
+        if(pageTotal<0 || pageTotal>64 || (total>=0 && total!=pageTotal)) return;
+        total=pageTotal;
+        if((list["offset"] | -1)!=offset || list["songs"].size()!=size_t(min(32,total-offset))) return;
+        for(auto item:list["songs"].as<JsonArray>()) {
+            if(!item["path"].is<const char *>() || !item["name"].is<const char *>()) return;
+            String songPath=item["path"].as<String>();
+            for(const auto &saved:rows) if(saved.path==songPath) return;
+            rows.push_back({songPath,item["name"].as<String>()});
+        }
+        offset=rows.size();
+    } while(offset<total);
     xSemaphoreTake(mutex,portMAX_DELAY);
-    shared.songs=std::move(rows); shared.total=list["total"] | 0;
+    shared.songs=std::move(rows); shared.total=total;
     xSemaphoreGive(mutex);
 }
 bool savePair(const String &u,const String &k,const String &id) {
@@ -91,7 +101,7 @@ void scanPlayers() {
         if(savePair(d.url,key,deviceId)) url=d.url;
     }
     xSemaphoreTake(mutex,portMAX_DELAY); shared.devices=std::move(devices);
-    shared.discoveryDetail=shared.devices.empty()?"未发现 Harp,请检查局域网":"选择设备连接;首次配对按住 BOOT";
+    shared.discoveryDetail=shared.devices.empty()?"未发现 Harp,请检查局域网":"选择设备连接;可在网页开启配对";
     xSemaphoreGive(mutex);
 }
 void connectPlayer(int index) {
@@ -105,7 +115,7 @@ void connectPlayer(int index) {
     if(ok) { ok=savePair(d.url,nextKey,d.id); if(!ok) message="配对保存失败"; }
     if(ok) { url=d.url; key=nextKey; deviceId=d.id; }
     xSemaphoreTake(mutex,portMAX_DELAY);
-    if(ok) { shared.configured=true; shared.songs.clear(); shared.offset=0; shared.total=0; shared.error=""; }
+    if(ok) { shared.configured=true; shared.songs.clear(); shared.total=0; shared.error=""; }
     shared.discoveryDetail=ok?"已连接 "+d.name:message;
     xSemaphoreGive(mutex);
 }
@@ -148,10 +158,7 @@ void worker(void *) {
                     case Action::Refresh: path="/api/v1/library/refresh"; break;
                     case Action::Speed: path="/api/v1/settings"; body["speed"]=r.value; break;
                     case Action::Loop: path="/api/v1/settings"; body["loop"]=r.value!=0; break;
-                    case Action::Songs:
-                        xSemaphoreTake(mutex,portMAX_DELAY);
-                        shared.offset=r.value;
-                        xSemaphoreGive(mutex); break;
+                    case Action::Songs: break;
                     }
                     if (path) {
                         errorUntil=0; commandError="";

@@ -65,6 +65,7 @@ void statusJson(JsonDocument &doc) {
     doc["usbConnected"] = player.usbConnected.load(); doc["storage"] = storage.ownerName();
     doc["sharedLibrary"] = true;
     doc["pairingSeconds"] = discovery.pairingSeconds();
+    doc["startMs"] = web.startMs;
     doc["cardId"] = storage.identity(); doc["cardSectors"] = storage.sectors();
     doc["ip"] = WiFi.localIP().toString(); doc["apIp"] = WiFi.softAPIP().toString();
     doc["apClients"] = WiFi.softAPgetStationNum();
@@ -112,7 +113,7 @@ bool options(JsonDocument &doc, PlayerRequest &r) {
     r.loop = doc["loop"] | r.loop;
     r.dryRun = doc["dryRun"] | false;
     if(doc.containsKey("startMs") && (!doc["startMs"].is<uint32_t>() || doc["startMs"].as<uint32_t>()>3600000)) return false;
-    r.startMs=doc["startMs"] | 0u;
+    r.startMs=doc["startMs"] | r.startMs;
     return r.speed >= 50 && r.speed <= 200 && r.transpose >= -24 && r.transpose <= 24 && r.countdown >= 0
         && r.countdown <= 30 && r.track >= -1 && r.track < int(Harp::MidiFile::MaxTracks) && r.channel >= -1 && r.channel <= 15;
 }
@@ -137,7 +138,7 @@ void routes() {
         d.clear(); d["ok"]=true; d["session"]=session; respond(200,d);
     });
     server.on("/api/v1/web/logout",HTTP_POST,[] {
-        webAuth.logout(server.header("Authorization").substring(7));
+        if(!webAuth.logout(server.header("Authorization").substring(7))) { error(500,"save_failed"); return; }
         StaticJsonDocument<64> d; d["ok"]=true; respond(200,d);
     });
     server.on("/api/v1/web/pairing",HTTP_POST,[] {
@@ -160,15 +161,18 @@ void routes() {
     server.on("/api/v1/preferences",HTTP_GET,[] {
         if(!authorized()) return;
         StaticJsonDocument<256> d; d["ok"]=true; d["speed"]=web.speed; d["transpose"]=web.transpose;
-        d["countdown"]=web.countdown; d["loop"]=web.loop; respond(200,d);
+        d["countdown"]=web.countdown; d["loop"]=web.loop; d["startMs"]=web.startMs; respond(200,d);
     });
     server.on("/api/v1/preferences",HTTP_POST,[] {
         DynamicJsonDocument d(1024); if(!body(d)) return;
         PlayerRequest r; r.command=PlayerCommand::Settings;
-        r.speed=web.speed; r.transpose=web.transpose; r.countdown=web.countdown; r.loop=web.loop;
+        r.speed=web.speed; r.transpose=web.transpose; r.countdown=web.countdown; r.loop=web.loop; r.startMs=web.startMs;
         if(!options(d,r)) { error(400,"invalid_options"); return; }
         if(updater.busy()) { error(409,"update_in_progress"); return; }
-        if(!web.savePlayback(r.speed,r.transpose,r.countdown,r.loop)) { error(500,"save_failed"); return; }
+        if(!web.savePlayback(r.speed,r.transpose,r.countdown,r.loop,r.startMs)) { error(500,"save_failed"); return; }
+        if(!d.containsKey("speed") && !d.containsKey("transpose") && !d.containsKey("loop")) {
+            d.clear(); d["ok"]=true; respond(200,d); return;
+        }
         accept(r);
     });
     server.on("/api/v1/favorites",HTTP_GET,[] {
@@ -209,7 +213,7 @@ void routes() {
     server.on("/api/v1/play",HTTP_POST,[] {
         DynamicJsonDocument d(1024); if (!body(d)) return;
         PlayerRequest r; r.command=PlayerCommand::Play;
-        r.speed=web.speed; r.transpose=web.transpose; r.loop=web.loop; r.countdown=web.countdown;
+        r.speed=web.speed; r.transpose=web.transpose; r.loop=web.loop; r.countdown=web.countdown; r.startMs=web.startMs;
         String path = d["file"] | "";
         if (!validPath(path) || !options(d,r)) { error(400,"invalid_file_or_options"); return; }
         if (!player.usbConnected.load()) { error(409,"usb_host_not_connected"); return; }
@@ -254,6 +258,7 @@ void serialCommand(const String &line) {
             auto s=player.status(); r.speed=s.speed; r.transpose=s.transpose; r.loop=s.loop;
             String path=d["file"] | "";
             r.command=PlayerCommand::Play;
+            r.startMs=web.startMs;
             if (!validPath(path) || !options(d,r)) message="invalid_file_or_options";
             else if (!player.usbConnected.load()) message="usb_host_not_connected";
             else strlcpy(r.path,path.c_str(),sizeof(r.path));

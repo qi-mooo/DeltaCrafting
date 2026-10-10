@@ -25,16 +25,18 @@ void WebSettings::begin() {
         int s=d["speed"] | 100,t=d["transpose"] | 0,c=d["countdown"] | 3;
         if(s>=50 && s<=200 && t>=-24 && t<=24 && c>=0 && c<=30) {
             speed=s; transpose=t; countdown=c; loop=d["loop"] | false;
+            uint32_t start=d["startMs"] | 0u; if(start<=3600000) startMs=start;
         }
     }
     p.end();
 }
-bool WebSettings::savePlayback(int s,int t,int c,bool l) {
-    if(s<50 || s>200 || t< -24 || t>24 || c<0 || c>30) return false;
-    StaticJsonDocument<192> d; d["speed"]=s; d["transpose"]=t; d["countdown"]=c; d["loop"]=l;
+bool WebSettings::savePlayback(int s,int t,int c,bool l,uint32_t start) {
+    if(s<50 || s>200 || t< -24 || t>24 || c<0 || c>30 || start>3600000) return false;
+    if(s==speed && t==transpose && c==countdown && l==loop && start==startMs) return true;
+    StaticJsonDocument<256> d; d["speed"]=s; d["transpose"]=t; d["countdown"]=c; d["loop"]=l; d["startMs"]=start;
     String value; serializeJson(d,value);
     if(!writeValue("playback",value)) return false;
-    speed=s; transpose=t; countdown=c; loop=l; return true;
+    speed=s; transpose=t; countdown=c; loop=l; startMs=start; return true;
 }
 bool WebSettings::favorite(const String &path,bool selected) {
     if(contains(path)==selected) return true;

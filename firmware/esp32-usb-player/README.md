@@ -58,7 +58,7 @@ device-I/O quiet period it synchronizes the card and withdraws USB MSC media.
 No Windows disk operation is used. This cannot flush writes still cached by the
 computer; finish copying files before updating. Wi-Fi provisioning still requires OS eject.
 
-## Built-in web page (v7)
+## Built-in web page (v8)
 
 Visit `http://<player-ip>/` (or `http://delta-harp.local/` where mDNS is supported).
 Log in with the device's web password; no BOOT action or device API key is needed.
@@ -66,8 +66,11 @@ Provision or reset this separate password with `python3 control.py web-password`
 using the saved device credential. The password prompt does not echo or put it in
 command-line arguments. The firmware stores only a random salt and PBKDF2-SHA256
 verifier in NVS; no shared password is embedded in public firmware or page assets.
-Browser sessions last up to 12 idle hours and are invalidated by logout, password
-changes and device reboot. Sessions are kept in tab storage; the password is not.
+The browser remembers its credential in local storage. The device persists up to
+eight credential hashes, so reopening the browser, device reboot and OTA do not
+require logging in again. Logout revokes that credential; password changes revoke
+all browser credentials. The browser never saves the password itself. When more
+than eight browsers log in, the oldest credential is replaced.
 Five failed logins temporarily block attempts for 30 seconds. Windows and the
 display retain their existing independent device pairing for control and OTA.
 In web Settings, Open device pairing starts the same 60-second discovery pairing
@@ -83,8 +86,15 @@ transpose (-24–24), countdown (0–30 seconds) and repeat.
 The player bar accepts a start time in seconds or `mm:ss`, a draggable timeline,
 and ten-second backward/forward jumps. Seek preserves pause and rebuilds held
 notes and sustain at the selected position; repeat returns to the selected start.
+Editing the start time saves it automatically on the player. It is a shared default
+for every new song started from the web or S3 and survives reboot and OTA. If the
+saved start exceeds a song's duration, playback reports an error rather than
+silently changing the chosen start. The progress slider only seeks the current
+song and does not overwrite this saved starting position.
 `POST /api/v1/play` accepts `startMs` (0–3600000); `POST /api/v1/seek` accepts
 `positionMs` within the loaded duration. Invalid or unloaded seeks are rejected.
+`GET/POST /api/v1/preferences` includes `startMs`; omitting it preserves the saved
+value. Omitting `startMs` from `/play` uses that value (including S3 requests).
 The USB action stops
 playback and reconnects the reader if it was ejected. Web controls never play a
 song automatically on page load. Screen pages remain awake while controlling music.

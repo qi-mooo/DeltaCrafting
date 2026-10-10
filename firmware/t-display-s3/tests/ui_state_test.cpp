@@ -58,7 +58,9 @@ int main()
     assert(ui.keepsAwake());
     ui.toolCount = 16; ui.open(UiPage::HarpDevices,17); ui.move(1); assert(ui.row==0 && ui.count()==18);
     ui.open(UiPage::HarpFirmware, 2); ui.move(1); assert(ui.row == 0 && ui.count() == 3);
-    ui.toolCount = 32; ui.open(UiPage::HarpSongs, 34); ui.move(1); assert(ui.row == 0 && ui.count() == 35);
+    ui.toolCount = 0; ui.open(UiPage::HarpSongs); assert(ui.count()==1); ui.move(1); assert(ui.row==0);
+    ui.toolCount = 3; ui.open(UiPage::HarpSongs,2); ui.move(1); assert(ui.row==3); ui.move(1); assert(ui.row==0);
+    ui.toolCount = 64; ui.open(UiPage::HarpSongs,64); ui.move(1); assert(ui.row==0 && ui.count()==65);
     assert(ui.keepsAwake());
     ui.open(UiPage::SystemUpdate,2); ui.move(1); assert(ui.row==0 && ui.count()==3);
     ui.open(UiPage::Home);

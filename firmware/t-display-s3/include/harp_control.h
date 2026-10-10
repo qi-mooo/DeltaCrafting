@@ -12,7 +12,7 @@ struct State {
     bool configured = false, online = false, pending = false, busy = false, loop = false;
     bool sharedLibrary = false;
     String state, file, storage, error;
-    int speed = 100, offset = 0, total = 0;
+    int speed = 100, total = 0;
     uint32_t elapsedMs = 0, durationMs = 0, countdownMs = 0;
     std::vector<Song> songs;
     std::vector<HarpNetwork::Device> devices;

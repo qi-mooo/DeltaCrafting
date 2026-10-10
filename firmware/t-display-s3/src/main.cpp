@@ -1068,9 +1068,7 @@ void drawPanel(U8G2 *, IN_PUT_Mode, Axeuh_UI_Panel *, Axeuh_UI *)
             menuRow(ui.toolCount,"重新扫描"); menuRow(ui.toolCount+1,"返回全局设置");
         } else if (ui.page == UiPage::HarpSongs) {
             for (unsigned i = 0; i < harpView.songs.size(); ++i) menuRow(i, harpView.songs[i].name);
-            menuRow(ui.toolCount, "上一页");
-            menuRow(ui.toolCount + 1, "下一页");
-            menuRow(ui.toolCount + 2, "返回播放器");
+            menuRow(ui.toolCount, "返回播放器");
         } else if (ui.page == UiPage::Facility) {
             menuRow(0, String("设施: ") + (!s.valid ? "未知" : f.enabled ? "启用" : "停用"));
             menuRow(1, String("制造模式: ") + craftModeName(f.craftMode));
@@ -1176,11 +1174,9 @@ void draw()
     bool harpPage = ui.page == UiPage::Harp || ui.page == UiPage::HarpSongs || ui.page == UiPage::HarpFirmware || ui.page == UiPage::HarpDevices;
     HarpControl::visible(harpPage);
     if (harpPage) {
-        int previousOffset = harpView.offset;
         harpView = HarpControl::snapshot();
         if(ui.page==UiPage::HarpDevices) { ui.toolCount=harpView.devices.size(); if(ui.row>=ui.count()) ui.row=0; }
         if (ui.page == UiPage::HarpSongs) {
-            if (previousOffset != harpView.offset) ui.row = 0;
             ui.toolCount = harpView.songs.size();
             if (ui.row >= ui.count()) ui.row = ui.count() - 1;
         }
@@ -1424,7 +1420,7 @@ void activateSelection(bool held)
     }
     if (ui.page == UiPage::Harp) {
         using HarpControl::Action;
-        if (ui.row == 0) { ui.toolCount = harpView.songs.size(); ui.open(UiPage::HarpSongs); HarpControl::submit(Action::Songs, "", harpView.offset); }
+        if (ui.row == 0) { ui.toolCount = harpView.songs.size(); ui.open(UiPage::HarpSongs); HarpControl::submit(Action::Songs); }
         else if (ui.row == 1) {
             if (harpView.state == "playing" || harpView.state == "countdown") HarpControl::submit(Action::Pause);
             else if (harpView.state == "paused") HarpControl::submit(Action::Resume);
@@ -1437,9 +1433,7 @@ void activateSelection(bool held)
         if (ui.row < harpView.songs.size()) {
             harpSelectedPath = harpView.songs[ui.row].path; harpSelectedName = harpView.songs[ui.row].name;
             ui.open(UiPage::Harp, 1);
-        } else if (ui.row == ui.toolCount && harpView.offset > 0) HarpControl::submit(HarpControl::Action::Songs, "", max(0, harpView.offset - 32));
-        else if (ui.row == ui.toolCount + 1 && harpView.offset + 32 < harpView.total) HarpControl::submit(HarpControl::Action::Songs, "", harpView.offset + 32);
-        else if (ui.row == ui.toolCount + 2) ui.open(UiPage::Harp);
+        } else if (ui.row == ui.toolCount) ui.open(UiPage::Harp);
         return;
     }
     if (ui.page == UiPage::AutoSleep) {
