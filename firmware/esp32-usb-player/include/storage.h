@@ -6,6 +6,7 @@
 #include <sdmmc_cmd.h>
 #include <atomic>
 #include <vector>
+#include "read_window.h"
 
 struct CardPins {
     bool mmc = false;
@@ -18,7 +19,9 @@ class Storage {
 public:
     Storage();
     bool begin(const CardPins &pins);
-    bool claim();
+    bool beginRead();
+    bool endRead();
+    bool readValid();
     bool exportUsb();
     bool suspendUsbForUpdate();
     void restoreUsbAfterUpdate();
@@ -31,6 +34,19 @@ public:
     const String &error() const { return error_; }
     String identity() const;
 private:
+    // Never expose the real writable block device to the song reader. Even an
+    // accidental filesystem sync cannot modify a disk mounted by the computer.
+    struct ReadView : FsBlockDeviceInterface {
+        Storage *storage = nullptr;
+        Harp::ReadWindow window;
+        bool isBusy() override { return false; }
+        bool readSector(uint32_t s, uint8_t *b) override { return readSectors(s,b,1); }
+        bool readSectors(uint32_t s, uint8_t *b, size_t n) override;
+        bool writeSector(uint32_t, const uint8_t *) override { return false; }
+        bool writeSectors(uint32_t, const uint8_t *, size_t) override { return false; }
+        uint32_t sectorCount() override;
+        bool syncDevice() override { return true; }
+    } readView;
     struct MmcBlock : FsBlockDeviceInterface {
         sdmmc_card_t card{};
         bool isBusy() override { return false; }
@@ -47,6 +63,8 @@ private:
     SemaphoreHandle_t mutex = nullptr;
     std::atomic<CardOwner> owner_{CardOwner::Missing};
     std::atomic<uint32_t> pendingIo{0};
+    std::atomic<uint32_t> pendingWrites{0};
+    uint32_t writeEpoch=0, lastWrite=0;
     uint32_t lastIo=0;
     bool updateSuspended=false;
     String error_, cardId;

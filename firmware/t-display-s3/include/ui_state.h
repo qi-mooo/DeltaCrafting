@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include "ui_list_layout.h"
 
-enum class UiPage : uint8_t { Home, Facility, Global, CraftMode, AfterRun, Items, Tools, ToolList, ToolDetail, GunMode, GunQuery, Firmware, Brightness, AutoSleep, Harp, HarpSongs, HarpFirmware, HarpDevices };
+enum class UiPage : uint8_t { Home, Facility, Global, CraftMode, AfterRun, Items, Tools, ToolList, ToolDetail, GunMode, GunQuery, Firmware, Brightness, AutoSleep, Harp, HarpSongs, HarpFirmware, HarpDevices, SystemUpdate };
 
 struct UiState {
     UiPage page = UiPage::Home;
@@ -15,20 +15,21 @@ struct UiState {
 
     bool settingsHint() const { return page == UiPage::Home && home == 4; }
     UiPage homeDestination() const { return home == 5 ? UiPage::Tools : home == 4 ? UiPage::Global : UiPage::Facility; }
+    bool keepsAwake() const { return page==UiPage::Harp || page==UiPage::HarpSongs || page==UiPage::HarpFirmware || page==UiPage::HarpDevices || page==UiPage::SystemUpdate; }
 
     uint8_t count() const
     {
         return page == UiPage::Home ? 6 : page == UiPage::Tools ? 6
-            : page == UiPage::Harp ? 10 : page == UiPage::HarpSongs ? toolCount + 3
+            : page == UiPage::Harp ? 4 : page == UiPage::HarpSongs ? toolCount + 3
             : page == UiPage::HarpDevices ? toolCount + 2
-            : page == UiPage::HarpFirmware ? 3
+            : page == UiPage::HarpFirmware || page == UiPage::SystemUpdate ? 3
             : page == UiPage::Brightness ? 11
             : page == UiPage::AutoSleep ? 7
             : page == UiPage::GunMode || page == UiPage::GunQuery || page == UiPage::Firmware ? 3
             : page == UiPage::ToolList ? toolCount + (tool == 2 ? 4 : tool == 0 || toolFailed ? 2 : 1)
             : page == UiPage::ToolDetail ? (tool == 2 ? detailCount + 2 : 1)
             : page == UiPage::Items ? itemCount + 1
-            : page == UiPage::Facility ? (customMode || hourlyMode ? 4 : 3) : page == UiPage::Global ? 11 : 4;
+            : page == UiPage::Facility ? (customMode || hourlyMode ? 4 : 3) : page == UiPage::Global ? 12 : 4;
     }
 
     void move(int direction)

@@ -14,6 +14,14 @@ State shared;
 String url, key, deviceId;
 String commandError;
 uint32_t errorUntil = 0;
+String readableError(const String &error) {
+    if(error=="sd_busy_retry" || error=="sd_changed_retry") return "SD 正在写入,稍后重试";
+    if(error=="eject_sd_on_computer_first") return "旧版播放器需先弹出 SD 卡";
+    if(error=="sd_not_available") return "未检测到 SD 卡";
+    if(error=="update_in_progress") return "播放器正在更新";
+    if(error=="usb_host_not_connected") return "播放器 USB 未连接电脑";
+    return error;
+}
 void updateProgress(const HarpUpdate::View &view) {
     xSemaphoreTake(mutex,portMAX_DELAY); shared.firmware=view; xSemaphoreGive(mutex);
 }
@@ -37,7 +45,8 @@ bool http(const char *path, JsonDocument &doc, const String *body = nullptr) {
     if (!ok) {
         xSemaphoreTake(mutex,portMAX_DELAY);
         shared.online=code>0 && code!=401;
-        shared.error=code==401?"播放器配对密钥错误":code==409?"请先在电脑弹出 SD 卡":code<=0?"播放器未连接":String("播放器 HTTP ")+code;
+        String reason=readableError(doc["error"] | "");
+        shared.error=code==401?"播放器配对密钥错误":code<=0?"播放器未连接":!reason.isEmpty()?reason:String("播放器 HTTP ")+code;
         if (body) { commandError=shared.error; errorUntil=millis()+5000; }
         xSemaphoreGive(mutex);
     }
@@ -50,7 +59,8 @@ void poll(bool songs) {
     xSemaphoreTake(mutex,portMAX_DELAY);
     shared.online=true; shared.state=d["state"].as<String>(); shared.storage=d["storage"].as<String>();
     shared.file=d["file"].as<String>();
-    shared.error=int32_t(errorUntil-millis())>0 ? commandError : d["error"].as<String>();
+    shared.error=int32_t(errorUntil-millis())>0 ? commandError : readableError(d["error"] | "");
+    shared.sharedLibrary=d["sharedLibrary"] | false;
     shared.busy=d["busy"] | false; shared.loop=d["loop"] | false;
     shared.speed=d["speed"] | 100; shared.elapsedMs=d["elapsedMs"] | 0u;
     shared.durationMs=d["durationMs"] | 0u; shared.countdownMs=d["countdownMs"] | 0u;
@@ -58,7 +68,7 @@ void poll(bool songs) {
     xSemaphoreGive(mutex);
     if (!songs) return;
     DynamicJsonDocument list(20000);
-    String path="/api/v1/songs?offset="+String(offset);
+    String path="/api/v1/favorites?offset="+String(offset);
     if (!http(path.c_str(),list) || !list["songs"].is<JsonArray>() || list["songs"].size()>32) return;
     std::vector<Song> rows;
     for (auto item : list["songs"].as<JsonArray>()) {
@@ -130,7 +140,7 @@ void worker(void *) {
                     case Action::CheckFirmware: HarpUpdate::check(url,deviceId,updateProgress); break;
                     case Action::InstallFirmware: HarpUpdate::install(url,deviceId,updateProgress); break;
                     case Action::Scan: case Action::Connect: break;
-                    case Action::Play: path="/api/v1/play"; body["file"]=r.file; body["countdown"]=3; break;
+                    case Action::Play: path="/api/v1/play"; body["file"]=r.file; break;
                     case Action::Pause: path="/api/v1/pause"; break;
                     case Action::Resume: path="/api/v1/resume"; break;
                     case Action::Stop: path="/api/v1/stop"; break;
@@ -139,7 +149,9 @@ void worker(void *) {
                     case Action::Speed: path="/api/v1/settings"; body["speed"]=r.value; break;
                     case Action::Loop: path="/api/v1/settings"; body["loop"]=r.value!=0; break;
                     case Action::Songs:
-                        xSemaphoreTake(mutex,portMAX_DELAY); shared.offset=r.value; xSemaphoreGive(mutex); break;
+                        xSemaphoreTake(mutex,portMAX_DELAY);
+                        shared.offset=r.value;
+                        xSemaphoreGive(mutex); break;
                     }
                     if (path) {
                         errorUntil=0; commandError="";

@@ -38,16 +38,17 @@ def main():
         bundle.write(build / "firmware.elf", "firmware.elf")
         for name in ("control.py", "README.md", "VERIFIED.md", "THIRD_PARTY_NOTICES.md"):
             bundle.write(root / name, name)
-        for folder in ("src", "include", "lib", "tests"):
+        for folder in ("src", "include", "lib", "tests", "web"):
             for path in sorted((root / folder).rglob("*")):
                 if path.is_file() and "__pycache__" not in path.parts:
                     bundle.write(path, "source/" + str(path.relative_to(root)))
-        for name in ("platformio.ini", "control.py", "package.py", "flash.py", "README.md", "VERIFIED.md", "THIRD_PARTY_NOTICES.md"):
+        for name in ("platformio.ini", "control.py", "package.py", "web_assets.py", "flash.py", "README.md", "VERIFIED.md", "THIRD_PARTY_NOTICES.md"):
             bundle.write(root / name, "source/" + name)
         deps = root / ".pio/libdeps/esp32-usb-player"
         for name, path in (("SdFat.txt", deps / "SdFat/LICENSE.md"),
                            ("ArduinoJson.txt", deps / "ArduinoJson/LICENSE.txt"),
-                           ("Arduino-ESP32.txt", root / "licenses/Arduino-ESP32.txt")):
+                           ("Arduino-ESP32.txt", root / "licenses/Arduino-ESP32.txt"),
+                           ("Lucide.txt", root / "licenses/Lucide.txt")):
             bundle.write(path, "licenses/" + name)
             if path.is_relative_to(root / "licenses"):
                 bundle.write(path, "source/licenses/" + name)

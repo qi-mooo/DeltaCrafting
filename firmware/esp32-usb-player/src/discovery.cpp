@@ -22,6 +22,10 @@ bool nonceValid(const String &s) {
 }
 }
 bool HarpDiscovery::pairable() const { return pairUntil && int32_t(pairUntil-millis())>0; }
+void HarpDiscovery::webChallenge(JsonObject output) {
+    output["ok"]=true; output["deviceId"]=deviceId; output["pairable"]=pairable();
+    if(pairable()) output["challenge"]=challenge;
+}
 void HarpDiscovery::openPairing() {
     char value[33]; snprintf(value,sizeof(value),"%08x%08x%08x%08x",esp_random(),esp_random(),esp_random(),esp_random());
     challenge=value; pairUntil=millis()+60000;

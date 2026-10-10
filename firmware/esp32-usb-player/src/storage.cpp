@@ -13,7 +13,15 @@ bool CardPins::valid() const {
     }
     return true;
 }
-Storage::Storage() { instance = this; }
+Storage::Storage() { instance = this; readView.storage=this; }
+uint32_t Storage::ReadView::sectorCount() { return storage->sectors(); }
+bool Storage::ReadView::readSectors(uint32_t sector, uint8_t *buffer, size_t count) {
+    if(xSemaphoreTake(storage->mutex,pdMS_TO_TICKS(100))!=pdTRUE) return false;
+    bool ok=window.valid(storage->writeEpoch,millis(),storage->pendingWrites.load()!=0)
+        && storage->blocks && uint64_t(sector)+count<=storage->sectors();
+    if(ok) ok=storage->blocks->readSectors(sector,buffer,count);
+    xSemaphoreGive(storage->mutex); return ok;
+}
 const char *Storage::ownerName() const {
     switch (owner()) {
     case CardOwner::Host: return "usb";
@@ -75,13 +83,17 @@ bool Storage::begin(const CardPins &pins) {
     msc.begin(blocks ? sectors() : 1, 512);
     owner_ = blocks ? CardOwner::Host : CardOwner::Missing;
     lastIo=millis();
+    lastWrite=lastIo-Harp::ReadWindow::QuietMs;
     msc.mediaPresent(blocks != nullptr);
     return blocks != nullptr;
 }
 int32_t Storage::transfer(uint32_t lba, uint32_t offset, uint8_t *buffer, uint32_t size, bool write) {
     if (!mutex) return -1;
     ++pendingIo;
+    if(write) ++pendingWrites;
     xSemaphoreTake(mutex, portMAX_DELAY);
+    // Increment before writing: partial/failed writes invalidate readers too.
+    if(write) ++writeEpoch;
     uint64_t pos = uint64_t(lba) * 512 + offset;
     bool ok = owner() == CardOwner::Host && blocks && pos + size <= uint64_t(sectors()) * 512;
     uint32_t done = 0;
@@ -97,6 +109,7 @@ int32_t Storage::transfer(uint32_t lba, uint32_t offset, uint8_t *buffer, uint32
     }
     if (ok && write) ok = blocks->syncDevice();
     lastIo=millis(); --pendingIo;
+    if(write) { lastWrite=lastIo; --pendingWrites; }
     xSemaphoreGive(mutex);
     return ok ? int32_t(size) : -1;
 }
@@ -118,17 +131,31 @@ void Storage::restoreUsbAfterUpdate() {
     if(updateSuspended) { owner_=CardOwner::Host; msc.mediaPresent(true); updateSuspended=false; }
     xSemaphoreGive(mutex);
 }
-bool Storage::claim() {
-    if (owner() == CardOwner::Player) return true;
-    xSemaphoreTake(mutex, portMAX_DELAY);
-    bool ok = owner() == CardOwner::Ejected;
-    if (!ok) error_ = owner() == CardOwner::Host ? "eject_sd_on_computer_first" : "sd_not_available";
-    else {
-        ok = volume.begin(blocks) || volume.begin(blocks, true, 0);
-        if (ok) { owner_ = CardOwner::Player; error_ = ""; }
-        else error_ = "filesystem_mount_failed";
-    }
+bool Storage::beginRead() {
+    if(!mutex || !blocks) { error_="sd_not_available"; return false; }
+    volume.end();
+    xSemaphoreTake(mutex,portMAX_DELAY);
+    bool ok=readView.window.begin(writeEpoch,millis(),lastWrite,pendingWrites.load()!=0);
     xSemaphoreGive(mutex);
+    if(!ok) { error_="sd_busy_retry"; return false; }
+    // Fresh caches for every operation; the host may have changed any metadata.
+    ok=volume.begin(&readView) || volume.begin(&readView,true,0);
+    if(!ok) { error_=readValid()?"filesystem_mount_failed":"sd_changed_retry"; endRead(); }
+    else error_="";
+    return ok;
+}
+bool Storage::readValid() {
+    xSemaphoreTake(mutex,portMAX_DELAY);
+    bool ok=readView.window.valid(writeEpoch,millis(),pendingWrites.load()!=0);
+    xSemaphoreGive(mutex); return ok;
+}
+bool Storage::endRead() {
+    volume.end();
+    xSemaphoreTake(mutex,portMAX_DELAY);
+    bool ok=readView.window.valid(writeEpoch,millis(),pendingWrites.load()!=0);
+    readView.window.active=false;
+    xSemaphoreGive(mutex);
+    if(!ok) error_="sd_changed_retry";
     return ok;
 }
 bool Storage::exportUsb() {
@@ -159,6 +186,7 @@ bool Storage::walk(const String &path, unsigned depth, std::vector<Song> &songs)
     if (!dir.open(&volume, path.c_str(), O_RDONLY)) return false;
     char name[192];
     while (entry.openNext(&dir, O_RDONLY)) {
+        if(!readValid()) { error_="sd_changed_retry"; return false; }
         if (!entry.getName(name, sizeof(name))) {
             error_ = "filename_too_long_or_unreadable"; return false;
         }
@@ -176,13 +204,15 @@ bool Storage::walk(const String &path, unsigned depth, std::vector<Song> &songs)
         }
         delay(1);
     }
-    return true;
+    return readValid();
 }
 bool Storage::list(std::vector<Song> &songs) {
     songs.clear();
-    if (!claim()) return false;
+    if (!beginRead()) return false;
     bool ok = walk("/", 0, songs);
+    if(!endRead()) ok=false;
     std::sort(songs.begin(), songs.end(), [](const Song &a, const Song &b) { return a.path < b.path; });
     if (!ok && error_.isEmpty()) error_ = "directory_read_failed";
+    if(!ok) songs.clear();
     return ok;
 }

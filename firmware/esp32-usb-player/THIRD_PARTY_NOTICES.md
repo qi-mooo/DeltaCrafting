@@ -14,6 +14,10 @@ https://github.com/greiman/SdFat/tree/2.2.3
 ArduinoJson 6.21.5 by Benoit Blanchon (MIT):
 https://github.com/bblanchon/ArduinoJson/tree/v6.21.5
 
+Lucide 0.468.0 icons (ISC), embedded as a local SVG symbol sprite:
+https://github.com/lucide-icons/lucide/tree/0.468.0
+License retained in `licenses/Lucide.txt`.
+
 PlatformIO espressif32 6.5.0 uses Arduino-ESP32 2.0.14 (LGPL-2.1) and ESP-IDF /
 TinyUSB components under their respective licenses. Corresponding sources:
 https://github.com/platformio/platform-espressif32/tree/v6.5.0

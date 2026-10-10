@@ -1,6 +1,7 @@
 #include "player.h"
 #include <esp_timer.h>
 #include <algorithm>
+#include "playback_seek.h"
 
 bool Player::begin() {
     mutex = xSemaphoreCreateMutex(); queue = xQueueCreate(4, sizeof(PlayerRequest));
@@ -40,7 +41,10 @@ void Player::publish() {
     xSemaphoreTake(mutex, portMAX_DELAY); shared = current; xSemaphoreGive(mutex);
 }
 void Player::release() {
-    keyboard.releaseAll(); mouse.release(MOUSE_ALL); output = {}; pending = {}; keyPending = false;
+    if(!current.dryRun && (output.usage || output.mouse || pending.usage || pending.mouse)) {
+        keyboard.releaseAll(); mouse.release(MOUSE_ALL);
+    }
+    output = {}; pending = {}; keyPending = false;
 }
 void Player::silence() { release(); voice.clear(); }
 void Player::stop(const String &error) {
@@ -48,23 +52,37 @@ void Player::stop(const String &error) {
     current.state = error.isEmpty() ? "stopped" : "error"; current.error = error; current.busy = false;
 }
 bool Player::rewind() {
-    voice.clear(); musicUs = 0; release();
-    midi.rewind();
-    // Consume leading metadata/rest without waiting; keep the first audible event.
-    while ((hasNext = midi.next(next)) && next.us < trimUs) {
-        if (selected(next)) voice.event(next.type, next.a, next.b);
-    }
-    if (midi.error()) { stop(midi.error()); return false; }
-    return hasNext;
+    return seek(loopStartMs);
+}
+bool Player::seek(uint32_t milliseconds) {
+    uint64_t target=uint64_t(milliseconds)*1000;
+    if(target>totalUs) { current.error="seek_out_of_range"; return false; }
+    release();
+    hasNext=Harp::seekEvents(midi,voice,next,target+trimUs,current.track,current.channel);
+    musicUs=target; lastClock=esp_timer_get_time();
+    if(midi.error()) { stop(midi.error()); return false; }
+    if(current.state=="playing") sound(lastClock,true);
+    return true;
 }
 bool Player::load(const PlayerRequest &request) {
     stop(); current.file = request.path; current.state = "loading"; current.busy = true;
     current.dryRun = request.dryRun; current.emittedNotes = 0; publish();
-    if (!storage.claim()) { stop(storage.error()); return false; }
-    if (!reader.file.open(&storage.volume, request.path, O_RDONLY) || reader.file.isDirectory()
-        || reader.file.fileSize() > 512 * 1024) { stop("midi_open_failed_or_larger_than_512KiB"); return false; }
-    if (!midi.open(reader)) { stop(midi.error()); return false; }
-    reader.file.close();
+    bool loaded=false; String failure;
+    for(unsigned attempt=0;attempt<25 && !cancel.load();++attempt) {
+        if(storage.beginRead()) {
+            bool opened=reader.file.open(&storage.volume,request.path,O_RDONLY) && !reader.file.isDirectory()
+                && reader.file.fileSize()<=512*1024;
+            loaded=opened && midi.open(reader);
+            failure=opened ? String(midi.error() ? midi.error() : "") : "midi_open_failed_or_larger_than_512KiB";
+            reader.file.close();
+            if(!storage.endRead()) { loaded=false; midi.close(); failure=storage.error(); }
+            if(loaded) break;
+        } else failure=storage.error();
+        if(failure!="sd_busy_retry" && failure!="sd_changed_retry") break;
+        delay(250);
+    }
+    if(cancel.load()) { stop(); return false; }
+    if(!loaded) { stop(failure); return false; }
     memset(candidates, 0, sizeof(candidates));
     for (auto &track : candidates) for (auto &c : track) c.low = 127;
     Harp::Event e; totalUs = 0; unsigned processed = 0;
@@ -100,7 +118,9 @@ bool Player::load(const PlayerRequest &request) {
     current.baseOctave = Harp::autoOctave(histogram, request.transpose);
     current.notes = candidates[current.track][current.channel].count;
     totalUs = totalUs > trimUs ? totalUs - trimUs : 0;
-    if (!rewind()) { stop("empty_track"); return false; }
+    if(request.startMs>=totalUs/1000 && request.startMs) { stop("start_out_of_range"); return false; }
+    loopStartMs=request.startMs;
+    if (!seek(request.startMs)) { stop(current.error); return false; }
     if (!usbConnected.load()) { stop("usb_host_not_connected"); return false; }
     current.busy = false; current.state = "countdown";
     startAt = esp_timer_get_time() + uint64_t(request.countdown) * 1000000;
@@ -110,8 +130,8 @@ void Player::sound(uint64_t now, bool retrigger) {
     int pitch = voice.highest();
     Harp::Key desired = pitch < 0 ? Harp::Key{} : Harp::mapPitch(pitch + current.transpose, current.baseOctave);
     if (desired != pending || retrigger) {
-        keyboard.releaseAll(); output.usage = 0; keyPending = false;
-        mouse.release(MOUSE_ALL); output.mouse = 0;
+        if(!current.dryRun) { keyboard.releaseAll(); mouse.release(MOUSE_ALL); }
+        output.usage = 0; keyPending = false; output.mouse = 0;
         pending = desired;
         if (desired.usage) {
             if (desired.mouse && !current.dryRun) mouse.press(desired.mouse);
@@ -137,16 +157,30 @@ void Player::runCommand(const PlayerRequest &r) {
         } else if (!usbConnected.load()) current.error = "usb_host_not_connected";
         break;
     case PlayerCommand::Stop: stop(); break;
+    case PlayerCommand::Seek:
+        if(current.state=="playing" || current.state=="paused" || current.state=="countdown") seek(r.positionMs);
+        else current.error="no_song_loaded";
+        break;
     case PlayerCommand::Library: {
         if (current.state == "playing" || current.state == "countdown" || current.state == "paused") { current.error = "stop_before_refreshing_library"; break; }
         current.busy = true; publish(); std::vector<Song> fetched;
-        if (!storage.list(fetched)) current.error = storage.error();
-        xSemaphoreTake(mutex, portMAX_DELAY); songs = std::move(fetched); xSemaphoreGive(mutex);
+        bool scanned=false;
+        for(unsigned attempt=0;attempt<25 && !cancel.load();++attempt) {
+            scanned=storage.list(fetched);
+            if(scanned) break;
+            current.error=storage.error();
+            if(current.error!="sd_busy_retry" && current.error!="sd_changed_retry") break;
+            delay(250);
+        }
+        if(scanned && !cancel.load()) {
+            current.error="";
+            xSemaphoreTake(mutex, portMAX_DELAY); songs = std::move(fetched); xSemaphoreGive(mutex);
+        }
         current.busy = false; break;
     }
     case PlayerCommand::Export:
         stop(); if (!storage.exportUsb()) current.error = storage.error();
-        xSemaphoreTake(mutex, portMAX_DELAY); songs.clear(); xSemaphoreGive(mutex); break;
+        break;
     case PlayerCommand::Settings:
         current.speed = r.speed; current.transpose = r.transpose; current.loop = r.loop;
         current.baseOctave = Harp::autoOctave(histogram, current.transpose);

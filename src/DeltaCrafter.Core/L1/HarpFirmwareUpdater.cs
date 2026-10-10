@@ -11,7 +11,10 @@ namespace DeltaCrafter.Core.L1;
 public sealed class HarpFirmwareUpdater : IDisposable
 {
     private const string Board = "esp32-s3-dongle-fn8", Layout = "dual-8mb-v1";
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    // These JSON requests go directly to the device, never into HTML. Preserve
+    // base64 '+' characters so 4096-byte chunks fit its 6144-byte request limit.
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
+        { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
     private readonly DeviceFirmwareStore _store;
     private readonly HttpClient _http;
     private readonly CancellationTokenSource _stop = new();

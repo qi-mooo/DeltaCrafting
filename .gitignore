@@ -28,3 +28,4 @@ HANDOFF.md
 **/.pio/
 firmware/**/include/config.local.h
 __pycache__/
+firmware/esp32-usb-player/include/web_page.h

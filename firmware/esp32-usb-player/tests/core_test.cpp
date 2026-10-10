@@ -1,6 +1,8 @@
 #include "midi_file.h"
 #include "harp_mapping.h"
 #include "firmware_image.h"
+#include "read_window.h"
+#include "playback_seek.h"
 #include <assert.h>
 #include <string.h>
 #include <vector>
@@ -24,6 +26,18 @@ Memory smf(std::vector<std::vector<uint8_t>> tracks) {
     return m;
 }
 int main() {
+    Harp::ReadWindow view;
+    assert(!view.begin(3,5000,4500,false));
+    assert(!view.begin(3,5000,0,true));
+    assert(view.begin(3,5000,0,false));
+    assert(view.valid(3,5001,false));
+    assert(!view.valid(4,5001,false));
+    assert(!view.valid(3,5001,true));
+    assert(!view.valid(3,15000,false));
+    assert(view.begin(4,8000,5500,false));
+    assert(view.valid(4,8001,false));
+    assert(view.begin(5,1000,UINT32_MAX-2000,false));
+    assert(view.valid(5,1001,false));
     FirmwareImageCheck image, wrong;
     uint8_t header[24]={0xe9}; header[12]=9;
     image.add(header,24); wrong.add(header,24);
@@ -51,7 +65,21 @@ int main() {
     while(file.next(e)) if(e.type==0x90 || e.type==0x80) notes.push_back(e);
     assert(notes.size()==4 && notes[0].track==1 && notes[0].us==0);
     assert(notes[1].us==500000 && notes[2].us==500000 && notes[3].us==1500000);
-    file.rewind(); assert(file.next(e)); file.close();
+    Voice seekVoice; Event following;
+    assert(seekEvents(file,seekVoice,following,250000,1,0));
+    assert(seekVoice.highest()==60 && following.us==500000);
+    assert(seekEvents(file,seekVoice,following,750000,1,0));
+    assert(seekVoice.highest()==62 && following.us==1500000);
+    assert(seekEvents(file,seekVoice,following,0,1,0) && seekVoice.highest()==60);
+    assert(!seekEvents(file,seekVoice,following,1500000,1,0) && seekVoice.highest()==-1);
+    auto saved=m.data; m.data.clear();
+    // Once loaded, playback is independent of the SD file and later host writes.
+    file.rewind(); assert(file.next(e)); file.close(); m.data=std::move(saved);
+    auto pedal=smf({{0,0x90,60,80,0x81,0x70,0xb0,64,127,0,0x80,60,0,0x81,0x70,0xb0,64,0,0,0xff,0x2f,0}});
+    assert(file.open(pedal));
+    assert(seekEvents(file,seekVoice,following,300000,0,0) && seekVoice.highest()==60);
+    assert(!seekEvents(file,seekVoice,following,500000,0,0) && seekVoice.highest()==-1);
+    assert(seekEvents(file,seekVoice,following,0,0,0) && seekVoice.highest()==60);file.close();
     for (size_t n=0;n<m.data.size();++n) {
         Memory cut=m; cut.data.resize(n); assert(!file.open(cut));
     }

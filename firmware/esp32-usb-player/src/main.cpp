@@ -12,6 +12,8 @@
 #include "player.h"
 #include "firmware_update.h"
 #include "discovery.h"
+#include "web_settings.h"
+#include "web_page.h"
 
 namespace {
 USBCDC console;
@@ -21,6 +23,7 @@ WebServer server(80);
 String ssid, password, token, serialLine, bootError;
 FirmwareUpdate updater(server,player,storage,token);
 HarpDiscovery discovery;
+WebSettings web;
 CardPins pins;
 bool serialOverflow = false, ready = false;
 String deviceId;
@@ -58,6 +61,7 @@ void statusJson(JsonDocument &doc) {
     doc["transpose"] = state.transpose; doc["loop"] = state.loop; doc["notes"] = state.notes;
     doc["dryRun"] = state.dryRun; doc["emittedNotes"] = state.emittedNotes;
     doc["usbConnected"] = player.usbConnected.load(); doc["storage"] = storage.ownerName();
+    doc["sharedLibrary"] = true;
     doc["cardId"] = storage.identity(); doc["cardSectors"] = storage.sectors();
     doc["ip"] = WiFi.localIP().toString(); doc["apIp"] = WiFi.softAPIP().toString();
     doc["apClients"] = WiFi.softAPgetStationNum();
@@ -102,6 +106,8 @@ bool options(JsonDocument &doc, PlayerRequest &r) {
     r.countdown = doc["countdown"] | r.countdown; r.track = doc["track"] | -1; r.channel = doc["channel"] | -1;
     r.loop = doc["loop"] | r.loop;
     r.dryRun = doc["dryRun"] | false;
+    if(doc.containsKey("startMs") && (!doc["startMs"].is<uint32_t>() || doc["startMs"].as<uint32_t>()>3600000)) return false;
+    r.startMs=doc["startMs"] | 0u;
     return r.speed >= 50 && r.speed <= 200 && r.transpose >= -24 && r.transpose <= 24 && r.countdown >= 0
         && r.countdown <= 30 && r.track >= -1 && r.track < int(Harp::MidiFile::MaxTracks) && r.channel >= -1 && r.channel <= 15;
 }
@@ -109,6 +115,50 @@ void routes() {
     const char *headers[] = {"Authorization"}; server.collectHeaders(headers,1);
     updater.begin();
     discovery.begin(server,deviceId,token);
+    server.on("/",HTTP_GET,[] {
+        server.sendHeader("Cache-Control","no-store");
+        server.sendHeader("X-Content-Type-Options","nosniff");
+        server.sendHeader("Content-Security-Policy","default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
+        server.sendHeader("Content-Encoding","gzip");
+        server.send_P(200,"text/html; charset=utf-8",reinterpret_cast<const char *>(HARP_WEB_PAGE),sizeof(HARP_WEB_PAGE));
+    });
+    server.on("/api/v1/web-pair",HTTP_GET,[] {
+        DynamicJsonDocument d(384); discovery.webChallenge(d.to<JsonObject>()); respond(200,d);
+    });
+    server.on("/api/v1/preferences",HTTP_GET,[] {
+        if(!authorized()) return;
+        StaticJsonDocument<256> d; d["ok"]=true; d["speed"]=web.speed; d["transpose"]=web.transpose;
+        d["countdown"]=web.countdown; d["loop"]=web.loop; respond(200,d);
+    });
+    server.on("/api/v1/preferences",HTTP_POST,[] {
+        DynamicJsonDocument d(1024); if(!body(d)) return;
+        PlayerRequest r; r.command=PlayerCommand::Settings;
+        r.speed=web.speed; r.transpose=web.transpose; r.countdown=web.countdown; r.loop=web.loop;
+        if(!options(d,r)) { error(400,"invalid_options"); return; }
+        if(updater.busy()) { error(409,"update_in_progress"); return; }
+        if(!web.savePlayback(r.speed,r.transpose,r.countdown,r.loop)) { error(500,"save_failed"); return; }
+        accept(r);
+    });
+    server.on("/api/v1/favorites",HTTP_GET,[] {
+        if(!authorized()) return;
+        int offset=server.hasArg("offset")?server.arg("offset").toInt():0;
+        if(offset<0 || offset>64) { error(400,"invalid_offset"); return; }
+        DynamicJsonDocument d(20000); d["ok"]=true; d["total"]=web.favorites.size(); d["offset"]=offset;
+        auto rows=d.createNestedArray("songs");
+        for(size_t i=offset;i<web.favorites.size() && i<size_t(offset+32);++i) {
+            const auto &path=web.favorites[i]; auto row=rows.createNestedObject();
+            row["path"]=path; row["name"]=path.substring(path.lastIndexOf('/')+1); row["favorite"]=true;
+        }
+        respond(200,d);
+    });
+    server.on("/api/v1/favorites",HTTP_POST,[] {
+        DynamicJsonDocument d(1024); if(!body(d)) return;
+        String path=d["file"] | "";
+        if(!validPath(path) || !d["favorite"].is<bool>()) { error(400,"invalid_favorite"); return; }
+        if(updater.busy()) { error(409,"update_in_progress"); return; }
+        if(!web.favorite(path,d["favorite"].as<bool>())) { error(409,"favorites_limit_or_save_failed"); return; }
+        d.clear(); d["ok"]=true; d["total"]=web.favorites.size(); respond(200,d);
+    });
     server.on("/api/v1/status",HTTP_GET,[] { if (authorized()) { DynamicJsonDocument d(2048); statusJson(d); respond(200,d); } });
     server.on("/api/v1/songs",HTTP_GET,[] {
         if (!authorized()) return;
@@ -119,6 +169,7 @@ void routes() {
         auto array = d.createNestedArray("songs");
         for (size_t i = 0; i < songs.size(); ++i) {
             auto e = array.createNestedObject(); e["path"] = songs[i].path; e["name"] = songs[i].name; e["bytes"] = songs[i].bytes;
+            e["favorite"]=web.contains(songs[i].path);
         }
         respond(200,d);
     });
@@ -126,16 +177,23 @@ void routes() {
     server.on("/api/v1/play",HTTP_POST,[] {
         DynamicJsonDocument d(1024); if (!body(d)) return;
         PlayerRequest r; r.command=PlayerCommand::Play;
-        auto state=player.status(); r.speed=state.speed; r.transpose=state.transpose; r.loop=state.loop;
+        r.speed=web.speed; r.transpose=web.transpose; r.loop=web.loop; r.countdown=web.countdown;
         String path = d["file"] | "";
         if (!validPath(path) || !options(d,r)) { error(400,"invalid_file_or_options"); return; }
         if (!player.usbConnected.load()) { error(409,"usb_host_not_connected"); return; }
-        if (storage.owner() != CardOwner::Player && storage.owner() != CardOwner::Ejected) { error(409,"eject_sd_on_computer_first"); return; }
+        if (storage.owner() == CardOwner::Missing) { error(409,"sd_not_available"); return; }
         strlcpy(r.path,path.c_str(),sizeof(r.path)); accept(r);
     });
     server.on("/api/v1/pause",HTTP_POST,[] { if (authorized()) { PlayerRequest r; r.command=PlayerCommand::Pause; accept(r); } });
     server.on("/api/v1/resume",HTTP_POST,[] { if (authorized()) { PlayerRequest r; r.command=PlayerCommand::Resume; accept(r); } });
     server.on("/api/v1/stop",HTTP_POST,[] { if (authorized()) { PlayerRequest r; accept(r); } });
+    server.on("/api/v1/seek",HTTP_POST,[] {
+        DynamicJsonDocument d(256); if(!body(d)) return;
+        auto s=player.status();
+        if(s.state!="playing" && s.state!="paused" && s.state!="countdown") { error(409,"no_song_loaded"); return; }
+        if(!d["positionMs"].is<uint32_t>() || d["positionMs"].as<uint32_t>()>s.durationMs) { error(400,"seek_out_of_range"); return; }
+        PlayerRequest r; r.command=PlayerCommand::Seek; r.positionMs=d["positionMs"]; accept(r);
+    });
     server.on("/api/v1/settings",HTTP_POST,[] {
         DynamicJsonDocument d(1024); if (!body(d)) return;
         auto s=player.status(); PlayerRequest r; r.command=PlayerCommand::Settings;
@@ -229,9 +287,13 @@ void serialCommand(const String &line) {
 }
 }
 void setup() {
-    readConfig(); deviceId=WiFi.macAddress(); deviceId.replace(":",""); deviceId.toLowerCase();
+    readConfig(); web.begin(); deviceId=WiFi.macAddress(); deviceId.replace(":",""); deviceId.toLowerCase();
     bool card=storage.begin(pins); if (!card) bootError=storage.error();
     ready=player.begin();
+    if(ready) {
+        PlayerRequest r; r.command=PlayerCommand::Settings;
+        r.speed=web.speed; r.transpose=web.transpose; r.loop=web.loop; player.submit(r);
+    }
     USB.productName("DeltaCrafting Harp + SD"); USB.manufacturerName("DeltaCrafting");
     USB.serialNumber(deviceId.c_str());
     USB.onEvent([](void *,esp_event_base_t,int32_t event,void *) {

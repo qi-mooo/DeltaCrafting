@@ -54,18 +54,21 @@ int main()
     assert(ui.row == 5);
     ui.move(1);
     assert(ui.row == 0);
-    ui.open(UiPage::Harp, 9); ui.move(1); assert(ui.row == 0 && ui.count() == 10);
+    ui.open(UiPage::Harp, 3); ui.move(1); assert(ui.row == 0 && ui.count() == 4);
+    assert(ui.keepsAwake());
     ui.toolCount = 16; ui.open(UiPage::HarpDevices,17); ui.move(1); assert(ui.row==0 && ui.count()==18);
     ui.open(UiPage::HarpFirmware, 2); ui.move(1); assert(ui.row == 0 && ui.count() == 3);
     ui.toolCount = 32; ui.open(UiPage::HarpSongs, 34); ui.move(1); assert(ui.row == 0 && ui.count() == 35);
+    assert(ui.keepsAwake());
+    ui.open(UiPage::SystemUpdate,2); ui.move(1); assert(ui.row==0 && ui.count()==3);
     ui.open(UiPage::Home);
     ui.move(-1);
     assert(ui.home == 4);
     ui.open(UiPage::Global);
     ui.move(-1);
-    assert(ui.row == 10); // Return option follows auto sleep.
+    assert(ui.row == 11); // Return follows player discovery.
     ui.move(1);
-    assert(ui.row == 0 && ui.count() == 11);
+    assert(ui.row == 0 && ui.count() == 12 && !ui.keepsAwake());
     ui.open(UiPage::AutoSleep, 2);
     assert(ui.count() == 7);
     ui.move(-1); assert(ui.row == 1);

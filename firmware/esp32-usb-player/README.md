@@ -1,9 +1,9 @@
 # DeltaHarp USB MIDI Player
 
 已完成的硬件实测与尚未验证项见 [本次验证记录](VERIFIED.md)。
-日常使用：复制 MIDI 到 `DELTAHARP` → 电脑弹出磁盘 → 屏幕刷新曲库 → 选择并播放。
+日常使用：复制 MIDI 到 `DELTAHARP` → 网页刷新曲库并收藏 → 屏幕选择收藏曲目并播放，无需弹出磁盘。
 USB 板已支持 HTTP 固件更新；屏幕固件在原有 T-Display 项目中新增口琴播放器菜单。
-屏幕 v29 的「工具 → 口琴播放器 → Harp 固件更新」可检查 Windows App 内附的播放器固件并安装。
+屏幕 v30 的「全局设置 → 系统更新 → Harp 播放器更新」可检查 Windows App 内附的播放器固件并安装。
 
 ESP32-S3 Dongle reads MIDI from its onboard SD card and outputs USB keyboard and
 mouse reports using the HarpAutoPlayer note mapping. The computer does not parse
@@ -32,23 +32,58 @@ and FAT32, UTF-8 names, subdirectories up to three levels, and 500 songs maximum
 
 1. Plug in the Dongle. Its SD card appears as a USB removable disk alongside
    keyboard, mouse and serial interfaces. It starts in USB reader mode.
-2. Copy `.mid`, `.midi` or `.kar` files to the card. **Eject the whole disk in the
-   operating system**, leaving the Dongle plugged in.
-3. On the display open Tools > Harp Player, refresh the library, select a song,
-   and play. GPIO 14 cycles rows and GPIO 0 confirms, matching existing menus.
+2. Copy `.mid`, `.midi` or `.kar` files to the card. From v4 no disk eject is
+   required for browsing or playback; finish copying before selecting a new file.
+3. Open the player's LAN IP in a browser, pair, refresh the library and star songs.
+   On the display open Tools > Harp Player > Favorites, select a song and play.
+   GPIO 14 cycles rows and GPIO 0 confirms, matching existing menus.
 4. The default three-second countdown gives time to focus the game's instrument.
    Pause releases all keys and mouse buttons. Resume restores the held note.
-5. To copy more music, choose USB reader on the display or send `usb`. Playback
-   stops, local files close, and the disk becomes visible on the computer again.
+5. The disk stays visible while playing, so more music can be copied normally.
+   If it was manually ejected, choose USB reader on the web page or send `usb`.
 
-Only one owner accesses the filesystem at a time. A play/refresh request while
-the computer owns the disk returns `eject_sd_on_computer_first`. Unmounting only
-a partition may not send a USB media-eject command; on macOS use `diskutil eject
-/dev/diskN` after confirming that disk is the Dongle. Reboot also returns to reader
-mode. From v3 the firmware begin API prepares media on the S3 itself: after a two-second
+The computer remains the only filesystem writer. Song scans and MIDI loading use
+a fresh read-only block view after two seconds without USB writes. Sector access
+is serialized, and any queued or completed write invalidates the entire read.
+The player discards partial results and retries for a bounded time; a busy disk
+reports `sd_busy_retry` / `sd_changed_retry`, retaining the previous song list.
+MIDI events are fully parsed into memory before playback, so later SD writes do
+not affect the current song. New copies are visible only after the host submits
+its cached writes; FAT/exFAT cannot expose the host's uncommitted file cache.
+Each read window has a ten-second deadline. Player writes are blocked at the
+block-device interface even if the filesystem library attempts a cache sync.
+
+From v3 the firmware begin API prepares media on the S3 itself: after a two-second
 device-I/O quiet period it synchronizes the card and withdraws USB MSC media.
 No Windows disk operation is used. This cannot flush writes still cached by the
 computer; finish copying files before updating. Wi-Fi provisioning still requires OS eject.
+
+## Built-in web page (v6)
+
+Visit `http://<player-ip>/` (or `http://delta-harp.local/` where mDNS is supported).
+Hold BOOT for one second and click Pair, or enter the existing player API key.
+The browser keeps its pairing locally; Disconnect clears only that browser's key.
+All assets are embedded in flash and work offline; the page does not load a CDN.
+
+The full library supports search and star/unstar. Up to 64 favorites persist in
+player NVS across reboot and OTA; the screen fetches only `/api/v1/favorites`.
+Playback controls include play/pause/resume/stop. Settings save speed (50–200%),
+transpose (-24–24), countdown (0–30 seconds) and repeat.
+The player bar accepts a start time in seconds or `mm:ss`, a draggable timeline,
+and ten-second backward/forward jumps. Seek preserves pause and rebuilds held
+notes and sustain at the selected position; repeat returns to the selected start.
+`POST /api/v1/play` accepts `startMs` (0–3600000); `POST /api/v1/seek` accepts
+`positionMs` within the loaded duration. Invalid or unloaded seeks are rejected.
+The USB action stops
+playback and reconnects the reader if it was ejected. Web controls never play a
+song automatically on page load. Screen pages remain awake while controlling music.
+
+Additional authenticated API routes: `GET/POST /api/v1/preferences`,
+`GET /api/v1/favorites?offset=0`, and `POST /api/v1/favorites` with
+`{"file":"/song.mid","favorite":true}`. Favorite pages contain up to 32 rows;
+an empty favorites list stays empty and never falls back to the complete library.
+`GET /api/v1/web-pair` exposes a pairing challenge only during the physical
+BOOT pairing window; it never returns credentials.
 
 ## Pairing and control
 
@@ -59,7 +94,7 @@ or manual copying of player addresses/API keys is required in normal use.
    Wi-Fi provisioning is separate from pairing; the existing player already has
    its Wi-Fi settings in NVS. Broadcast cannot cross isolated guest networks/VLANs.
 2. Windows: Settings > T-Display-S3 > Harp player > Scan, select a device, Connect.
-3. Screen v29: Tools > Harp Player > Scan / Connect player, select a device.
+3. Screen v30: Global settings > Scan / Connect player, select a device.
 4. First network pairing opens a 60-second window on boot. Otherwise hold the
    player's BOOT button for one second while running, then scan again and connect.
    Windows and the screen can both pair within that window. Do not hold BOOT during reset.
@@ -102,19 +137,21 @@ python3 control.py make-demo /path/to/SD/DeltaHarp-Test.mid
 `--dry-run` executes parsing, scheduling and mapping without pressing keys;
 status exposes `emittedNotes`. Accepted commands run asynchronously: poll status
 for `busy`, `state` and `error`. A normal play request always restores HID output.
-Speed, transpose and loop persist across songs until reboot; dry-run does not.
+Web preferences persist across songs and reboot; per-play overrides and dry-run do not.
 
 ## HTTP API
 
-All routes require `Authorization: Bearer <apiKey>`. This is a local HTTP API;
+Control routes require `Authorization: Bearer <apiKey>`; only the web page and
+physical-window pairing entry are public. This is a local HTTP API;
 use a trusted LAN or the WPA2-protected player AP.
 
 | Method | Path | Body / result |
 | --- | --- | --- |
 | GET | `/api/v1/status` | State, error, timing, selected track/channel, SD owner |
 | GET | `/api/v1/songs?offset=0` | 32 songs per page; total and absolute SD paths |
-| POST | `/api/v1/library/refresh` | Claim ejected SD and scan songs |
+| POST | `/api/v1/library/refresh` | Scan a read-only song view, including while USB is mounted |
 | POST | `/api/v1/play` | `{"file":"/song.mid","countdown":3}` |
+| POST | `/api/v1/seek` | `{"positionMs":10000}`; preserves pause |
 | POST | `/api/v1/pause` | Release HID, retain position |
 | POST | `/api/v1/resume` | Restore the current note and continue |
 | POST | `/api/v1/stop` | Release HID and cancel queued playback |
@@ -124,9 +161,10 @@ use a trusted LAN or the WPA2-protected player AP.
 
 Play options: `speed` 50..200 percent, `transpose` -24..24 semitones, `loop`
 boolean, `countdown` 0..30 seconds, `track` -1 for automatic or 0..31,
-`channel` -1 for automatic or 0..15, and `dryRun` boolean. HTTP 202 means queued,
+`channel` -1 for automatic or 0..15, `startMs` 0..3600000 (less than song duration),
+and `dryRun` boolean. HTTP 202 means queued,
 not completed. Invalid bodies return 400, missing authentication 401, unavailable
-USB/host-owned storage 409, and full command queues 503.
+missing storage / conflicting operations 409, and full command queues 503.
 
 Serial equivalents are newline-delimited JSON. Local USB possession authorizes
 control; serial does not require a key:
@@ -167,7 +205,8 @@ Pair the screen to the desktop and player separately. Desktop and screen must
 select the same player ID; all devices must be reachable on the LAN. Directly
 connecting only to the player's AP cannot reach the desktop on its original LAN.
 
-Open Tools > Harp Player > Harp firmware update. Windows calls the player begin
+On screen v30 open Global settings > System update > Harp player update.
+Windows calls the player begin
 API; **USB S3 prepares its own SD/USB state**. It stops playback, waits for device
 I/O to settle, syncs accepted writes, hides MSC media, and starts OTA. Active SD
 I/O returns `sd_io_busy`; Windows waits and retries only this explicit busy result.

@@ -24,6 +24,9 @@ public sealed class HarpFirmwareUpdaterTests : IDisposable
         _store = new(_root, DeviceFirmwareTarget.Harp);
         _image[0]=0xe9; _image[12]=9;
         "DeltaHarp:esp32-s3-dongle-fn8:dual-8mb-v1:app"u8.CopyTo(_image.AsSpan(64));
+        // Base64 with many '+' characters reproduced a real-device failure at offset 724992.
+        // HTML escaping must not inflate a 4096-byte chunk beyond the firmware's JSON limit.
+        _image.AsSpan(4096,4096).Fill(0xfb);
         _manifest = Import(2);
     }
     private DeviceFirmwareManifest Import(int revision)
@@ -202,7 +205,9 @@ public sealed class HarpFirmwareUpdaterTests : IDisposable
             else if(path.EndsWith("/chunk"))
             {
                 ++Sends; Entered.TrySetResult(); if(Hold) await Release.Task.WaitAsync(ct);
-                using var body=JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+                var json=await request.Content!.ReadAsByteArrayAsync(ct);
+                Assert.InRange(json.Length,1,6144);
+                using var body=JsonDocument.Parse(json);
                 byte[] bytes=Convert.FromBase64String(body.RootElement.GetProperty("data").GetString()!);
                 Assert.InRange(bytes.Length,1,4096); Assert.Equal(Bytes.Length,body.RootElement.GetProperty("offset").GetInt32());
                 if(Mode is "chunk-failed" or "wrong-session" || Mode=="retry-chunk" && Sends==1) throw new HttpRequestException();

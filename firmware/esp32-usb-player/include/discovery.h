@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <WebServer.h>
 #include <WiFiUdp.h>
 
@@ -7,6 +8,7 @@ class HarpDiscovery {
 public:
     void begin(WebServer &server,const String &id,const String &key);
     void tick();
+    void webChallenge(JsonObject output);
 private:
     WiFiUDP udp;
     String deviceId,apiKey,challenge;
