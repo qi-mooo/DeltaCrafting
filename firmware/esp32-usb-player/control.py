@@ -223,6 +223,7 @@ def main():
     make = sub.add_parser("make-demo")
     make.add_argument("path", type=Path)
     sub.add_parser("firmware")
+    sub.add_parser("web-password", help="Set the separate web login password using saved device credentials")
     update = sub.add_parser("update")
     update.add_argument("image", type=Path, help="USB player firmware.bin or DeltaHarp ZIP bundle")
     play = sub.add_parser("play")
@@ -263,7 +264,14 @@ def main():
         config = {} if args.port and args.command != "pair-display" else json.loads(args.config.read_text())
         if args.url:
             config["url"] = args.url
-        if args.command in ("firmware", "update"):
+        if args.command == "web-password":
+            if args.port:
+                parser.error("Web password setup uses HTTP; omit --port")
+            value = getpass.getpass("Web password: ")
+            if not 8 <= len(value.encode()) <= 64:
+                parser.error("Password must contain 8..64 UTF-8 bytes")
+            result = api(config, "web/password", {"password": value}, timeout=15)
+        elif args.command in ("firmware", "update"):
             if args.port:
                 parser.error("Firmware updates use HTTP; omit --port")
             result = api(config, "firmware") if args.command == "firmware" else update_firmware(config, args.image)

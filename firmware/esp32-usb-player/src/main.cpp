@@ -13,6 +13,7 @@
 #include "firmware_update.h"
 #include "discovery.h"
 #include "web_settings.h"
+#include "web_auth.h"
 #include "web_page.h"
 
 namespace {
@@ -24,6 +25,7 @@ String ssid, password, token, serialLine, bootError;
 FirmwareUpdate updater(server,player,storage,token);
 HarpDiscovery discovery;
 WebSettings web;
+WebAuth webAuth;
 CardPins pins;
 bool serialOverflow = false, ready = false;
 String deviceId;
@@ -62,6 +64,7 @@ void statusJson(JsonDocument &doc) {
     doc["dryRun"] = state.dryRun; doc["emittedNotes"] = state.emittedNotes;
     doc["usbConnected"] = player.usbConnected.load(); doc["storage"] = storage.ownerName();
     doc["sharedLibrary"] = true;
+    doc["pairingSeconds"] = discovery.pairingSeconds();
     doc["cardId"] = storage.identity(); doc["cardSectors"] = storage.sectors();
     doc["ip"] = WiFi.localIP().toString(); doc["apIp"] = WiFi.softAPIP().toString();
     doc["apClients"] = WiFi.softAPgetStationNum();
@@ -78,16 +81,18 @@ void error(int code, const char *message) {
 }
 bool authorized() {
     if (server.header("Authorization") == String("Bearer ") + token) return true;
-    error(401,"pairing_required"); return false;
+    String header=server.header("Authorization");
+    if(header.startsWith("Bearer ") && webAuth.authorized(header.substring(7),millis())) return true;
+    error(401,"login_required"); return false;
 }
-bool body(JsonDocument &doc) {
-    if (!authorized()) return false;
+bool jsonBody(JsonDocument &doc) {
     String data = server.arg("plain");
     if (data.length() > 1024 || deserializeJson(doc,data) || !doc.is<JsonObject>()) {
         error(400,"invalid_json"); return false;
     }
     return true;
 }
+bool body(JsonDocument &doc) { return authorized() && jsonBody(doc); }
 void accept(const PlayerRequest &r) {
     if (updater.busy()) { error(409,"update_in_progress"); return; }
     if (!player.submit(r)) { error(503,"command_queue_full"); return; }
@@ -122,8 +127,35 @@ void routes() {
         server.sendHeader("Content-Encoding","gzip");
         server.send_P(200,"text/html; charset=utf-8",reinterpret_cast<const char *>(HARP_WEB_PAGE),sizeof(HARP_WEB_PAGE));
     });
-    server.on("/api/v1/web-pair",HTTP_GET,[] {
-        DynamicJsonDocument d(384); discovery.webChallenge(d.to<JsonObject>()); respond(200,d);
+    server.on("/api/v1/web/login",HTTP_POST,[] {
+        if(!webAuth.configured()) { error(503,"password_not_configured"); return; }
+        if(webAuth.limited(millis())) { error(429,"too_many_attempts"); return; }
+        StaticJsonDocument<256> d; if(!jsonBody(d)) return;
+        if(!d["password"].is<const char *>()) { error(400,"invalid_password"); return; }
+        String session=webAuth.login(d["password"].as<String>(),millis());
+        if(session.isEmpty()) { error(401,"invalid_password"); return; }
+        d.clear(); d["ok"]=true; d["session"]=session; respond(200,d);
+    });
+    server.on("/api/v1/web/logout",HTTP_POST,[] {
+        webAuth.logout(server.header("Authorization").substring(7));
+        StaticJsonDocument<64> d; d["ok"]=true; respond(200,d);
+    });
+    server.on("/api/v1/web/pairing",HTTP_POST,[] {
+        StaticJsonDocument<128> d; if(!body(d)) return;
+        if(!d["enabled"].is<bool>()) { error(400,"invalid_options"); return; }
+        if(updater.busy()) { error(409,"update_in_progress"); return; }
+        if(d["enabled"].as<bool>()) discovery.openPairing(); else discovery.closePairing();
+        d.clear(); d["ok"]=true; d["pairingSeconds"]=discovery.pairingSeconds(); respond(200,d);
+    });
+    // Provision privately using the existing device credential; a browser
+    // session alone cannot directly change the password or install firmware.
+    server.on("/api/v1/web/password",HTTP_POST,[] {
+        if(server.header("Authorization")!=String("Bearer ")+token) { error(401,"device_auth_required"); return; }
+        StaticJsonDocument<256> d; if(!jsonBody(d)) return;
+        String value=d["password"] | "";
+        if(value.length()<8 || value.length()>64) { error(400,"invalid_password_length"); return; }
+        if(!webAuth.setPassword(value)) { error(500,"save_failed"); return; }
+        d.clear(); d["ok"]=true; respond(200,d);
     });
     server.on("/api/v1/preferences",HTTP_GET,[] {
         if(!authorized()) return;
@@ -287,7 +319,7 @@ void serialCommand(const String &line) {
 }
 }
 void setup() {
-    readConfig(); web.begin(); deviceId=WiFi.macAddress(); deviceId.replace(":",""); deviceId.toLowerCase();
+    readConfig(); web.begin(); webAuth.begin(); deviceId=WiFi.macAddress(); deviceId.replace(":",""); deviceId.toLowerCase();
     bool card=storage.begin(pins); if (!card) bootError=storage.error();
     ready=player.begin();
     if(ready) {

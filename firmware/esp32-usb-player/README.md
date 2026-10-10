@@ -58,11 +58,22 @@ device-I/O quiet period it synchronizes the card and withdraws USB MSC media.
 No Windows disk operation is used. This cannot flush writes still cached by the
 computer; finish copying files before updating. Wi-Fi provisioning still requires OS eject.
 
-## Built-in web page (v6)
+## Built-in web page (v7)
 
 Visit `http://<player-ip>/` (or `http://delta-harp.local/` where mDNS is supported).
-Hold BOOT for one second and click Pair, or enter the existing player API key.
-The browser keeps its pairing locally; Disconnect clears only that browser's key.
+Log in with the device's web password; no BOOT action or device API key is needed.
+Provision or reset this separate password with `python3 control.py web-password`
+using the saved device credential. The password prompt does not echo or put it in
+command-line arguments. The firmware stores only a random salt and PBKDF2-SHA256
+verifier in NVS; no shared password is embedded in public firmware or page assets.
+Browser sessions last up to 12 idle hours and are invalidated by logout, password
+changes and device reboot. Sessions are kept in tab storage; the password is not.
+Five failed logins temporarily block attempts for 30 seconds. Windows and the
+display retain their existing independent device pairing for control and OTA.
+In web Settings, Open device pairing starts the same 60-second discovery pairing
+window without touching BOOT. The button shows remaining time and can close the
+window early. Only an authenticated browser or device can open it.
+Mobile layout fixes page scale and uses 16-pixel text inputs to prevent focus zoom.
 All assets are embedded in flash and work offline; the page does not load a CDN.
 
 The full library supports search and star/unstar. Up to 64 favorites persist in
@@ -82,8 +93,11 @@ Additional authenticated API routes: `GET/POST /api/v1/preferences`,
 `GET /api/v1/favorites?offset=0`, and `POST /api/v1/favorites` with
 `{"file":"/song.mid","favorite":true}`. Favorite pages contain up to 32 rows;
 an empty favorites list stays empty and never falls back to the complete library.
-`GET /api/v1/web-pair` exposes a pairing challenge only during the physical
-BOOT pairing window; it never returns credentials.
+`POST /api/v1/web/login` accepts a password and returns a limited browser session;
+`POST /api/v1/web/logout` revokes it. Browser sessions can control playback and
+favorites and open/close pairing with `POST /api/v1/web/pairing` (`enabled`), but
+cannot directly install firmware or change the password. The device-key-only
+`POST /api/v1/web/password` sets the separate password. The old web-pair route is removed.
 
 ## Pairing and control
 
@@ -95,8 +109,9 @@ or manual copying of player addresses/API keys is required in normal use.
    its Wi-Fi settings in NVS. Broadcast cannot cross isolated guest networks/VLANs.
 2. Windows: Settings > T-Display-S3 > Harp player > Scan, select a device, Connect.
 3. Screen v30: Global settings > Scan / Connect player, select a device.
-4. First network pairing opens a 60-second window on boot. Otherwise hold the
-   player's BOOT button for one second while running, then scan again and connect.
+4. First network pairing opens a 60-second window on boot. Otherwise log in to
+   web Settings and choose Open device pairing, then scan again and connect.
+   Holding the player's BOOT button for one second remains an alternative.
    Windows and the screen can both pair within that window. Do not hold BOOT during reset.
 5. Pairing is saved by stable device ID. Later scans recover changed DHCP addresses;
    the desktop resolves the selected ID again before checking/installing firmware.
@@ -141,8 +156,9 @@ Web preferences persist across songs and reboot; per-play overrides and dry-run 
 
 ## HTTP API
 
-Control routes require `Authorization: Bearer <apiKey>`; only the web page and
-physical-window pairing entry are public. This is a local HTTP API;
+Control routes require `Authorization: Bearer <apiKey-or-web-session>`; only the
+web page, password login and physical-window pairing entry are public. Firmware
+and password management require the device key. This is a local HTTP API;
 use a trusted LAN or the WPA2-protected player AP.
 
 | Method | Path | Body / result |
