@@ -62,6 +62,8 @@ void statusJson(JsonDocument &doc) {
     doc["baseOctave"] = state.baseOctave; doc["speed"] = state.speed;
     doc["transpose"] = state.transpose; doc["loop"] = state.loop; doc["notes"] = state.notes;
     doc["dryRun"] = state.dryRun; doc["emittedNotes"] = state.emittedNotes;
+    doc["skipSilence"]=state.skipSilence; doc["silenceThresholdMs"]=state.silenceThresholdMs;
+    doc["skippedSilenceMs"]=state.skippedSilenceMs;
     doc["usbConnected"] = player.usbConnected.load(); doc["storage"] = storage.ownerName();
     doc["sharedLibrary"] = true;
     doc["pairingSeconds"] = discovery.pairingSeconds();
@@ -108,6 +110,12 @@ bool options(JsonDocument &doc, PlayerRequest &r) {
     for (auto name : ints) if (doc.containsKey(name) && !doc[name].is<int>()) return false;
     if (doc.containsKey("loop") && !doc["loop"].is<bool>()) return false;
     if (doc.containsKey("dryRun") && !doc["dryRun"].is<bool>()) return false;
+    if (doc.containsKey("skipSilence") && !doc["skipSilence"].is<bool>()) return false;
+    if (doc.containsKey("silenceThresholdMs") && (!doc["silenceThresholdMs"].is<uint32_t>()
+        || doc["silenceThresholdMs"].as<uint32_t>()<Harp::SilenceMap::MinThresholdMs
+        || doc["silenceThresholdMs"].as<uint32_t>()>Harp::SilenceMap::MaxThresholdMs)) return false;
+    r.skipSilence=doc["skipSilence"] | r.skipSilence;
+    r.silenceThresholdMs=doc["silenceThresholdMs"] | r.silenceThresholdMs;
     r.speed = doc["speed"] | r.speed; r.transpose = doc["transpose"] | r.transpose;
     r.countdown = doc["countdown"] | r.countdown; r.track = doc["track"] | -1; r.channel = doc["channel"] | -1;
     r.loop = doc["loop"] | r.loop;
@@ -160,17 +168,20 @@ void routes() {
     });
     server.on("/api/v1/preferences",HTTP_GET,[] {
         if(!authorized()) return;
-        StaticJsonDocument<256> d; d["ok"]=true; d["speed"]=web.speed; d["transpose"]=web.transpose;
+        StaticJsonDocument<384> d; d["ok"]=true; d["speed"]=web.speed; d["transpose"]=web.transpose;
+        d["skipSilence"]=web.skipSilence; d["silenceThresholdMs"]=web.silenceThresholdMs;
         d["countdown"]=web.countdown; d["loop"]=web.loop; d["startMs"]=web.startMs; respond(200,d);
     });
     server.on("/api/v1/preferences",HTTP_POST,[] {
         DynamicJsonDocument d(1024); if(!body(d)) return;
         PlayerRequest r; r.command=PlayerCommand::Settings;
         r.speed=web.speed; r.transpose=web.transpose; r.countdown=web.countdown; r.loop=web.loop; r.startMs=web.startMs;
+        r.skipSilence=web.skipSilence; r.silenceThresholdMs=web.silenceThresholdMs;
         if(!options(d,r)) { error(400,"invalid_options"); return; }
         if(updater.busy()) { error(409,"update_in_progress"); return; }
-        if(!web.savePlayback(r.speed,r.transpose,r.countdown,r.loop,r.startMs)) { error(500,"save_failed"); return; }
-        if(!d.containsKey("speed") && !d.containsKey("transpose") && !d.containsKey("loop")) {
+        if(!web.savePlayback(r.speed,r.transpose,r.countdown,r.loop,r.startMs,r.skipSilence,r.silenceThresholdMs)) { error(500,"save_failed"); return; }
+        if(!d.containsKey("speed") && !d.containsKey("transpose") && !d.containsKey("loop")
+            && !d.containsKey("skipSilence") && !d.containsKey("silenceThresholdMs")) {
             d.clear(); d["ok"]=true; respond(200,d); return;
         }
         accept(r);
@@ -214,6 +225,7 @@ void routes() {
         DynamicJsonDocument d(1024); if (!body(d)) return;
         PlayerRequest r; r.command=PlayerCommand::Play;
         r.speed=web.speed; r.transpose=web.transpose; r.loop=web.loop; r.countdown=web.countdown; r.startMs=web.startMs;
+        r.skipSilence=web.skipSilence; r.silenceThresholdMs=web.silenceThresholdMs;
         String path = d["file"] | "";
         if (!validPath(path) || !options(d,r)) { error(400,"invalid_file_or_options"); return; }
         if (!player.usbConnected.load()) { error(409,"usb_host_not_connected"); return; }
@@ -234,6 +246,7 @@ void routes() {
         DynamicJsonDocument d(1024); if (!body(d)) return;
         auto s=player.status(); PlayerRequest r; r.command=PlayerCommand::Settings;
         r.speed=s.speed; r.transpose=s.transpose; r.loop=s.loop;
+        r.skipSilence=s.skipSilence; r.silenceThresholdMs=s.silenceThresholdMs;
         if (!options(d,r)) { error(400,"invalid_options"); return; } accept(r);
     });
     server.on("/api/v1/storage/usb",HTTP_POST,[] { if (authorized()) { PlayerRequest r; r.command=PlayerCommand::Export; accept(r); } });
@@ -256,6 +269,7 @@ void serialCommand(const String &line) {
         PlayerRequest r;
         if (action=="play") {
             auto s=player.status(); r.speed=s.speed; r.transpose=s.transpose; r.loop=s.loop;
+            r.skipSilence=web.skipSilence; r.silenceThresholdMs=web.silenceThresholdMs;
             String path=d["file"] | "";
             r.command=PlayerCommand::Play;
             r.startMs=web.startMs;
@@ -264,6 +278,7 @@ void serialCommand(const String &line) {
             else strlcpy(r.path,path.c_str(),sizeof(r.path));
         } else if (action=="settings") {
             auto s=player.status(); r.speed=s.speed; r.transpose=s.transpose; r.loop=s.loop;
+            r.skipSilence=s.skipSilence; r.silenceThresholdMs=s.silenceThresholdMs;
             r.command=PlayerCommand::Settings;
             if (!options(d,r)) message="invalid_options";
         } else if (action=="pause") r.command=PlayerCommand::Pause;
@@ -329,7 +344,8 @@ void setup() {
     ready=player.begin();
     if(ready) {
         PlayerRequest r; r.command=PlayerCommand::Settings;
-        r.speed=web.speed; r.transpose=web.transpose; r.loop=web.loop; player.submit(r);
+        r.speed=web.speed; r.transpose=web.transpose; r.loop=web.loop;
+        r.skipSilence=web.skipSilence; r.silenceThresholdMs=web.silenceThresholdMs; player.submit(r);
     }
     USB.productName("DeltaCrafting Harp + SD"); USB.manufacturerName("DeltaCrafting");
     USB.serialNumber(deviceId.c_str());

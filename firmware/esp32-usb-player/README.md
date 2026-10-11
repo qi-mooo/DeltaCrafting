@@ -58,7 +58,7 @@ device-I/O quiet period it synchronizes the card and withdraws USB MSC media.
 No Windows disk operation is used. This cannot flush writes still cached by the
 computer; finish copying files before updating. Wi-Fi provisioning still requires OS eject.
 
-## Built-in web page (v8)
+## Built-in web page (v9)
 
 Visit `http://<player-ip>/` (or `http://delta-harp.local/` where mDNS is supported).
 Log in with the device's web password; no BOOT action or device API key is needed.
@@ -83,6 +83,17 @@ The full library supports search and star/unstar. Up to 64 favorites persist in
 player NVS across reboot and OTA; the screen fetches only `/api/v1/favorites`.
 Playback controls include play/pause/resume/stop. Settings save speed (50–200%),
 transpose (-24–24), countdown (0–30 seconds) and repeat.
+From v9, automatic long-rest skipping is enabled by default. A silent interval
+longer than three seconds in the selected melody track/channel is shortened to
+0.5 seconds. Settings can disable it or change the threshold to 2–60 seconds.
+Both threshold and retained rest use original MIDI time, so playback speed scales
+them normally. Held notes, overlapping chords and sustain pedal are observed;
+spacing between note-ons alone is never considered silence. Short rests and the
+trailing end of the file are preserved. The existing leading-silence trim is unchanged.
+These preferences persist on the player and apply to web and S3 playback without
+adding screen menu items. The player bar shows accumulated skipped time. Its
+timeline still uses original song coordinates and jumps forward at each skip;
+saved start time, manual seeking and looping retain their original positions.
 The player bar accepts a start time in seconds or `mm:ss`, a draggable timeline,
 and ten-second backward/forward jumps. Seek preserves pause and rebuilds held
 notes and sustain at the selected position; repeat returns to the selected start.
@@ -181,14 +192,19 @@ use a trusted LAN or the WPA2-protected player AP.
 | POST | `/api/v1/pause` | Release HID, retain position |
 | POST | `/api/v1/resume` | Restore the current note and continue |
 | POST | `/api/v1/stop` | Release HID and cancel queued playback |
-| POST | `/api/v1/settings` | Optional `speed`, `transpose`, `loop` |
+| POST | `/api/v1/settings` | Optional `speed`, `transpose`, `loop`, `skipSilence`, `silenceThresholdMs` (current playback only) |
 | POST | `/api/v1/storage/usb` | Stop and export SD to the computer |
 
 
 Play options: `speed` 50..200 percent, `transpose` -24..24 semitones, `loop`
 boolean, `countdown` 0..30 seconds, `track` -1 for automatic or 0..31,
 `channel` -1 for automatic or 0..15, `startMs` 0..3600000 (less than song duration),
-and `dryRun` boolean. HTTP 202 means queued,
+`skipSilence` boolean, `silenceThresholdMs` 2000..60000, and `dryRun` boolean.
+`GET/POST /api/v1/preferences` persists both silence options; omitted values are
+preserved. `/play` inherits saved silence options unless explicitly overridden.
+`/status` reports effective `skipSilence`, `silenceThresholdMs`, and accumulated
+`skippedSilenceMs` (reset on each new play, including repeated skips during looping).
+HTTP 202 means queued,
 not completed. Invalid bodies return 400, missing authentication 401, unavailable
 missing storage / conflicting operations 409, and full command queues 503.
 

@@ -48,7 +48,7 @@ void Player::release() {
 }
 void Player::silence() { release(); voice.clear(); }
 void Player::stop(const String &error) {
-    silence(); reader.file.close(); midi.close(); hasNext = false;
+    silence(); reader.file.close(); midi.close(); silenceMap.clear(); hasNext = false;
     current.state = error.isEmpty() ? "stopped" : "error"; current.error = error; current.busy = false;
 }
 bool Player::rewind() {
@@ -66,7 +66,7 @@ bool Player::seek(uint32_t milliseconds) {
 }
 bool Player::load(const PlayerRequest &request) {
     stop(); current.file = request.path; current.state = "loading"; current.busy = true;
-    current.dryRun = request.dryRun; current.emittedNotes = 0; publish();
+    current.dryRun = request.dryRun; current.emittedNotes = 0; current.skippedSilenceMs=0; publish();
     bool loaded=false; String failure;
     for(unsigned attempt=0;attempt<25 && !cancel.load();++attempt) {
         if(storage.beginRead()) {
@@ -110,11 +110,13 @@ bool Player::load(const PlayerRequest &request) {
     midi.rewind();
     processed = 0;
     while (midi.next(e)) {
+        silenceMap.observe(e,current.track,current.channel);
         if (selected(e) && e.type == 0x90 && e.b) { ++histogram[e.a]; trimUs = std::min(trimUs, e.us); }
         if (!(++processed % 256)) { delay(1); if (cancel.load()) { stop(); return false; } }
     }
     if (midi.error()) { stop(midi.error()); return false; }
     current.transpose = request.transpose; current.speed = request.speed; current.loop = request.loop;
+    current.skipSilence=request.skipSilence; current.silenceThresholdMs=request.silenceThresholdMs;
     current.baseOctave = Harp::autoOctave(histogram, request.transpose);
     current.notes = candidates[current.track][current.channel].count;
     totalUs = totalUs > trimUs ? totalUs - trimUs : 0;
@@ -181,11 +183,14 @@ void Player::runCommand(const PlayerRequest &r) {
     case PlayerCommand::Export:
         stop(); if (!storage.exportUsb()) current.error = storage.error();
         break;
-    case PlayerCommand::Settings:
+    case PlayerCommand::Settings: {
+        bool changedPitch=current.transpose!=r.transpose;
         current.speed = r.speed; current.transpose = r.transpose; current.loop = r.loop;
+        current.skipSilence=r.skipSilence; current.silenceThresholdMs=r.silenceThresholdMs;
         current.baseOctave = Harp::autoOctave(histogram, current.transpose);
-        release(); if (current.state == "playing") sound(esp_timer_get_time(), true);
+        if(changedPitch) { release(); if (current.state == "playing") sound(esp_timer_get_time(), true); }
         break;
+    }
     case PlayerCommand::Format:
         stop(); if (!storage.formatExfat()) current.error = storage.error();
         xSemaphoreTake(mutex, portMAX_DELAY); songs.clear(); xSemaphoreGive(mutex); break;
@@ -211,6 +216,14 @@ void Player::worker() {
         if (current.state == "countdown" && now >= startAt) { current.state = "playing"; lastClock = now; }
         if (current.state == "playing") {
             musicUs += (now - lastClock) * current.speed / 100; lastClock = now;
+            // Wait until due events have been consumed, and only skip when no
+            // note (including sustain) is held. Consume controllers in the gap
+            // normally below, so pedal state at the next onset stays correct.
+            if(voice.highest()<0 && (!hasNext || next.us>musicUs+trimUs)) {
+                uint64_t target=silenceMap.target(musicUs+trimUs,current.skipSilence,current.silenceThresholdMs);
+                uint64_t skipped=target-(musicUs+trimUs);
+                musicUs+=skipped; current.skippedSilenceMs+=skipped/1000;
+            }
             // A constant 12 ms HID preparation delay is used for every onset.
             // Coalesce same-time chord events before choosing the highest note.
             bool onsets[128] = {}; unsigned processed = 0;

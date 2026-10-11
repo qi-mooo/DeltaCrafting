@@ -26,17 +26,24 @@ void WebSettings::begin() {
         if(s>=50 && s<=200 && t>=-24 && t<=24 && c>=0 && c<=30) {
             speed=s; transpose=t; countdown=c; loop=d["loop"] | false;
             uint32_t start=d["startMs"] | 0u; if(start<=3600000) startMs=start;
+            skipSilence=d["skipSilence"] | true;
+            uint32_t threshold=d["silenceThresholdMs"] | Harp::SilenceMap::DefaultThresholdMs;
+            if(threshold>=Harp::SilenceMap::MinThresholdMs && threshold<=Harp::SilenceMap::MaxThresholdMs)
+                silenceThresholdMs=threshold;
         }
     }
     p.end();
 }
-bool WebSettings::savePlayback(int s,int t,int c,bool l,uint32_t start) {
-    if(s<50 || s>200 || t< -24 || t>24 || c<0 || c>30 || start>3600000) return false;
-    if(s==speed && t==transpose && c==countdown && l==loop && start==startMs) return true;
-    StaticJsonDocument<256> d; d["speed"]=s; d["transpose"]=t; d["countdown"]=c; d["loop"]=l; d["startMs"]=start;
+bool WebSettings::savePlayback(int s,int t,int c,bool l,uint32_t start,bool skip,uint32_t threshold) {
+    if(s<50 || s>200 || t< -24 || t>24 || c<0 || c>30 || start>3600000
+        || threshold<Harp::SilenceMap::MinThresholdMs || threshold>Harp::SilenceMap::MaxThresholdMs) return false;
+    if(s==speed && t==transpose && c==countdown && l==loop && start==startMs
+        && skip==skipSilence && threshold==silenceThresholdMs) return true;
+    StaticJsonDocument<384> d; d["speed"]=s; d["transpose"]=t; d["countdown"]=c; d["loop"]=l; d["startMs"]=start;
+    d["skipSilence"]=skip; d["silenceThresholdMs"]=threshold;
     String value; serializeJson(d,value);
     if(!writeValue("playback",value)) return false;
-    speed=s; transpose=t; countdown=c; loop=l; startMs=start; return true;
+    speed=s; transpose=t; countdown=c; loop=l; startMs=start; skipSilence=skip; silenceThresholdMs=threshold; return true;
 }
 bool WebSettings::favorite(const String &path,bool selected) {
     if(contains(path)==selected) return true;

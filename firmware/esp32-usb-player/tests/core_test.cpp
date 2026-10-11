@@ -3,6 +3,7 @@
 #include "firmware_image.h"
 #include "read_window.h"
 #include "playback_seek.h"
+#include "playback_silence.h"
 #include <assert.h>
 #include <string.h>
 #include <vector>
@@ -25,7 +26,63 @@ Memory smf(std::vector<std::vector<uint8_t>> tracks) {
     }
     return m;
 }
+void silenceTests() {
+    using namespace Harp;
+    SilenceMap rests;
+    auto event=[&](uint32_t ms,uint8_t type,uint8_t a,uint8_t b,uint8_t track=0,uint8_t channel=0) {
+        rests.observe({uint64_t(ms)*1000,track,channel,type,a,b},0,0);
+    };
+    auto target=[&](uint32_t ms,bool enabled=true,uint32_t threshold=3000) {
+        return rests.target(uint64_t(ms)*1000,enabled,threshold)/1000;
+    };
+    event(5000,0x90,60,80); event(6000,0x80,60,0);
+    // Unselected tracks/channels cannot interrupt the selected melody's rest.
+    event(7000,0x90,72,80,1); event(8000,0x90,72,80,0,1);
+    event(16000,0x90,62,80); event(17000,0x90,62,0);
+    event(19000,0x90,64,80); event(20000,0x80,64,0);
+    event(23000,0x90,65,80); event(24000,0x80,65,0);
+    assert(target(1000)==1000 && target(5500)==5500); // leading/held
+    assert(target(6499)==6499 && target(6500)==16000 && target(15999)==16000);
+    assert(target(16000)==16000 && target(18000)==18000); // boundary/short rest
+    assert(target(21000)==21000 && target(21000,true,2000)==23000); // strict threshold
+    assert(target(8000,false)==8000 && target(8000,true,10000)==8000);
+    assert(target(8000,true,9999)==16000 && target(25000)==25000); // trailing untouched
+    assert(target(7000)==16000); // seek/repeat can move backwards
+    rests.clear();
+    event(0,0x90,60,80); event(1000,0xb0,64,127); event(2000,0x80,60,0);
+    event(12000,0xb0,64,0); event(22000,0x90,62,80);
+    assert(target(5000)==5000 && target(12499)==12499 && target(12500)==22000);
+    rests.clear();
+    event(0,0x90,60,80); event(500,0x90,64,80); event(1000,0x80,64,0);
+    event(10000,0x80,60,0); event(10000,0x90,62,80); event(20000,0x80,62,0);
+    event(30000,0x90,64,80);
+    assert(target(5000)==5000 && target(15000)==15000 && target(20500)==30000);
+    rests.clear();
+    event(0,0x90,60,80); event(500,0xb0,123,0); event(10000,0x90,62,80);
+    assert(target(1000)==10000); // all notes off
+    rests.clear();
+    assert(target(1000)==1000);
+
+    // Parse actual SMF timing: one-second note, ten-second rest, then another
+    // note. Tempo changes and unrelated track events must not shorten holds.
+    auto midi=smf({{0,0xff,0x51,3,0x0f,0x42,0x40,0x90,0x40,0xff,0x51,3,7,0xa1,0x20,0,0xff,0x2f,0},
+        {0,0x91,60,80,0x83,0x60,0x81,60,0,0xc3,0x40,0x91,62,80,0x83,0x60,0x81,62,0,0,0xff,0x2f,0}});
+    MidiFile file; assert(file.open(midi)); Event e;
+    uint64_t nextOnset=0;
+    while(file.next(e)) {
+        rests.observe(e,1,1);
+        if(e.track==1 && e.type==0x90 && e.a==62) nextOnset=e.us;
+    }
+    assert(nextOnset>5000000);
+    assert(rests.target(1500000,true,3000)==nextOnset);
+    Voice voice; Event next;
+    assert(seekEvents(file,voice,next,500000,1,1) && voice.highest()==60);
+    assert(seekEvents(file,voice,next,2000000,1,1) && voice.highest()==-1);
+    assert(seekEvents(file,voice,next,nextOnset,1,1) && voice.highest()==62);
+    file.close();
+}
 int main() {
+    silenceTests();
     Harp::ReadWindow view;
     assert(!view.begin(3,5000,4500,false));
     assert(!view.begin(3,5000,0,true));
@@ -95,5 +152,5 @@ int main() {
     for (int i=0;i<20000;++i) huge.insert(huge.end(),{0,0x90,60,80});
     huge.insert(huge.end(),{0,0xff,0x2f,0}); auto large=smf({huge});
     for (int i=0;i<3;++i) { assert(!file.open(large)); assert(file.open(m)); file.close(); }
-    puts("MIDI tempo/track/running-status, malformed input, memory recovery, mapping and sustain passed");
+    puts("MIDI parsing, mapping, seeking and long-rest skipping (holds/pedal/chords/thresholds) passed");
 }

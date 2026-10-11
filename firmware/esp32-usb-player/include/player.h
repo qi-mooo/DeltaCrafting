@@ -2,6 +2,7 @@
 #include "storage.h"
 #include "midi_file.h"
 #include "harp_mapping.h"
+#include "playback_silence.h"
 #include <USBHIDKeyboard.h>
 #include <USBHIDMouse.h>
 #include <atomic>
@@ -11,14 +12,16 @@ struct PlayerRequest {
     PlayerCommand command = PlayerCommand::Stop;
     char path[192] = {};
     int track = -1, channel = -1, transpose = 0, speed = 100, countdown = 3;
-    bool loop = false, dryRun = false;
+    bool loop = false, dryRun = false, skipSilence = true;
+    uint32_t silenceThresholdMs=Harp::SilenceMap::DefaultThresholdMs;
     uint32_t startMs=0, positionMs=0;
 };
 struct PlayerStatus {
     String state = "stopped", file, error;
     uint32_t elapsedMs = 0, durationMs = 0, countdownMs = 0, notes = 0;
     int track = -1, channel = -1, baseOctave = 4, speed = 100, transpose = 0;
-    bool loop = false, busy = false, dryRun = false;
+    bool loop = false, busy = false, dryRun = false, skipSilence = true;
+    uint32_t silenceThresholdMs=Harp::SilenceMap::DefaultThresholdMs, skippedSilenceMs=0;
     uint32_t emittedNotes = 0;
 };
 class Player {
@@ -49,6 +52,7 @@ private:
     Storage &storage;
     Harp::MidiFile midi;
     Harp::Voice voice;
+    Harp::SilenceMap silenceMap;
     Harp::Event next;
     Harp::Key output, pending;
     USBHIDKeyboard keyboard;
