@@ -13,7 +13,7 @@ struct PlayerRequest {
     PlayerCommand command = PlayerCommand::Stop;
     char path[192] = {};
     int track = -1, channel = -1, transpose = 0, speed = 100, countdown = 3;
-    bool loop = false, dryRun = false, skipSilence = true;
+    bool loop = false, dryRun = false, skipSilence = true, usbWritable=false;
     uint32_t silenceThresholdMs=Harp::SilenceMap::DefaultThresholdMs;
     uint32_t startMs=0, positionMs=0;
 };
@@ -34,6 +34,7 @@ public:
     void endMaintenance() { maintenance=false; }
     PlayerStatus status();
     std::vector<Song> library(size_t offset, size_t &total);
+    void uploadedSong(const Song &song,bool removed=false);
     std::atomic_bool usbConnected{false};
     std::atomic_bool cancel{false};
 private:
@@ -49,15 +50,6 @@ private:
             return !cancelled() && file.seekSet(off) && file.read(buffer,n) == int(n) && !cancelled();
         }
     } reader;
-    struct UploadReader : Harp::Reader {
-        fs::File file;
-        std::atomic_bool *cancelFlag=nullptr;
-        bool cancelled() const override { return cancelFlag && cancelFlag->load(); }
-        uint32_t size() const override { return file.size(); }
-        bool read(uint32_t offset,void *buffer,size_t n) override {
-            return !cancelled() && file.seek(offset) && file.read(static_cast<uint8_t *>(buffer),n)==n;
-        }
-    };
     struct Candidate { uint32_t count = 0, sum = 0; uint8_t low = 127, high = 0; } candidates[Harp::MidiFile::MaxTracks][16];
     uint32_t histogram[128] = {};
     Storage &storage;

@@ -48,6 +48,14 @@ void Player::release() {
     }
     output = {}; pending = {}; keyPending = false;
 }
+void Player::uploadedSong(const Song &song,bool removed) {
+    xSemaphoreTake(mutex,portMAX_DELAY);
+    auto it=std::find_if(songs.begin(),songs.end(),[&](const Song &s){return s.path==song.path;});
+    if(it!=songs.end()) { if(removed) songs.erase(it); else *it=song; }
+    else if(!removed && songs.size()<564) songs.push_back(song);
+    std::sort(songs.begin(),songs.end(),[](const Song &a,const Song &b){return a.path<b.path;});
+    xSemaphoreGive(mutex);
+}
 void Player::silence() { release(); voice.clear(); }
 void Player::stop(const String &error) {
     silence(); reader.file.close(); midi.close(); silenceMap.clear(); hasNext = false;
@@ -70,12 +78,7 @@ bool Player::load(const PlayerRequest &request) {
     stop(); current.file = request.path; current.state = "loading"; current.busy = true;
     current.dryRun = request.dryRun; current.emittedNotes = 0; current.skippedSilenceMs=0; publish();
     bool loaded=false; String failure;
-    if(UploadLibrary::isUpload(request.path)) {
-        UploadReader input; input.file=uploads.open(request.path); input.cancelFlag=&cancel;
-        loaded=input.file && midi.open(input);
-        failure=midi.error()?midi.error():"uploaded_midi_not_found";
-    }
-    for(unsigned attempt=0;!UploadLibrary::isUpload(request.path) && attempt<25 && !cancel.load();++attempt) {
+    for(unsigned attempt=0;attempt<25 && !cancel.load();++attempt) {
         if(storage.beginRead()) {
             bool opened=reader.file.open(&storage.volume,request.path,O_RDONLY) && !reader.file.isDirectory()
                 && reader.file.fileSize()<=512*1024;
@@ -181,23 +184,14 @@ void Player::runCommand(const PlayerRequest &r) {
             if(current.error!="sd_busy_retry" && current.error!="sd_changed_retry") break;
             delay(250);
         }
-        // Uploaded music remains usable even without an SD card or while its
-        // host is writing. Keep the last SD list on transient scan failures.
-        if(!scanned) {
-            xSemaphoreTake(mutex,portMAX_DELAY);
-            for(const auto &song:songs) if(!UploadLibrary::isUpload(song.path)) fetched.push_back(song);
-            xSemaphoreGive(mutex);
-        }
-        if(uploads.list(fetched) && !cancel.load()) {
-            std::sort(fetched.begin(),fetched.end(),[](const Song &a,const Song &b) { return a.path<b.path; });
-            if(fetched.size()>564) { current.error="library_limit_564"; current.busy=false; break; }
-            if(scanned || storage.owner()==CardOwner::Missing) current.error="";
-            xSemaphoreTake(mutex, portMAX_DELAY); songs = std::move(fetched); xSemaphoreGive(mutex);
+        if(scanned && !cancel.load()) {
+            current.error="";
+            xSemaphoreTake(mutex,portMAX_DELAY); songs=std::move(fetched); xSemaphoreGive(mutex);
         }
         current.busy = false; break;
     }
     case PlayerCommand::Export:
-        stop(); if (!storage.exportUsb()) current.error = storage.error();
+        stop(); if (!storage.exportUsb(r.usbWritable)) current.error = storage.error();
         break;
     case PlayerCommand::Settings: {
         bool changedPitch=current.transpose!=r.transpose;

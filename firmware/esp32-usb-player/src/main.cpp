@@ -20,7 +20,7 @@
 namespace {
 USBCDC console;
 Storage storage;
-UploadLibrary uploads;
+UploadLibrary uploads(storage);
 Player player(storage,uploads);
 WebServer server(80);
 String ssid, password, token, serialLine, bootError;
@@ -69,7 +69,7 @@ void statusJson(JsonDocument &doc) {
     doc["skipSilence"]=state.skipSilence; doc["silenceThresholdMs"]=state.silenceThresholdMs;
     doc["skippedSilenceMs"]=state.skippedSilenceMs;
     doc["usbConnected"] = player.usbConnected.load(); doc["storage"] = storage.ownerName();
-    doc["sharedLibrary"] = true;
+    doc["sharedLibrary"] = true; doc["usbWritable"]=storage.usbWritable(); doc["uploadDestination"]="sd"; doc["migrationError"]=uploads.migrationError();
     doc["pairingSeconds"] = discovery.pairingSeconds();
     doc["startMs"] = web.startMs;
     doc["cardId"] = storage.identity(); doc["cardSectors"] = storage.sectors();
@@ -235,7 +235,7 @@ void routes() {
         String path = d["file"] | "";
         if (!validPath(path) || !options(d,r)) { error(400,"invalid_file_or_options"); return; }
         if (!player.usbConnected.load()) { error(409,"usb_host_not_connected"); return; }
-        if (storage.owner() == CardOwner::Missing && !UploadLibrary::isUpload(path)) { error(409,"sd_not_available"); return; }
+        if (storage.owner() == CardOwner::Missing) { error(409,"sd_not_available"); return; }
         strlcpy(r.path,path.c_str(),sizeof(r.path)); accept(r);
     });
     server.on("/api/v1/pause",HTTP_POST,[] { if (authorized()) { PlayerRequest r; r.command=PlayerCommand::Pause; accept(r); } });
@@ -255,7 +255,11 @@ void routes() {
         r.skipSilence=s.skipSilence; r.silenceThresholdMs=s.silenceThresholdMs;
         if (!options(d,r)) { error(400,"invalid_options"); return; } accept(r);
     });
-    server.on("/api/v1/storage/usb",HTTP_POST,[] { if (authorized()) { PlayerRequest r; r.command=PlayerCommand::Export; accept(r); } });
+    server.on("/api/v1/storage/usb",HTTP_POST,[] {
+        StaticJsonDocument<128> d; if(!body(d)) return;
+        if(d.containsKey("writable") && !d["writable"].is<bool>()) { error(400,"invalid_options"); return; }
+        PlayerRequest r; r.command=PlayerCommand::Export; r.usbWritable=d["writable"] | false; accept(r);
+    });
     server.onNotFound([] { error(404,"not_found"); });
     server.begin();
 }

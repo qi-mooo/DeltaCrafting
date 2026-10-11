@@ -1,7 +1,7 @@
 # DeltaHarp USB MIDI Player
 
 已完成的硬件实测与尚未验证项见 [本次验证记录](VERIFIED.md)。
-日常使用：复制 MIDI 到 `DELTAHARP` → 网页刷新曲库并收藏 → 屏幕选择收藏曲目并播放，无需弹出磁盘。
+日常使用：网页上传 MIDI 到 SD 卡并收藏 → 屏幕选择收藏曲目并播放，无需电脑软件或手动弹出。
 USB 板已支持 HTTP 固件更新；屏幕固件在原有 T-Display 项目中新增口琴播放器菜单。
 屏幕 v30 的「全局设置 → 系统更新 → Harp 播放器更新」可检查 Windows App 内附的播放器固件并安装。
 
@@ -26,27 +26,33 @@ no PSRAM. Connect the native USB plug to the target computer.
 
 Default: SDMMC 1-bit using GPIO 36/35/37. Do not apply these pins to unrelated
 S3 boards, especially versions with octal PSRAM. The SD library supports exFAT
-and FAT32, UTF-8 names, subdirectories up to three levels, and 500 songs maximum.
+and FAT32, UTF-8 names, subdirectories up to three levels, and 564 songs maximum.
 
-## Copy and play
+## Upload and play
 
-1. Plug in the Dongle. Its SD card appears as a USB removable disk alongside
-   keyboard, mouse and serial interfaces. It starts in USB reader mode.
-2. Copy `.mid`, `.midi` or `.kar` files to the card. From v4 no disk eject is
-   required for browsing or playback; finish copying before selecting a new file.
-3. Open the player's LAN IP in a browser, pair, refresh the library and star songs.
-   On the display open Tools > Harp Player > Favorites, select a song and play.
-   GPIO 14 cycles rows and GPIO 0 confirms, matching existing menus.
+1. Plug in the Dongle and log in to its web page. Upload MIDI directly to the
+   SD card and star songs; the display lists only these favorites.
+2. From v11 USB reader mode is read-only by default. Web upload/delete acquires
+   exclusive SD ownership, temporarily disconnects USB, writes and syncs, then
+   reconnects the reader. No desktop software or manual eject is required in
+   this default mode. Uploads require playback to be stopped.
+3. To copy files using Explorer, choose **临时允许电脑写入** in web Settings.
+   Browsing and playback remain available. Afterwards safely eject the SD disk
+   on that computer; the next web upload automatically restores read-only USB.
+   **恢复自动读写切换** also reconnects an ejected card in read-only mode.
 4. The default three-second countdown gives time to focus the game's instrument.
    Pause releases all keys and mouse buttons. Resume restores the held note.
-5. The disk stays visible while playing, so more music can be copied normally.
-   If it was manually ejected, choose USB reader on the web page or send `usb`.
 
-The computer remains the only filesystem writer. Song scans and MIDI loading use
-a fresh read-only block view after two seconds without USB writes. Sector access
-is serialized, and any queued or completed write invalidates the entire read.
-The player discards partial results and retries for a bounded time; a busy disk
-reports `sd_busy_retry` / `sd_changed_retry`, retaining the previous song list.
+The firmware cannot flush a computer's unsubmitted filesystem cache. A sector
+mutex or two-second idle period does not make two FAT/exFAT writers safe. Device
+writes are therefore rejected while a writable host mount is active, even when
+idle. Only read-only host mounts or an OS eject permit the automatic device write
+lease. Upload cancellation, errors and the 30-second timeout release the lease.
+USB write protection is advertised via the MSC callback and enforced again in
+the sector callback. Reconnecting USB invalidates the host's old directory view.
+Song scans and MIDI loading still use a fresh read-only block view after two
+seconds without USB writes. Queued or completed writes invalidate the entire
+read and the player retries, retaining its old song list on transient failures.
 MIDI events are fully parsed into memory before playback, so later SD writes do
 not affect the current song. New copies are visible only after the host submits
 its cached writes; FAT/exFAT cannot expose the host's uncommitted file cache.
@@ -55,10 +61,10 @@ block-device interface even if the filesystem library attempts a cache sync.
 
 From v3 the firmware begin API prepares media on the S3 itself: after a two-second
 device-I/O quiet period it synchronizes the card and withdraws USB MSC media.
-No Windows disk operation is used. This cannot flush writes still cached by the
-computer; finish copying files before updating. Wi-Fi provisioning still requires OS eject.
+No Windows disk operation is used. From v11 a temporary writable USB mount must
+be safely ejected before OTA too. Wi-Fi provisioning still requires OS eject.
 
-## Built-in web page (v10)
+## Built-in web page (v11)
 
 Visit `http://<player-ip>/` (or `http://delta-harp.local/` where mDNS is supported).
 Log in with the device's web password; no BOOT action or device API key is needed.
@@ -81,19 +87,18 @@ All assets are embedded in flash and work offline; the page does not load a CDN.
 
 The full library supports search and star/unstar. Up to 64 favorites persist in
 player NVS across reboot and OTA; the screen fetches only `/api/v1/favorites`.
-From v10, Upload MIDI accepts multiple `.mid`, `.midi` or `.kar` files, up to
-512 KiB each and 64 uploaded songs within the device's 1.5 MiB internal library.
-Remaining space is shown on the page. Uploads use the existing LittleFS data
-partition, not the host-mounted SD filesystem; USB reading and the SD library
-remain available. Uploaded songs appear alongside SD songs under `/@web/`, can
-be favorited for S3 playback, and survive reboot and application OTA. They are
-not copied to the USB drive. The SD root directory name `@web` is reserved.
-Stop playback before uploading or deleting. Files are transferred in 3 KiB
-chunks into a temporary file, then fully parsed using the playback MIDI parser
-before an atomic rename. Existing names are rejected; interruption/30-second
-timeout discards the incomplete file, and reboot cleans any orphaned temporary
-file. The page provides deletion for uploaded songs only. An unrecognized
-nonblank internal data partition is never automatically formatted.
+From v11, Upload MIDI writes multiple `.mid`, `.midi` or `.kar` files directly to
+SD `/@web/`, up to 512 KiB each and 64 uploaded songs. Uploads do not consume the
+ESP32 internal data partition. The page reports SD space after the first write.
+Uploaded songs retain their `/@web/` paths and work from existing S3 favorites.
+On the first v11 boot, old v10 internal songs are copied to SD, synced and compared
+byte for byte before removing flash originals. A collision with different content
+or failed write preserves the old file and reports `migrationError`; nothing is
+silently overwritten or formatted. This migration runs before USB starts.
+Stop playback before uploading or deleting. Transfers use 3 KiB chunks and a
+hidden SD temporary file, with parser validation before rename. Duplicate names
+are rejected. Cancellation, timeout and next boot remove incomplete uploads.
+Deleting from the web is restricted to the `/@web/` upload directory.
 Playback controls include play/pause/resume/stop. Settings save speed (50–200%),
 transpose (-24–24), countdown (0–30 seconds) and repeat.
 From v9, automatic long-rest skipping is enabled by default. A silent interval

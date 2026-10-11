@@ -16,8 +16,8 @@ private:
     Player &player;
     UploadLibrary &library;
     std::function<bool()> authorized;
-    fs::File output;
-    bool active=false;
+    FsFile output;
+    bool active=false,writeLease=false;
     uint32_t expected=0,received=0,touched=0;
     String id,path;
     uint8_t buffer[3072];

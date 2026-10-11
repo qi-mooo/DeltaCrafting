@@ -22,7 +22,15 @@ public:
     bool beginRead();
     bool endRead();
     bool readValid();
-    bool exportUsb();
+    bool exportUsb(bool writable=false);
+    bool beginWrite();
+    bool endWrite();
+    bool usbWritable() const { return hostWritable.load(); }
+    uint64_t totalBytes() const { return totalBytes_; }
+    uint64_t usedBytes() const { return usedBytes_; }
+    bool spaceKnown() const { return spaceKnown_; }
+    bool refreshSpace();
+    static bool hostCanWrite();
     bool suspendUsbForUpdate();
     void restoreUsbAfterUpdate();
     bool formatExfat();
@@ -67,6 +75,9 @@ private:
     uint32_t writeEpoch=0, lastWrite=0;
     uint32_t lastIo=0;
     bool updateSuspended=false;
+    std::atomic_bool hostWritable{false};
+    bool writing=false, restoreHost=false, reconnectUsb=false, spaceKnown_=false;
+    uint64_t totalBytes_=0, usedBytes_=0;
     String error_, cardId;
     static Storage *instance;
     int32_t transfer(uint32_t lba, uint32_t offset, uint8_t *buffer, uint32_t size, bool write);

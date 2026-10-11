@@ -157,7 +157,7 @@ public sealed class HarpFirmwareUpdater : IDisposable
     {
         if (reply.Code == 200 && reply.Body.Ok) return;
         throw new InvalidOperationException(reply.Code == 401 ? "播放器配对密钥错误" : reply.Code == 404 ? "播放器需先通过 USB 安装 v2"
-            : reply.Body.Error == "eject_sd_on_computer_first" ? "旧版播放器需先升级 v3 才支持自动准备更新"
+            : reply.Body.Error == "eject_sd_on_computer_first" ? "请在连接播放器的电脑安全弹出 SD 卡后重试更新"
             : reply.Body.Error == "sd_io_busy" ? "SD 持续读写,请等待复制完成后重试" : "播放器拒绝更新,请重新检查");
     }
     private async Task<Player> ReadAsync(HarpPlayerSettings c, CancellationToken ct)

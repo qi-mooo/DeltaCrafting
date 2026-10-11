@@ -1,7 +1,11 @@
 #include "storage.h"
 #include <algorithm>
+#include <tusb.h>
+
+extern "C" bool tud_msc_is_writable_cb(uint8_t) { return Storage::hostCanWrite(); }
 
 Storage *Storage::instance = nullptr;
+bool Storage::hostCanWrite() { return instance && instance->usbWritable() && instance->owner()==CardOwner::Host; }
 bool CardPins::valid() const {
     const int values[] = {clk,cmd,d0,cs};
     for (unsigned i = 0; i < (mmc ? 3u : 4u); ++i) {
@@ -48,6 +52,7 @@ bool Storage::begin(const CardPins &pins) {
             ok = instance->blocks->syncDevice();
             if (ok) {
                 instance->owner_ = CardOwner::Ejected;
+                instance->hostWritable=false;
                 instance->msc.mediaPresent(false);
             }
         } else if (start && instance->owner() != CardOwner::Host) ok = false;
@@ -82,6 +87,7 @@ bool Storage::begin(const CardPins &pins) {
     // Register MSC even without media so USB CDC diagnostics remain accessible.
     msc.begin(blocks ? sectors() : 1, 512);
     owner_ = blocks ? CardOwner::Host : CardOwner::Missing;
+    hostWritable = false;
     lastIo=millis();
     lastWrite=lastIo-Harp::ReadWindow::QuietMs;
     msc.mediaPresent(blocks != nullptr);
@@ -95,7 +101,7 @@ int32_t Storage::transfer(uint32_t lba, uint32_t offset, uint8_t *buffer, uint32
     // Increment before writing: partial/failed writes invalidate readers too.
     if(write) ++writeEpoch;
     uint64_t pos = uint64_t(lba) * 512 + offset;
-    bool ok = owner() == CardOwner::Host && blocks && pos + size <= uint64_t(sectors()) * 512;
+    bool ok = owner() == CardOwner::Host && (!write || hostWritable.load()) && blocks && pos + size <= uint64_t(sectors()) * 512;
     uint32_t done = 0;
     alignas(4) uint8_t sector[512];
     while (ok && done < size) {
@@ -119,7 +125,8 @@ bool Storage::suspendUsbForUpdate() {
     if(!mutex || xSemaphoreTake(mutex,pdMS_TO_TICKS(100))!=pdTRUE) { error_="sd_io_busy"; return false; }
     bool ok=true;
     if(owner()==CardOwner::Host) {
-        if(pendingIo.load() || millis()-lastIo<2000) { error_="sd_io_busy"; ok=false; }
+        if(hostWritable) { error_="eject_sd_on_computer_first"; ok=false; }
+        else if(pendingIo.load() || millis()-lastIo<2000) { error_="sd_io_busy"; ok=false; }
         else if(!blocks->syncDevice()) { error_="sd_sync_failed"; ok=false; }
         else { msc.mediaPresent(false); owner_=CardOwner::Ejected; updateSuspended=true; error_=""; }
     }
@@ -158,15 +165,67 @@ bool Storage::endRead() {
     if(!ok) error_="sd_changed_retry";
     return ok;
 }
-bool Storage::exportUsb() {
+bool Storage::exportUsb(bool writable) {
     xSemaphoreTake(mutex, portMAX_DELAY);
-    bool ok = blocks != nullptr;
+    // A writable host mount must be ejected by its OS before changing ownership.
+    bool ok = blocks && !writing && !(owner()==CardOwner::Host && hostWritable && !writable);
+    bool reconnect=ok && tud_mounted() && (hostWritable!=writable || owner()!=CardOwner::Host);
+    if(!ok) error_="eject_sd_on_computer_first";
     if (ok) {
+        msc.mediaPresent(false);
+        if(reconnect) tud_disconnect();
         volume.end(); ok = blocks->syncDevice();
-        if (ok) { owner_ = CardOwner::Host; msc.mediaPresent(true); error_ = ""; }
+        if (ok) { hostWritable=writable; owner_ = CardOwner::Host; msc.mediaPresent(true); error_ = ""; }
+        else { owner_=CardOwner::Ejected; error_="sd_sync_failed"; }
     }
     xSemaphoreGive(mutex);
+    if(reconnect) { delay(350); tud_connect(); }
     return ok;
+}
+bool Storage::beginWrite() {
+    if(!mutex || !blocks) { error_="sd_not_available"; return false; }
+    xSemaphoreTake(mutex,portMAX_DELAY);
+    bool ok=!writing && !updateSuspended && !(owner()==CardOwner::Host && hostWritable.load());
+    if(!ok) error_="eject_sd_on_computer_first";
+    else {
+        restoreHost=owner()==CardOwner::Host || owner()==CardOwner::Ejected;
+        reconnectUsb=restoreHost && tud_mounted();
+        // The computer has only ever mounted this session read-only, or has
+        // explicitly ejected its writable mount. An idle timer cannot flush
+        // a host filesystem cache and must never authorize a device write.
+        msc.mediaPresent(false); owner_=CardOwner::Player; writing=true; ++writeEpoch;
+        if(reconnectUsb) tud_disconnect();
+    }
+    xSemaphoreGive(mutex);
+    if(!ok) return false;
+    if(reconnectUsb) delay(350);
+    volume.end();
+    ok=blocks->syncDevice() && (volume.begin(blocks) || volume.begin(blocks,true,0));
+    if(!ok) { endWrite(); error_="filesystem_mount_failed"; }
+    else error_="";
+    return ok;
+}
+bool Storage::endWrite() {
+    if(!writing) return true;
+    volume.end();
+    xSemaphoreTake(mutex,portMAX_DELAY);
+    bool ok=blocks->syncDevice(); ++writeEpoch;
+    owner_=ok && restoreHost?CardOwner::Host:CardOwner::Ejected;
+    if(ok && restoreHost) msc.mediaPresent(true);
+    writing=false; restoreHost=false;
+    xSemaphoreGive(mutex);
+    if(reconnectUsb) { reconnectUsb=false; tud_connect(); }
+    if(!ok) error_="sd_sync_failed";
+    return ok;
+}
+bool Storage::refreshSpace() {
+    int32_t free=volume.freeClusterCount();
+    spaceKnown_=free>=0;
+    if(spaceKnown_) {
+        totalBytes_=uint64_t(volume.clusterCount())*volume.bytesPerCluster();
+        usedBytes_=totalBytes_-uint64_t(free)*volume.bytesPerCluster();
+    }
+    return spaceKnown_;
 }
 bool Storage::formatExfat() {
     xSemaphoreTake(mutex, portMAX_DELAY);
@@ -198,7 +257,7 @@ bool Storage::walk(const String &path, unsigned depth, std::vector<Song> &songs)
         else {
             String lower = leaf; lower.toLowerCase();
             if (!directory && (lower.endsWith(".mid") || lower.endsWith(".midi") || lower.endsWith(".kar"))) {
-                if (songs.size() >= 500 || full.length() > 191) { error_ = "library_limit_500_or_path_191"; return false; }
+                if (songs.size() >= 564 || full.length() > 191) { error_ = "library_limit_564_or_path_191"; return false; }
                 songs.push_back({full, leaf, uint32_t(bytes)});
             }
         }
