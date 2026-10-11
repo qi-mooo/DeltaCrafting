@@ -15,11 +15,13 @@
 #include "web_settings.h"
 #include "web_auth.h"
 #include "web_page.h"
+#include "midi_upload.h"
 
 namespace {
 USBCDC console;
 Storage storage;
-Player player(storage);
+UploadLibrary uploads;
+Player player(storage,uploads);
 WebServer server(80);
 String ssid, password, token, serialLine, bootError;
 FirmwareUpdate updater(server,player,storage,token);
@@ -29,6 +31,8 @@ WebAuth webAuth;
 CardPins pins;
 bool serialOverflow = false, ready = false;
 String deviceId;
+bool authorized();
+MidiUpload midiUpload(server,player,uploads,authorized);
 
 bool validToken(const String &s) {
     if (s.length() < 32 || s.length() > 64) return false;
@@ -98,6 +102,7 @@ bool jsonBody(JsonDocument &doc) {
 bool body(JsonDocument &doc) { return authorized() && jsonBody(doc); }
 void accept(const PlayerRequest &r) {
     if (updater.busy()) { error(409,"update_in_progress"); return; }
+    if (midiUpload.busy()) { error(409,"upload_in_progress"); return; }
     if (!player.submit(r)) { error(503,"command_queue_full"); return; }
     StaticJsonDocument<128> doc; doc["ok"] = true; doc["accepted"] = true; respond(202,doc);
 }
@@ -128,6 +133,7 @@ bool options(JsonDocument &doc, PlayerRequest &r) {
 void routes() {
     const char *headers[] = {"Authorization"}; server.collectHeaders(headers,1);
     updater.begin();
+    midiUpload.begin();
     discovery.begin(server,deviceId,token);
     server.on("/",HTTP_GET,[] {
         server.sendHeader("Cache-Control","no-store");
@@ -210,7 +216,7 @@ void routes() {
     server.on("/api/v1/songs",HTTP_GET,[] {
         if (!authorized()) return;
         int offset = server.hasArg("offset") ? server.arg("offset").toInt() : 0;
-        if (offset < 0 || offset > 500) { error(400,"invalid_offset"); return; }
+        if (offset < 0 || offset > 564) { error(400,"invalid_offset"); return; }
         size_t total; auto songs = player.library(offset, total); DynamicJsonDocument d(20000);
         d["ok"] = true; d["total"] = total; d["offset"] = offset; d["storage"] = storage.ownerName();
         auto array = d.createNestedArray("songs");
@@ -229,7 +235,7 @@ void routes() {
         String path = d["file"] | "";
         if (!validPath(path) || !options(d,r)) { error(400,"invalid_file_or_options"); return; }
         if (!player.usbConnected.load()) { error(409,"usb_host_not_connected"); return; }
-        if (storage.owner() == CardOwner::Missing) { error(409,"sd_not_available"); return; }
+        if (storage.owner() == CardOwner::Missing && !UploadLibrary::isUpload(path)) { error(409,"sd_not_available"); return; }
         strlcpy(r.path,path.c_str(),sizeof(r.path)); accept(r);
     });
     server.on("/api/v1/pause",HTTP_POST,[] { if (authorized()) { PlayerRequest r; r.command=PlayerCommand::Pause; accept(r); } });
@@ -294,7 +300,7 @@ void serialCommand(const String &line) {
     }
     if (command=="songs") {
         int offset=d["offset"] | 0;
-        if (offset<0 || offset>500) { console.println("{\"ok\":false,\"error\":\"invalid_offset\"}"); return; }
+        if (offset<0 || offset>564) { console.println("{\"ok\":false,\"error\":\"invalid_offset\"}"); return; }
         size_t total; auto songs=player.library(offset,total);
         DynamicJsonDocument list(20000); list["ok"]=true; list["total"]=total; list["offset"]=offset;
         auto rows=list.createNestedArray("songs");
@@ -341,6 +347,7 @@ void serialCommand(const String &line) {
 void setup() {
     readConfig(); web.begin(); webAuth.begin(); deviceId=WiFi.macAddress(); deviceId.replace(":",""); deviceId.toLowerCase();
     bool card=storage.begin(pins); if (!card) bootError=storage.error();
+    uploads.begin();
     ready=player.begin();
     if(ready) {
         PlayerRequest r; r.command=PlayerCommand::Settings;
@@ -375,5 +382,5 @@ void loop() {
             serialLine=""; serialOverflow=false;
         } else if (serialLine.length()<2048) serialLine+=c; else serialOverflow=true;
     }
-    server.handleClient(); updater.tick(); discovery.tick(); delay(1);
+    server.handleClient(); updater.tick(); midiUpload.tick(); discovery.tick(); delay(1);
 }

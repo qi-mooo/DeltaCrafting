@@ -4,6 +4,7 @@
 #include "read_window.h"
 #include "playback_seek.h"
 #include "playback_silence.h"
+#include "upload_rules.h"
 #include <assert.h>
 #include <string.h>
 #include <vector>
@@ -82,6 +83,12 @@ void silenceTests() {
     file.close();
 }
 int main() {
+    assert(Harp::uploadNameValid("天空之城.mid") && Harp::uploadNameValid("Always With Me.MIDI"));
+    assert(!Harp::uploadNameValid("../song.mid") && !Harp::uploadNameValid(".hidden.mid"));
+    assert(!Harp::uploadNameValid("a/b.mid") && !Harp::uploadNameValid("a\\b.mid"));
+    assert(!Harp::uploadNameValid("song.mp3") && !Harp::uploadNameValid("song.mid "));
+    assert(!Harp::uploadNameValid("bad\n.mid") && !Harp::uploadNameValid("bad\xc0\xaf.mid"));
+    assert(!Harp::uploadNameValid("bad\xed\xa0\x80.mid") && !Harp::uploadNameValid("bad\xf4\x90\x80\x80.mid"));
     silenceTests();
     Harp::ReadWindow view;
     assert(!view.begin(3,5000,4500,false));

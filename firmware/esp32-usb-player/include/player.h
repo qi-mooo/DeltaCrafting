@@ -3,6 +3,7 @@
 #include "midi_file.h"
 #include "harp_mapping.h"
 #include "playback_silence.h"
+#include "upload_library.h"
 #include <USBHIDKeyboard.h>
 #include <USBHIDMouse.h>
 #include <atomic>
@@ -26,10 +27,10 @@ struct PlayerStatus {
 };
 class Player {
 public:
-    explicit Player(Storage &s) : storage(s) { reader.cancelFlag = &cancel; reader.storage=&s; }
+    explicit Player(Storage &s,UploadLibrary &u) : storage(s), uploads(u) { reader.cancelFlag = &cancel; reader.storage=&s; }
     bool begin();
     bool submit(const PlayerRequest &request);
-    bool beginMaintenance();
+    bool beginMaintenance(const char *state="updating");
     void endMaintenance() { maintenance=false; }
     PlayerStatus status();
     std::vector<Song> library(size_t offset, size_t &total);
@@ -37,6 +38,7 @@ public:
     std::atomic_bool cancel{false};
 private:
     std::atomic_bool maintenance{false}, parked{false};
+    const char *maintenanceState="updating";
     struct FileReader : Harp::Reader {
         FsFile file;
         Storage *storage = nullptr;
@@ -47,9 +49,19 @@ private:
             return !cancelled() && file.seekSet(off) && file.read(buffer,n) == int(n) && !cancelled();
         }
     } reader;
+    struct UploadReader : Harp::Reader {
+        fs::File file;
+        std::atomic_bool *cancelFlag=nullptr;
+        bool cancelled() const override { return cancelFlag && cancelFlag->load(); }
+        uint32_t size() const override { return file.size(); }
+        bool read(uint32_t offset,void *buffer,size_t n) override {
+            return !cancelled() && file.seek(offset) && file.read(static_cast<uint8_t *>(buffer),n)==n;
+        }
+    };
     struct Candidate { uint32_t count = 0, sum = 0; uint8_t low = 127, high = 0; } candidates[Harp::MidiFile::MaxTracks][16];
     uint32_t histogram[128] = {};
     Storage &storage;
+    UploadLibrary &uploads;
     Harp::MidiFile midi;
     Harp::Voice voice;
     Harp::SilenceMap silenceMap;

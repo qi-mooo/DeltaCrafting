@@ -15,7 +15,9 @@ bool Player::submit(const PlayerRequest &request) {
     if (request.command == PlayerCommand::Stop) { cancel.store(true); return true; }
     return queue && xQueueSend(queue, &request, 0) == pdTRUE;
 }
-bool Player::beginMaintenance() {
+bool Player::beginMaintenance(const char *state) {
+    if(maintenance.load() || parked.load()) return false;
+    maintenanceState=state;
     maintenance=true; cancel=true;
     uint32_t started=millis();
     while (!parked.load() && millis()-started<5000) delay(1);
@@ -68,7 +70,12 @@ bool Player::load(const PlayerRequest &request) {
     stop(); current.file = request.path; current.state = "loading"; current.busy = true;
     current.dryRun = request.dryRun; current.emittedNotes = 0; current.skippedSilenceMs=0; publish();
     bool loaded=false; String failure;
-    for(unsigned attempt=0;attempt<25 && !cancel.load();++attempt) {
+    if(UploadLibrary::isUpload(request.path)) {
+        UploadReader input; input.file=uploads.open(request.path); input.cancelFlag=&cancel;
+        loaded=input.file && midi.open(input);
+        failure=midi.error()?midi.error():"uploaded_midi_not_found";
+    }
+    for(unsigned attempt=0;!UploadLibrary::isUpload(request.path) && attempt<25 && !cancel.load();++attempt) {
         if(storage.beginRead()) {
             bool opened=reader.file.open(&storage.volume,request.path,O_RDONLY) && !reader.file.isDirectory()
                 && reader.file.fileSize()<=512*1024;
@@ -174,8 +181,17 @@ void Player::runCommand(const PlayerRequest &r) {
             if(current.error!="sd_busy_retry" && current.error!="sd_changed_retry") break;
             delay(250);
         }
-        if(scanned && !cancel.load()) {
-            current.error="";
+        // Uploaded music remains usable even without an SD card or while its
+        // host is writing. Keep the last SD list on transient scan failures.
+        if(!scanned) {
+            xSemaphoreTake(mutex,portMAX_DELAY);
+            for(const auto &song:songs) if(!UploadLibrary::isUpload(song.path)) fetched.push_back(song);
+            xSemaphoreGive(mutex);
+        }
+        if(uploads.list(fetched) && !cancel.load()) {
+            std::sort(fetched.begin(),fetched.end(),[](const Song &a,const Song &b) { return a.path<b.path; });
+            if(fetched.size()>564) { current.error="library_limit_564"; current.busy=false; break; }
+            if(scanned || storage.owner()==CardOwner::Missing) current.error="";
             xSemaphoreTake(mutex, portMAX_DELAY); songs = std::move(fetched); xSemaphoreGive(mutex);
         }
         current.busy = false; break;
@@ -200,7 +216,7 @@ void Player::worker() {
     uint64_t lastPublish = 0;
     for (;;) {
         if (maintenance.load()) {
-            xQueueReset(queue); stop(); current.state="updating"; publish(); parked=true;
+            xQueueReset(queue); stop(); current.state=maintenanceState; publish(); parked=true;
             while (maintenance.load()) vTaskDelay(pdMS_TO_TICKS(5));
             parked=false; cancel=false; stop(); publish();
         }

@@ -58,7 +58,7 @@ device-I/O quiet period it synchronizes the card and withdraws USB MSC media.
 No Windows disk operation is used. This cannot flush writes still cached by the
 computer; finish copying files before updating. Wi-Fi provisioning still requires OS eject.
 
-## Built-in web page (v9)
+## Built-in web page (v10)
 
 Visit `http://<player-ip>/` (or `http://delta-harp.local/` where mDNS is supported).
 Log in with the device's web password; no BOOT action or device API key is needed.
@@ -81,6 +81,19 @@ All assets are embedded in flash and work offline; the page does not load a CDN.
 
 The full library supports search and star/unstar. Up to 64 favorites persist in
 player NVS across reboot and OTA; the screen fetches only `/api/v1/favorites`.
+From v10, Upload MIDI accepts multiple `.mid`, `.midi` or `.kar` files, up to
+512 KiB each and 64 uploaded songs within the device's 1.5 MiB internal library.
+Remaining space is shown on the page. Uploads use the existing LittleFS data
+partition, not the host-mounted SD filesystem; USB reading and the SD library
+remain available. Uploaded songs appear alongside SD songs under `/@web/`, can
+be favorited for S3 playback, and survive reboot and application OTA. They are
+not copied to the USB drive. The SD root directory name `@web` is reserved.
+Stop playback before uploading or deleting. Files are transferred in 3 KiB
+chunks into a temporary file, then fully parsed using the playback MIDI parser
+before an atomic rename. Existing names are rejected; interruption/30-second
+timeout discards the incomplete file, and reboot cleans any orphaned temporary
+file. The page provides deletion for uploaded songs only. An unrecognized
+nonblank internal data partition is never automatically formatted.
 Playback controls include play/pause/resume/stop. Settings save speed (50–200%),
 transpose (-24–24), countdown (0–30 seconds) and repeat.
 From v9, automatic long-rest skipping is enabled by default. A silent interval
@@ -194,6 +207,12 @@ use a trusted LAN or the WPA2-protected player AP.
 | POST | `/api/v1/stop` | Release HID and cancel queued playback |
 | POST | `/api/v1/settings` | Optional `speed`, `transpose`, `loop`, `skipSilence`, `silenceThresholdMs` (current playback only) |
 | POST | `/api/v1/storage/usb` | Stop and export SD to the computer |
+| GET | `/api/v1/uploads` | Internal songs, available/used bytes and limits |
+| POST | `/api/v1/uploads/begin` | `name`, `size`; returns `uploadId`, `chunkBytes` |
+| POST | `/api/v1/uploads/chunk` | `uploadId`, sequential `offset`, Base64 `data` |
+| POST | `/api/v1/uploads/finish` | `uploadId`; parse and save, returns virtual `file` path |
+| POST | `/api/v1/uploads/abort` | `uploadId`; discard temporary upload |
+| POST | `/api/v1/uploads/remove` | `file`; delete an internal upload only |
 
 
 Play options: `speed` 50..200 percent, `transpose` -24..24 semitones, `loop`
