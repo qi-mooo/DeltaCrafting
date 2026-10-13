@@ -18,19 +18,21 @@ song=parseMidi(data);assert.equal(song.segments.length,1);assert.equal(song.segm
 data=midi([[ev(0,153,80,90),ev(0,144,67,80),ev(480,137,80,0),ev(0,128,67,0),end]]);assert.equal(parseMidi(data).channel,0);
 for(const bad of [data.subarray(0,12),data.subarray(0,data.length-1),midi([[tempo(0),ev(0,144,60,90),end]])])assert.throws(()=>parseMidi(bad));
 assert(parseMidi(Buffer.concat([data,Buffer.from([0,255,127,0])])));
-let active=0,started=0,stopped=0;
+let active=0,started=0,stopped=0,customWaves=0;
 class Param{setValueAtTime(){}linearRampToValueAtTime(){}setTargetAtTime(){}}
 class Context{
- constructor(){this.state='running';this.currentTime=0;this.destination={};}
+ constructor(){this.state='running';this.currentTime=0;this.sampleRate=48000;this.destination={};}
  async resume(){this.state='running';}
  createGain(){return {gain:new Param(),connect(){},disconnect(){}};}
- createOscillator(){return {frequency:{},connect(){},disconnect(){},start(){active++;started++;},stop(){stopped++;}};}
+ createPeriodicWave(){customWaves++;return {};}
+ createBiquadFilter(){return {frequency:{},Q:{},connect(){},disconnect(){}};}
+ createOscillator(){return {frequency:{},detune:new Param(),connect(){},disconnect(){},setPeriodicWave(){},start(){active++;started++;},stop(){stopped++;}};}
 }
 global.AudioContext=Context;
 (async()=>{
  const synth=new PreviewSynth();await synth.unlock();synth.load({duration:2000,segments:[{start:0,end:2000,pitch:69,velocity:100}]});
- await synth.play();assert(synth.playing);assert.equal(started,1);synth.context.currentTime=.4;synth.pause();assert.equal(synth.position,400);assert(!synth.playing);assert.equal(synth.nodes.size,0);
- await synth.seek(1200);assert.equal(synth.position,1200);await synth.play();assert.equal(started,2);synth.stop();assert.equal(synth.elapsed(),0);assert.equal(synth.nodes.size,0);
+ await synth.play();assert(synth.playing);assert.equal(customWaves,1);assert.equal(started,2);synth.context.currentTime=.4;synth.pause();assert.equal(synth.position,400);assert(!synth.playing);assert.equal(synth.nodes.size,0);
+ await synth.seek(1200);assert.equal(synth.position,1200);await synth.play();assert.equal(started,4);synth.stop();assert.equal(synth.elapsed(),0);assert.equal(synth.nodes.size,0);
  let release;synth.context.state='suspended';synth.context.resume=()=>new Promise(r=>{release=()=>{synth.context.state='running';r();};});
  const pending=synth.play();synth.stop();release();await pending;assert(!synth.playing);assert.equal(synth.nodes.size,0);
  console.log('MIDI tempo, tracks, running status, sustain, malformed input and preview pause/seek/cancellation passed.');

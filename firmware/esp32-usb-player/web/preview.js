@@ -69,14 +69,19 @@ function parseMidi(input){
  return {segments,duration:Math.max(0,duration-first),track:best.track,channel:best.channel,notes:best.count};
 }
 class PreviewSynth{
- constructor(onchange=()=>{}){this.generation=0;this.onchange=onchange;this.context=null;this.master=null;this.nodes=new Set();this.timer=0;this.song=null;this.position=0;this.anchor=0;this.playing=false;this.speed=1;this.transpose=0;this.volume=.5;this.index=0;}
+ constructor(onchange=()=>{}){this.generation=0;this.onchange=onchange;this.context=null;this.master=null;this.wave=null;this.nodes=new Set();this.timer=0;this.song=null;this.position=0;this.anchor=0;this.playing=false;this.speed=1;this.transpose=0;this.volume=.5;this.index=0;}
  async unlock(){
-  if(!this.context){const C=root.AudioContext||root.webkitAudioContext;if(!C)throw new Error('此浏览器不支持声音试听');this.context=new C();this.master=this.context.createGain();this.master.gain.value=this.volume;this.master.connect(this.context.destination);}
+  if(!this.context){const C=root.AudioContext||root.webkitAudioContext;if(!C)throw new Error('此浏览器不支持声音试听');this.context=new C();this.master=this.context.createGain();this.master.gain.value=this.volume;this.master.connect(this.context.destination);
+   // Free-reed harmonics: both even and odd partials, with rounded high end.
+   // One normalized, band-limited wavetable per context; no network soundfont.
+   const harmonics=new Float32Array([0,1,.48,.43,.24,.2,.12,.1,.065,.045,.03,.02,.014]);
+   this.wave=this.context.createPeriodicWave?this.context.createPeriodicWave(new Float32Array(harmonics.length),harmonics):null;
+  }
   if(this.context.state!=='running')await this.context.resume();
   if(this.context.state!=='running')throw new Error('请再次点击试听以开启浏览器声音');
  }
  elapsed(){return this.playing?Math.min(this.song.duration,this.position+(this.context.currentTime-this.anchor)*1000*this.speed):this.position;}
- silence(){clearInterval(this.timer);this.timer=0;for(const n of this.nodes){try{n.osc.stop();}catch{}n.osc.disconnect();n.gain.disconnect();}this.nodes.clear();}
+ silence(){clearInterval(this.timer);this.timer=0;for(const n of this.nodes)n.dispose();this.nodes.clear();}
  load(song,{speed=100,transpose=0,startMs=0}={}){this.stop();if(startMs>=song.duration&&startMs)throw new Error('起始时间超过曲目时长');this.song=song;this.speed=speed/100;this.transpose=transpose;this.position=startMs;this.onchange();}
  async play(){const generation=++this.generation;await this.unlock();if(generation!==this.generation||!this.song)return;if(this.position>=this.song.duration)this.position=0;if(this.playing)return;this.playing=true;this.anchor=this.context.currentTime;this.index=this.song.segments.findIndex(n=>n.end>this.position);if(this.index<0)this.index=this.song.segments.length;this.schedule();this.timer=setInterval(()=>this.schedule(),25);this.onchange();}
  schedule(){
@@ -87,10 +92,26 @@ class PreviewSynth{
    const pitch=n.pitch+this.transpose;if(pitch<0||pitch>127)continue;
    const when=Math.max(this.context.currentTime,this.anchor+(Math.max(this.position,n.start)-this.position)/1000/this.speed);
    const end=this.anchor+(n.end-this.position)/1000/this.speed;if(end<=when)continue;
-   const osc=this.context.createOscillator(),gain=this.context.createGain();osc.type='triangle';osc.frequency.value=440*Math.pow(2,(pitch-69)/12);
-   const peak=.28*(n.velocity/127),attack=Math.min(.008,(end-when)/4),release=Math.min(.025,(end-when)/3);
-   gain.gain.setValueAtTime(0,when);gain.gain.linearRampToValueAtTime(peak,when+attack);gain.gain.linearRampToValueAtTime(peak*.6,Math.max(when+attack,end-release));gain.gain.linearRampToValueAtTime(0,end);
-   osc.connect(gain);gain.connect(this.master);const node={osc,gain};this.nodes.add(node);osc.onended=()=>{this.nodes.delete(node);osc.disconnect();gain.disconnect();};osc.start(when);osc.stop(end+.005);
+   const osc=this.context.createOscillator(),gain=this.context.createGain(),filter=this.context.createBiquadFilter();
+   const frequency=440*Math.pow(2,(pitch-69)/12),length=end-when,peak=.34*Math.pow(n.velocity/127,.7);
+   if(this.wave&&osc.setPeriodicWave)osc.setPeriodicWave(this.wave);else osc.type='sawtooth';
+   osc.frequency.value=frequency;
+   filter.type='lowpass';filter.Q.value=.5;
+   filter.frequency.value=Math.min((this.context.sampleRate||48000)*.45,Math.max(2200,frequency*5)*( .7+.3*n.velocity/127));
+   const attack=Math.min(.022,length/4),release=Math.min(.045,length/3);
+   gain.gain.setValueAtTime(0,when);gain.gain.linearRampToValueAtTime(peak,when+attack);
+   gain.gain.linearRampToValueAtTime(peak*.86,Math.min(when+attack+.07,end-release));
+   gain.gain.setValueAtTime(peak*.86,end-release);gain.gain.linearRampToValueAtTime(0,end);
+   // Subtle breath vibrato enters after the attack, mainly on sustained notes.
+   const vibrato=this.context.createOscillator(),depth=this.context.createGain();vibrato.frequency.value=5.2;
+   depth.gain.setValueAtTime(0,when);depth.gain.setValueAtTime(0,when+Math.min(.16,length));
+   depth.gain.linearRampToValueAtTime(8,when+Math.min(.5,length));
+   vibrato.connect(depth);if(osc.detune)depth.connect(osc.detune);osc.connect(filter);filter.connect(gain);gain.connect(this.master);
+   let disposed=false;const node={dispose:()=>{if(disposed)return;disposed=true;this.nodes.delete(node);
+    for(const source of [osc,vibrato]){try{source.stop();}catch{}source.disconnect();}
+    filter.disconnect();gain.disconnect();depth.disconnect();
+   }};
+   this.nodes.add(node);osc.onended=node.dispose;osc.start(when);vibrato.start(when);osc.stop(end+.005);vibrato.stop(end+.005);
   }
   this.onchange();
  }

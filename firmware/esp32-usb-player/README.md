@@ -64,7 +64,7 @@ device-I/O quiet period it synchronizes the card and withdraws USB MSC media.
 No Windows disk operation is used. From v11 a temporary writable USB mount must
 be safely ejected before OTA too. Wi-Fi provisioning still requires OS eject.
 
-## Built-in web page (v12)
+## Built-in web page (v13)
 
 Visit `http://<player-ip>/` (or `http://delta-harp.local/` where mDNS is supported).
 Log in with the device's web password; no BOOT action or device API key is needed.
@@ -91,6 +91,8 @@ game playback commands. It supports pause/resume, stop, seeking and volume.
 The preview selects the same automatic melody track/channel and highest held
 pitch as Harp, including tempo changes and sustain. It uses the current speed,
 transpose and saved start time without changing device preferences or favorites.
+From v13 the preview uses a synthesized harmonica voice: free-reed harmonics,
+soft breath attack/release and subtle sustained-note vibrato, embedded offline.
 This is a synthesized melody preview, not the game's instrument sound; it plays
 once and retains internal rests regardless of the game's loop/skip-rest settings.
 It validates each declared MIDI track and tolerates padding left after a complete
