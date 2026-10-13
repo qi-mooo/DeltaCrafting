@@ -17,11 +17,22 @@ bool Player::submit(const PlayerRequest &request) {
 }
 bool Player::beginMaintenance(const char *state) {
     if(maintenance.load() || parked.load()) return false;
+    inspection=false;
     maintenanceState=state;
     maintenance=true; cancel=true;
     uint32_t started=millis();
     while (!parked.load() && millis()-started<5000) delay(1);
     if (parked.load()) return true;
+    maintenance=false; return false;
+}
+bool Player::beginInspection() {
+    if(maintenance.load() || parked.load()) return false;
+    // The worker checks its live state and queue before granting read access.
+    // Unlike an update, a preview must never cancel a pending/running song.
+    inspection=true; maintenanceState="previewing"; maintenance=true;
+    uint32_t started=millis();
+    while(maintenance.load() && !parked.load() && millis()-started<5000) delay(1);
+    if(parked.load()) return true;
     maintenance=false; return false;
 }
 PlayerStatus Player::status() {
@@ -210,6 +221,11 @@ void Player::worker() {
     uint64_t lastPublish = 0;
     for (;;) {
         if (maintenance.load()) {
+            if(inspection && (uxQueueMessagesWaiting(queue) ||
+                (current.state!="stopped" && current.state!="error"))) {
+                maintenance=false;
+                continue;
+            }
             xQueueReset(queue); stop(); current.state=maintenanceState; publish(); parked=true;
             while (maintenance.load()) vTaskDelay(pdMS_TO_TICKS(5));
             parked=false; cancel=false; stop(); publish();

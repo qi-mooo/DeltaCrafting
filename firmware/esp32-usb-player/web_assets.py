@@ -6,6 +6,8 @@ Import("env")
 root = Path(env["PROJECT_DIR"])
 html = (root / "web/index.html").read_text()
 html = html.replace("<!-- ICON_SPRITE -->", (root / "web/icons.svg").read_text())
+for name in ("preview.js", "preview_ui.js"):
+    html = html.replace("/* EMBED " + name + " */", (root / "web" / name).read_text())
 data = gzip.compress(html.encode(), mtime=0)
 header = root / "include/web_page.h"
 content = "#pragma once\n#include <Arduino.h>\nstatic const uint8_t HARP_WEB_PAGE[] PROGMEM = {\n"

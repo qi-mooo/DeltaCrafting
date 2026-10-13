@@ -16,6 +16,7 @@
 #include "web_auth.h"
 #include "web_page.h"
 #include "midi_upload.h"
+#include "midi_preview.h"
 
 namespace {
 USBCDC console;
@@ -33,6 +34,7 @@ bool serialOverflow = false, ready = false;
 String deviceId;
 bool authorized();
 MidiUpload midiUpload(server,player,uploads,authorized);
+MidiPreview midiPreview(server,player,storage,authorized);
 
 bool validToken(const String &s) {
     if (s.length() < 32 || s.length() > 64) return false;
@@ -134,6 +136,7 @@ void routes() {
     const char *headers[] = {"Authorization"}; server.collectHeaders(headers,1);
     updater.begin();
     midiUpload.begin();
+    midiPreview.begin();
     discovery.begin(server,deviceId,token);
     server.on("/",HTTP_GET,[] {
         server.sendHeader("Cache-Control","no-store");

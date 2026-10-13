@@ -31,6 +31,7 @@ public:
     bool begin();
     bool submit(const PlayerRequest &request);
     bool beginMaintenance(const char *state="updating");
+    bool beginInspection();
     void endMaintenance() { maintenance=false; }
     PlayerStatus status();
     std::vector<Song> library(size_t offset, size_t &total);
@@ -39,6 +40,7 @@ public:
     std::atomic_bool cancel{false};
 private:
     std::atomic_bool maintenance{false}, parked{false};
+    bool inspection=false;
     const char *maintenanceState="updating";
     struct FileReader : Harp::Reader {
         FsFile file;

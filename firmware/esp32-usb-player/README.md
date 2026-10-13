@@ -64,7 +64,7 @@ device-I/O quiet period it synchronizes the card and withdraws USB MSC media.
 No Windows disk operation is used. From v11 a temporary writable USB mount must
 be safely ejected before OTA too. Wi-Fi provisioning still requires OS eject.
 
-## Built-in web page (v11)
+## Built-in web page (v12)
 
 Visit `http://<player-ip>/` (or `http://delta-harp.local/` where mDNS is supported).
 Log in with the device's web password; no BOOT action or device API key is needed.
@@ -84,6 +84,20 @@ window without touching BOOT. The button shows remaining time and can close the
 window early. Only an authenticated browser or device can open it.
 Mobile layout fixes page scale and uses 16-pixel text inputs to prevent focus zoom.
 All assets are embedded in flash and work offline; the page does not load a CDN.
+
+From v12, the music-note button beside each song opens browser preview. Sound is
+synthesized locally on the phone/computer with Web Audio; preview never submits
+game playback commands. It supports pause/resume, stop, seeking and volume.
+The preview selects the same automatic melody track/channel and highest held
+pitch as Harp, including tempo changes and sustain. It uses the current speed,
+transpose and saved start time without changing device preferences or favorites.
+This is a synthesized melody preview, not the game's instrument sound; it plays
+once and retains internal rests regardless of the game's loop/skip-rest settings.
+It validates each declared MIDI track and tolerates padding left after a complete
+track set, which matches the ESP32 player parser used for older library files.
+Stop any active or paused game performance before loading a preview. Reading MIDI
+is authenticated and read-only, and leaves the USB card reader connected. Closing
+the preview or leaving the page stops browser sound. Audio starts only after a tap.
 
 The full library supports search and star/unstar. Up to 64 favorites persist in
 player NVS across reboot and OTA; the screen fetches only `/api/v1/favorites`.
@@ -204,6 +218,7 @@ use a trusted LAN or the WPA2-protected player AP.
 | --- | --- | --- |
 | GET | `/api/v1/status` | State, error, timing, selected track/channel, SD owner |
 | GET | `/api/v1/songs?offset=0` | 32 songs per page; total and absolute SD paths |
+| GET | `/api/v1/preview/midi?file=<encoded-path>` | Authenticated read-only MIDI download, known library entries only, up to 512 KiB; 409 during active/paused/queued playback |
 | POST | `/api/v1/library/refresh` | Scan a read-only song view, including while USB is mounted |
 | POST | `/api/v1/play` | `{"file":"/song.mid","countdown":3}` |
 | POST | `/api/v1/seek` | `{"positionMs":10000}`; preserves pause |
