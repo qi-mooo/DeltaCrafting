@@ -56,7 +56,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         try
         {
             _autostartEnabled = host.Autostart.IsEnabled();
-            if (_autostartEnabled) host.Autostart.EnsureCurrent(Environment.ProcessPath!);
+            if (_autostartEnabled) host.Autostart.EnsureCurrent(AppLocation.LauncherPath);
         }
         catch (Exception ex) { AutostartError = ex.Message; }
         host.DeviceApi.Changed += () =>
@@ -396,7 +396,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             if (_autostartEnabled == value) return;
             try
             {
-                if (value) _host.Autostart.Enable(Environment.ProcessPath!);
+                if (value) _host.Autostart.Enable(AppLocation.LauncherPath);
                 else _host.Autostart.Disable();
                 _autostartEnabled = value;
                 AutostartError = "";

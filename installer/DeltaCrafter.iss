@@ -20,6 +20,7 @@
 #define MyAppExeName "DeltaCrafter.exe"
 #define MyAppPublisher "DeltaCrafter contributors"
 #define MyDataDir "{localappdata}\DeltaCrafter"
+#define MyAppDir MyDataDir + "\app"
 #define MyAutostartTask "DeltaCrafter-AutoStart"
 
 [Setup]
@@ -58,14 +59,31 @@ Name: "chinesesimplified"; MessagesFile: "{#ChineseIsl}"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-; Payload is the verified self-contained directory from build-release.ps1.
+; Payload is the verified self-installing launcher (plus documents and firmware) from
+; build-release.ps1. The launcher extracts the full client to %LocalAppData%\DeltaCrafter\app.
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+
+[InstallDelete]
+; Upgrades from the pre-launcher layout: the loose client payload now lives in %LocalAppData%\DeltaCrafter\app,
+; so remove the old copy instead of leaving hundreds of MB of dead files in {app}.
+Type: files; Name: "{app}\*.dll"; Check: IsLegacyLayout
+Type: files; Name: "{app}\*.winmd"; Check: IsLegacyLayout
+Type: files; Name: "{app}\*.pri"; Check: IsLegacyLayout
+Type: files; Name: "{app}\*.xbf"; Check: IsLegacyLayout
+Type: files; Name: "{app}\*.pdb"; Check: IsLegacyLayout
+Type: files; Name: "{app}\DeltaCrafter.deps.json"; Check: IsLegacyLayout
+Type: files; Name: "{app}\DeltaCrafter.runtimeconfig.json"; Check: IsLegacyLayout
+Type: filesandordirs; Name: "{app}\Assets"; Check: IsLegacyLayout
+Type: filesandordirs; Name: "{app}\Data"; Check: IsLegacyLayout
+Type: filesandordirs; Name: "{app}\Microsoft.UI.Xaml"; Check: IsLegacyLayout
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
+; Pre-extract the client so the first launch does not wait on unpacking.
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--prepare"; StatusMsg: "{cm:PreparingClient}"; Flags: runhidden waituntilterminated
 ; postinstall defaults to the original non-elevated user token. The app manifest requires
 ; elevation, so force Setup's current elevated token; otherwise Windows returns error 740.
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchAfterInstall}"; Flags: nowait postinstall skipifsilent runascurrentuser
@@ -74,6 +92,7 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchAfterInstall}"; Flags
 Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: ShouldAutoLaunch
 
 [CustomMessages]
+PreparingClient=正在解压客户端...
 LaunchAfterInstall=立即运行 {#MyAppName}
 RemoveDataPrompt=是否同时删除运行数据与设置?%n%n包括:制造计划、应用设置、运行日志与诊断截图%n(%1)%n%n选择「否」保留数据,重新安装后可直接继续使用。
 StopAppFailed=无法结束正在运行的 {#MyAppName}(taskkill 退出码 %1)。%n%n请手动退出程序后重试。
@@ -84,6 +103,13 @@ RemoveDataFailed={#MyAppName} 已卸载,但未能完整删除本机数据:%n%n%1
 var
   LastToolExitCode: Integer;
   DeleteUserDataRequested: Boolean;
+  LegacyLayout: Boolean;
+
+function IsLegacyLayout(): Boolean;
+begin
+  { Captured in PrepareToInstall, because the first [InstallDelete] entry removes the marker. }
+  Result := LegacyLayout;
+end;
 
 function ShouldAutoLaunch(): Boolean;
 begin
@@ -145,6 +171,8 @@ end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
+  { The multi-file layout shipped the managed entry assembly beside the apphost. }
+  LegacyLayout := FileExists(ExpandConstant('{app}\DeltaCrafter.dll'));
   if StopAppProcess() then
     Result := ''
   else
@@ -181,9 +209,15 @@ begin
           FmtMessage(CustomMessage('RemoveDataPrompt'), [ExpandConstant('{#MyDataDir}')]),
           mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES;
   end
-  else if (CurUninstallStep = usPostUninstall) and
-          DeleteUserDataRequested then
+  else if CurUninstallStep = usPostUninstall then
   begin
+    { The extracted client is not user data; always remove it even when data is kept. }
+    if not DeleteUserDataRequested then
+    begin
+      if not DelTree(ExpandConstant('{#MyAppDir}'), True, True, True) then
+        Log('Failed to remove extracted client directory.');
+      exit;
+    end;
     if not DelTree(ExpandConstant('{#MyDataDir}'), True, True, True) then
       SuppressibleMsgBox(
         FmtMessage(CustomMessage('RemoveDataFailed'), [ExpandConstant('{#MyDataDir}')]),

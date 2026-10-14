@@ -18,6 +18,9 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 }
 $artifacts = Join-Path $root 'artifacts'
 $publishDir = Join-Path $artifacts 'DeltaCrafter-win-x64'
+$stageRoot = Join-Path $artifacts 'stage'
+$appStageDir = Join-Path $stageRoot 'app'
+$payloadZip = Join-Path $stageRoot 'payload.zip'
 $zipName = "DeltaCrafter-win-x64-$Version.zip"
 $zipPath = Join-Path $artifacts $zipName
 $checksumPath = "$zipPath.sha256"
@@ -52,18 +55,38 @@ try {
         -c Release -p:Platform=x64 --no-build --no-restore
     if ($LASTEXITCODE -ne 0) { throw 'dotnet test failed' }
 
+    # 客户端先按多文件自包含发布到暂存目录,再整体压缩进自安装启动器。
     dotnet publish src\DeltaCrafter.App\DeltaCrafter.App.csproj `
         -c Release -r win-x64 --self-contained true -p:Platform=x64 `
-        -p:Version=$Version --no-restore -o $publishDir
+        -p:Version=$Version --no-restore -o $appStageDir
     if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
 
     # 原生 OCR 与内嵌 V5 模型必须随完整客户端发布。
     foreach ($dependency in @('Sdcb.PaddleOCR.Models.LocalV5.dll', 'paddle_inference_c.dll',
         'OpenCvSharpExtern.dll', 'mkldnn.dll', 'mklml.dll', 'libiomp5md.dll')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $publishDir $dependency))) {
+        if (-not (Test-Path -LiteralPath (Join-Path $appStageDir $dependency))) {
             throw "Missing offline OCR dependency: $dependency"
         }
     }
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::CreateFromDirectory($appStageDir, $payloadZip,
+        [System.IO.Compression.CompressionLevel]::Optimal, $false)
+    # 解压目录名:版本 + 内容哈希,同版本重新构建也不会复用旧解压结果。
+    $payloadHash = (Get-FileHash -LiteralPath $payloadZip -Algorithm SHA256).Hash.ToLowerInvariant()
+    $payloadId = "$Version-$($payloadHash.Substring(0, 12))"
+
+    dotnet publish src\DeltaCrafter.Launcher\DeltaCrafter.Launcher.csproj `
+        -c Release -p:Platform=x64 -p:Version=$Version `
+        "-p:PayloadZip=$payloadZip" "-p:PayloadId=$payloadId" -o $publishDir
+    if ($LASTEXITCODE -ne 0) { throw 'dotnet publish (launcher) failed' }
+
+    $publishedFiles = @(Get-ChildItem -LiteralPath $publishDir -Recurse -File |
+        ForEach-Object { $_.FullName.Substring($publishDir.Length + 1) })
+    if (($publishedFiles.Count -ne 1) -or ($publishedFiles[0] -ne 'DeltaCrafter.exe')) {
+        throw "Launcher publish left unexpected files: $($publishedFiles -join ', ')"
+    }
+    Remove-Item -LiteralPath $stageRoot -Recurse -Force
 
     Copy-Item -LiteralPath README.md, LICENSE, THIRD-PARTY-NOTICES.md -Destination $publishDir
     Copy-Item -LiteralPath licenses -Destination $publishDir -Recurse

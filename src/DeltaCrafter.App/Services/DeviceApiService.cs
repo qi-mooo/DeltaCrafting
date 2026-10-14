@@ -44,9 +44,11 @@ public sealed class DeviceApiService : IDisposable
                 return await _host.DataTools.FetchAsync(query, token, ct);
             }, (code, ct) => OnUiAsync(() => _host.DataTools.CopyGunCode(code), ct), _host.DataTools.ImageAsync, _firmware, _harpFirmware, _harpUpdater);
         _api.Changed += () => _dispatcher.TryEnqueue(() => Changed?.Invoke());
-        string bundle = Path.Combine(AppContext.BaseDirectory, "Firmware", "DeltaCrafter-esp32s3.zip");
+        // 固件随发布包放在启动器旁,不在解压出的版本目录里。
+        string firmwareDir = Path.Combine(AppLocation.LauncherDirectory, "Firmware");
+        string bundle = Path.Combine(firmwareDir, "DeltaCrafter-esp32s3.zip");
         if (File.Exists(bundle)) _ = ImportFirmwareAsync(bundle, onlyNewer: true);
-        string harpBundle = Path.Combine(AppContext.BaseDirectory, "Firmware", "DeltaHarp-esp32s3-usb.zip");
+        string harpBundle = Path.Combine(firmwareDir, "DeltaHarp-esp32s3-usb.zip");
         if (File.Exists(harpBundle)) _ = ImportHarpFirmwareAsync(harpBundle, onlyNewer: true);
     }
 

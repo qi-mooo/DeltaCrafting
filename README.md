@@ -115,7 +115,7 @@ Windows 发布包同时内附 `Firmware/DeltaHarp-esp32s3-usb.zip`，设置页�
 
 Release 中的安装包和免安装压缩包均为自包含版本，普通用户无需另外安装 .NET 运行时。
 
-无需安装 Windows 中文 OCR 语言包。请完整解压客户端，保留随包提供的模型和原生 DLL。
+无需安装 Windows 中文 OCR 语言包。`DeltaCrafter.exe` 是自安装启动器，内含完整客户端、OCR 模型和原生 DLL：首次运行或升级后会解压到 `%LocalAppData%\DeltaCrafter\app`（约数百 MB，只解压一次，旧版本自动清理），之后直接启动。请保留与 exe 同目录的 `Firmware` 文件夹。
 
 ## 下载与安装
 
