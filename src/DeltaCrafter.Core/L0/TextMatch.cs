@@ -18,7 +18,7 @@ public static class TextMatch
         foreach (char c in text)
         {
             if (char.IsWhiteSpace(c)) continue;
-            if (c is '.' or '`' or '·' or '\'' or '’' or '‘' or '´' or ',' or '，') continue; // 弱标点(实测 . 被读成 ` 或 ，)
+            if (c is '.' or '．' or '`' or '·' or '\'' or '’' or '‘' or '´' or ',' or '，') continue; // 全角点同样是弱标点。
             char folded = c switch
             {
                 'O' or 'o' or 'О' or 'о' => '0', // 含西里尔 O
