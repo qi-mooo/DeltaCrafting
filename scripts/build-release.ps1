@@ -50,12 +50,16 @@ try {
 
     dotnet build DeltaCrafter.sln -c Release -p:Platform=x64 --no-restore
     if ($LASTEXITCODE -ne 0) {
-        # WinUI 的 XamlCompiler.exe 失败时只返回退出码 1,具体 XAML 错误写在 output.json 里。
+        # WinUI 的 XamlCompiler.exe 失败时只返回退出码 1:具体错误或写在 output.json,
+        # 或只出现在编译器自身输出里(默认 minimal 日志级别会隐藏)。两处都打印出来。
         Get-ChildItem -Path src -Recurse -Filter output.json -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -match '\\obj\\' } | ForEach-Object {
                 Write-Output "===== $($_.FullName) ====="
                 Get-Content -LiteralPath $_.FullName -Raw
             }
+        Write-Output '===== XAML compiler output (normal verbosity) ====='
+        dotnet build src\DeltaCrafter.App\DeltaCrafter.App.csproj -c Release -p:Platform=x64 --no-restore -v:n |
+            Select-String -Pattern 'xaml|WMC|XLS|Exception|error' -Context 0,4 | ForEach-Object { $_.ToString() }
         throw 'dotnet build failed'
     }
 
