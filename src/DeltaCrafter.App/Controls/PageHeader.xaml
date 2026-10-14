@@ -3,11 +3,19 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <StackPanel Spacing="4">
-        <TextBlock Text="{x:Bind Title, Mode=OneWay}"
-                   Style="{StaticResource TitleTextBlockStyle}" />
-        <TextBlock Text="{x:Bind Subtitle, Mode=OneWay}"
-                   Style="{StaticResource SecondaryTextStyle}"
-                   Visibility="{x:Bind SubtitleVisibility(Subtitle), Mode=OneWay}" />
-    </StackPanel>
+    <!-- 品牌色竖条 + 标题/副标题,保证各页文字层级一致。 -->
+    <Grid ColumnSpacing="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Rectangle Width="4" Fill="{ThemeResource DeltaAccentBrush}" RadiusX="1" RadiusY="1" />
+        <StackPanel Grid.Column="1" Spacing="2">
+            <TextBlock Text="{x:Bind Title, Mode=OneWay}"
+                       Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock Text="{x:Bind Subtitle, Mode=OneWay}"
+                       Style="{StaticResource SecondaryTextStyle}"
+                       Visibility="{x:Bind SubtitleVisibility(Subtitle), Mode=OneWay}" />
+        </StackPanel>
+    </Grid>
 </UserControl>

@@ -10,14 +10,15 @@ using Windows.Graphics;
 namespace DeltaCrafter.App;
 
 /// <summary>
-/// 应用壳:Mica 背景 + 自定义标题栏 + 左侧导航。关闭按钮默认最小化到托盘
+/// 应用壳:Mica 背景 + 自定义标题栏 + 顶部标签导航。关闭按钮默认最小化到托盘
 /// (CloseToTray 设置),真正退出只经 RequestExit(托盘菜单)。
 /// </summary>
 public sealed partial class MainWindow : Window
 {
     public ShellViewModel Shell { get; }
-    public string WindowTitle { get; } =
-        $"三角洲特勤助手v{typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.0.0"}";
+    public string VersionText { get; } =
+        $"v{typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "0.0.0"}";
+    public string WindowTitle => "三角洲特勤助手" + VersionText;
     private bool _exitRequested;
 
     public MainWindow()

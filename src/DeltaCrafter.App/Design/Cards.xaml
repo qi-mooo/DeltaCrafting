@@ -2,18 +2,33 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- 圆角卡片:内容页唯一的分组容器,颜色取系统 Card 资源,深浅色自动切换。 -->
+    <!-- 面板:内容页唯一的分组容器。半透明深底透出 Mica,细描边,深浅色自动切换。 -->
     <Style x:Key="CardBorderStyle" TargetType="Border">
-        <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
-        <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+        <Setter Property="Background" Value="{ThemeResource DeltaPanelBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource DeltaPanelStrokeBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="{StaticResource TokenCornerCard}" />
         <Setter Property="Padding" Value="{StaticResource TokenCardPadding}" />
     </Style>
 
+    <!-- 强调面板:左侧品牌色竖条,用于总览主状态等需要第一眼看到的区域。 -->
+    <Style x:Key="AccentCardBorderStyle" TargetType="Border" BasedOn="{StaticResource CardBorderStyle}">
+        <Setter Property="BorderBrush" Value="{ThemeResource DeltaAccentBrush}" />
+        <Setter Property="BorderThickness" Value="3,1,1,1" />
+    </Style>
+
     <!-- 卡片内小标题 -->
     <Style x:Key="CardTitleTextStyle" TargetType="TextBlock"
            BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+        <Setter Property="TextWrapping" Value="NoWrap" />
+    </Style>
+
+    <!-- 分区标签:品牌色、加宽字距的小字,作为面板/设置分组的抬头。 -->
+    <Style x:Key="SectionLabelStyle" TargetType="TextBlock"
+           BasedOn="{StaticResource CaptionTextBlockStyle}">
+        <Setter Property="Foreground" Value="{ThemeResource DeltaAccentBrush}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="CharacterSpacing" Value="120" />
         <Setter Property="TextWrapping" Value="NoWrap" />
     </Style>
 
@@ -28,6 +43,36 @@
     <Style x:Key="NumericTextStyle" TargetType="TextBlock"
            BasedOn="{StaticResource SubtitleTextBlockStyle}">
         <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Segoe UI" />
+    </Style>
+
+    <!-- 大号读数:总览主倒计时 -->
+    <Style x:Key="HeroNumericTextStyle" TargetType="TextBlock" BasedOn="{StaticResource NumericTextStyle}">
+        <Setter Property="FontSize" Value="40" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
+    </Style>
+
+    <!-- 终端式等宽正文:日志与最近动态 -->
+    <Style x:Key="MonoTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+        <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Microsoft YaHei UI" />
+        <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <!-- 透明工具条按钮:静止时无底色与描边,悬停/按下沿用系统按钮的反馈色。 -->
+    <Style x:Key="DeltaSubtleButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+
+    <!-- 工具页入口磁贴:整块可点的大按钮,左对齐图标 + 标题 + 说明。 -->
+    <Style x:Key="TileButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="VerticalContentAlignment" Value="Top" />
+        <Setter Property="Padding" Value="20,18" />
+        <Setter Property="MinHeight" Value="112" />
+        <Setter Property="CornerRadius" Value="{StaticResource TokenCornerCard}" />
     </Style>
 
 </ResourceDictionary>

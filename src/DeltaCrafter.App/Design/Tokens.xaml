@@ -2,16 +2,59 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+    <!-- ============ 品牌色(战术绿,与 AppIcon 一致) ============ -->
+    <!-- 覆写系统强调色族与强调色画刷:原生控件(主按钮/开关/进度条/选中指示)统一换成品牌色。
+         两层都覆写,不依赖控件模板从哪一层取色。浅色主题用深绿保证白字对比度 ≥4.5。 -->
+    <Color x:Key="SystemAccentColor">#5FB33F</Color>
+    <Color x:Key="SystemAccentColorLight1">#77C957</Color>
+    <Color x:Key="SystemAccentColorLight2">#8FE36B</Color>
+    <Color x:Key="SystemAccentColorLight3">#B4F09A</Color>
+    <Color x:Key="SystemAccentColorDark1">#4A9A2E</Color>
+    <Color x:Key="SystemAccentColorDark2">#2F7A1F</Color>
+    <Color x:Key="SystemAccentColorDark3">#1F5714</Color>
+
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Default">
+            <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#8FE36B" />
+            <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#8FE36B" Opacity="0.9" />
+            <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#8FE36B" Opacity="0.8" />
+            <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#A6EC88" />
+            <SolidColorBrush x:Key="AccentTextFillColorSecondaryBrush" Color="#A6EC88" />
+            <SolidColorBrush x:Key="AccentTextFillColorTertiaryBrush" Color="#8FE36B" />
+            <!-- 应用自有:面板描边上的品牌色细边、分区标签、页面底色 -->
+            <SolidColorBrush x:Key="DeltaAccentBrush" Color="#8FE36B" />
+            <SolidColorBrush x:Key="DeltaAccentSubtleBrush" Color="#8FE36B" Opacity="0.12" />
+            <SolidColorBrush x:Key="DeltaPanelBrush" Color="#1A2026" Opacity="0.72" />
+            <SolidColorBrush x:Key="DeltaPanelStrokeBrush" Color="#FFFFFF" Opacity="0.08" />
+            <SolidColorBrush x:Key="DeltaChromeBrush" Color="#0E1215" Opacity="0.55" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#2F7A1F" />
+            <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#2F7A1F" Opacity="0.9" />
+            <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#2F7A1F" Opacity="0.8" />
+            <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#256318" />
+            <SolidColorBrush x:Key="AccentTextFillColorSecondaryBrush" Color="#256318" />
+            <SolidColorBrush x:Key="AccentTextFillColorTertiaryBrush" Color="#2F7A1F" />
+            <SolidColorBrush x:Key="DeltaAccentBrush" Color="#2F7A1F" />
+            <SolidColorBrush x:Key="DeltaAccentSubtleBrush" Color="#2F7A1F" Opacity="0.10" />
+            <SolidColorBrush x:Key="DeltaPanelBrush" Color="#FFFFFF" Opacity="0.78" />
+            <SolidColorBrush x:Key="DeltaPanelStrokeBrush" Color="#000000" Opacity="0.08" />
+            <SolidColorBrush x:Key="DeltaChromeBrush" Color="#FFFFFF" Opacity="0.45" />
+        </ResourceDictionary>
+        <!-- 高对比度主题不覆写任何颜色,完全交给系统。 -->
+        <ResourceDictionary x:Key="HighContrast" />
+    </ResourceDictionary.ThemeDictionaries>
+
     <!-- ============ 圆角令牌(全局唯一定义;页面/控件禁止写死圆角) ============ -->
-    <!-- 覆写系统键:所有原生控件(按钮/输入框/弹窗/菜单)统一走这两个值,全程无尖角。 -->
-    <CornerRadius x:Key="ControlCornerRadius">6</CornerRadius>
-    <CornerRadius x:Key="OverlayCornerRadius">10</CornerRadius>
+    <!-- 战术风格:小圆角,硬朗但不刺眼。覆写系统键让原生控件(按钮/输入框/弹窗/菜单)一致。 -->
+    <CornerRadius x:Key="ControlCornerRadius">3</CornerRadius>
+    <CornerRadius x:Key="OverlayCornerRadius">6</CornerRadius>
     <!-- 应用自有层级 -->
-    <CornerRadius x:Key="TokenCornerCard">8</CornerRadius>
-    <CornerRadius x:Key="TokenCornerBadge">12</CornerRadius>
+    <CornerRadius x:Key="TokenCornerCard">4</CornerRadius>
+    <CornerRadius x:Key="TokenCornerBadge">2</CornerRadius>
 
     <!-- ============ 间距令牌 ============ -->
-    <Thickness x:Key="TokenPagePadding">36,24,36,32</Thickness>
+    <Thickness x:Key="TokenPagePadding">32,20,32,32</Thickness>
     <Thickness x:Key="TokenCardPadding">20,16,20,16</Thickness>
     <x:Double x:Key="TokenGapXS">4</x:Double>
     <x:Double x:Key="TokenGapS">8</x:Double>
@@ -21,7 +64,8 @@
 
     <!-- ============ 尺寸令牌 ============ -->
     <x:Double x:Key="TokenContentMaxWidth">1080</x:Double>
-    <x:Double x:Key="TokenOverviewMaxWidth">1360</x:Double>
-    <x:Double x:Key="TokenFacilityCardHeight">224</x:Double>
+    <x:Double x:Key="TokenWideMaxWidth">1440</x:Double>
+    <x:Double x:Key="TokenSidePanelWidth">320</x:Double>
+    <x:Double x:Key="TokenFacilityCardHeight">212</x:Double>
 
 </ResourceDictionary>

@@ -10,23 +10,30 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- 沉浸式标题栏:整行为拖拽区(SetTitleBar),含应用图标、标题与运行状态胶囊 -->
-        <Grid x:Name="AppTitleBar" Grid.Row="0" Background="Transparent" Padding="16,0,0,0">
+        <!-- 沉浸式标题栏:整行为拖拽区(SetTitleBar),含应用图标、标题与运行状态。
+             右侧留出系统最小化/最大化/关闭按钮的宽度。 -->
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Background="{ThemeResource DeltaChromeBrush}"
+              Padding="16,0,140,0">
             <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                <Image Source="ms-appx:///Assets/AppIcon.ico" Width="16" Height="16" />
-                <TextBlock Text="{x:Bind WindowTitle, Mode=OneTime}"
-                           VerticalAlignment="Center"
-                           Style="{StaticResource CaptionTextBlockStyle}" />
+                <Image Source="ms-appx:///Assets/AppIcon.png" Width="20" Height="20" />
+                <TextBlock VerticalAlignment="Center" Style="{StaticResource BodyStrongTextBlockStyle}">
+                    <Run Text="三角洲特勤助手" />
+                    <Run Text="{x:Bind VersionText, Mode=OneTime}"
+                         Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                         FontWeight="Normal" />
+                </TextBlock>
                 <controls:StatusBadge Text="{x:Bind Shell.StatusText, Mode=OneWay}"
                                       Level="{x:Bind Shell.StatusLevel, Mode=OneWay}" />
             </StackPanel>
         </Grid>
+        <Rectangle Grid.Row="0" Height="1" VerticalAlignment="Bottom"
+                   Fill="{ThemeResource DeltaPanelStrokeBrush}" />
 
-        <!-- 内置 Settings 项文案跟随系统语言(英文系统显示「Settings」),
-             故禁用内置项,底部放自定义中文「设置」项保证文案恒为中文。 -->
+        <!-- 顶部标签导航,把横向空间全部留给内容。
+             内置 Settings 项文案跟随系统语言(英文系统显示「Settings」),
+             故禁用内置项,右侧放自定义中文「设置」项保证文案恒为中文。 -->
         <NavigationView x:Name="Nav" Grid.Row="1"
-                        PaneDisplayMode="Left"
-                        OpenPaneLength="196"
+                        PaneDisplayMode="Top"
                         IsBackButtonVisible="Collapsed"
                         IsSettingsVisible="False"
                         SelectionChanged="OnNavSelectionChanged">
