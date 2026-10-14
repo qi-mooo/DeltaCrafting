@@ -25,34 +25,55 @@
                          Title="{x:Bind Vm.ProfitBannerTitle, Mode=OneWay}"
                          Message="{x:Bind Vm.ProfitBannerMessage, Mode=OneWay}" />
 
-                <!-- 全局循环设置 -->
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel Spacing="16">
-                        <Grid>
-                            <StackPanel Grid.Column="0" Spacing="2">
-                                <TextBlock Text="自动循环" Style="{StaticResource CardTitleTextStyle}" />
+                <!-- 全局循环设置:一组卡片内分行,行间细分隔线(Windows 11 设置页分组式)。 -->
+                <TextBlock Text="循环" Style="{StaticResource GroupHeaderTextStyle}" Margin="1,0,0,-12" />
+                <Border Style="{StaticResource CardBorderStyle}" Padding="0">
+                    <StackPanel>
+                        <Grid ColumnSpacing="16" Padding="20,14" MinHeight="68">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE895;" FontSize="20" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                <TextBlock Text="自动循环" />
                                 <TextBlock Text="开启后,到达计划时间自动上号收取并续造。"
                                            Style="{StaticResource SecondaryTextStyle}" />
                             </StackPanel>
-                            <ToggleSwitch HorizontalAlignment="Right"
+                            <ToggleSwitch Grid.Column="2" MinWidth="0" VerticalAlignment="Center"
                                           IsOn="{x:Bind Vm.AutoLoopEnabled, Mode=TwoWay}" />
                         </Grid>
-                        <Grid>
-                            <StackPanel Grid.Column="0" Spacing="2">
-                                <TextBlock Text="材料不足时自动一键补齐" Style="{StaticResource CardTitleTextStyle}" />
+                        <Rectangle Style="{StaticResource RowDividerStyle}" />
+                        <Grid ColumnSpacing="16" Padding="20,14" MinHeight="68">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE7BF;" FontSize="20" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                <TextBlock Text="材料不足时自动一键补齐" />
                                 <TextBlock Text="自动购买缺料后开工(消耗游戏币,金额随交易行波动)。关闭则缺料设施标记需人工。"
                                            Style="{StaticResource SecondaryTextStyle}" />
                             </StackPanel>
-                            <ToggleSwitch HorizontalAlignment="Right"
+                            <ToggleSwitch Grid.Column="2" MinWidth="0" VerticalAlignment="Center"
                                           IsOn="{x:Bind Vm.AutoReplenishMaterials, Mode=TwoWay}" />
                         </Grid>
-                        <Grid>
-                            <StackPanel Grid.Column="0" Spacing="2">
-                                <TextBlock Text="执行缓冲(秒)" Style="{StaticResource CardTitleTextStyle}" />
+                        <Rectangle Style="{StaticResource RowDividerStyle}" />
+                        <Grid ColumnSpacing="16" Padding="20,14" MinHeight="68">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Glyph="&#xE916;" FontSize="20" VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                <TextBlock Text="执行缓冲(秒)" />
                                 <TextBlock Text="在游戏显示的完成时刻之后追加的等待,吸收识别与结算误差。"
                                            Style="{StaticResource SecondaryTextStyle}" />
                             </StackPanel>
-                            <NumberBox HorizontalAlignment="Right" Width="140"
+                            <NumberBox Grid.Column="2" Width="140" VerticalAlignment="Center"
                                        SpinButtonPlacementMode="Inline"
                                        Minimum="0" Maximum="3600" SmallChange="15"
                                        Value="{x:Bind Vm.RunBufferSeconds, Mode=TwoWay}" />
@@ -60,6 +81,7 @@
                     </StackPanel>
                 </Border>
 
+                <TextBlock Text="设施" Style="{StaticResource GroupHeaderTextStyle}" Margin="1,4,0,-12" />
                 <!-- 各设施配置:2×2 网格,顺序与游戏特勤处一致(左上技术中心、右上工作台、
                      左下制药台、右下防具台,由 PlanViewModel.DisplayOrder 保证)。 -->
                 <!-- 本模板内必须用经典 Binding、不得用 x:Bind:ItemsRepeater 对含 x:Bind 的
@@ -76,36 +98,37 @@
                     <ItemsRepeater.ItemTemplate>
                         <DataTemplate>
                             <Border Style="{StaticResource CardBorderStyle}">
-                                <StackPanel Spacing="12">
-                                    <Grid ColumnSpacing="12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding Name}"
-                                                   Style="{StaticResource CardTitleTextStyle}"
-                                                   VerticalAlignment="Center" />
-                                        <!-- 模式紧邻启用开关且位于其左侧,保持每张设施卡的控制归属清楚。 -->
-                                        <ComboBox Grid.Column="1"
-                                                  MinWidth="150"
+                                <Grid ColumnSpacing="12" RowSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <!-- 标题行:设施名在左,启用开关在右。 -->
+                                    <TextBlock Grid.ColumnSpan="2" Text="{Binding Name}"
+                                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                                               VerticalAlignment="Center" />
+                                    <ToggleSwitch Grid.ColumnSpan="2" MinWidth="0"
                                                   HorizontalAlignment="Right"
-                                                  SelectedIndex="{Binding ModeIndex, Mode=TwoWay}"
-                                                  AutomationProperties.Name="制造模式">
-                                            <ComboBoxItem Content="自定义物品" />
-                                            <ComboBoxItem Content="每小时利润最高" />
-                                            <ComboBoxItem Content="总利润最高" />
-                                        </ComboBox>
-                                        <ToggleSwitch Grid.Column="2"
-                                                      HorizontalAlignment="Right"
-                                                      OnContent="启用" OffContent="停用"
-                                                      IsOn="{Binding Enabled, Mode=TwoWay}" />
-                                    </Grid>
+                                                  OnContent="启用" OffContent="停用"
+                                                  IsOn="{Binding Enabled, Mode=TwoWay}" />
+                                    <!-- 模式在物品左侧:模式决定物品框是否可编辑。 -->
+                                    <ComboBox Grid.Row="1" Header="模式"
+                                              MinWidth="150"
+                                              SelectedIndex="{Binding ModeIndex, Mode=TwoWay}"
+                                              AutomationProperties.Name="制造模式">
+                                        <ComboBoxItem Content="自定义物品" />
+                                        <ComboBoxItem Content="每小时利润最高" />
+                                        <ComboBoxItem Content="总利润最高" />
+                                    </ComboBox>
                                     <!-- 搜索式选择:键入即过滤(大小写无关、×/x 等价),聚焦展开全部候选。
                                          写入与回显走事件显式处理(即改即存),见 PlanPage.xaml.cs。
                                          回显挂 DataContextChanged 而非 Loaded:ItemsRepeater 复用控件时
                                          必须立即回填,否则残留文本会在失焦时写进别的设施。 -->
-                                    <AutoSuggestBox Header="制造物品"
+                                    <AutoSuggestBox Grid.Row="1" Grid.Column="1" Header="制造物品"
                                                     PlaceholderText="输入关键字搜索,如 AP / 9×19;回车确认"
                                                     QueryIcon="Find"
                                                     HorizontalAlignment="Stretch"
@@ -115,7 +138,7 @@
                                                     LostFocus="OnItemBoxLostFocus"
                                                     TextChanged="OnItemTextChanged"
                                                     QuerySubmitted="OnItemQuerySubmitted" />
-                                </StackPanel>
+                                </Grid>
                             </Border>
                         </DataTemplate>
                     </ItemsRepeater.ItemTemplate>

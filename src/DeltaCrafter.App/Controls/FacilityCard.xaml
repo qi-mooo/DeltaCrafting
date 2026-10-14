@@ -4,56 +4,59 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:DeltaCrafter.App.Controls">
 
+    <!-- 设施卡:标题与状态 → 物品 → 倒计时与进度 → 分隔线 → 完成时刻与操作。 -->
     <Border Style="{StaticResource CardBorderStyle}"
+            Padding="0"
             HorizontalAlignment="Stretch"
             MinHeight="{StaticResource TokenFacilityCardHeight}">
-        <Grid RowSpacing="12">
+        <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0" ColumnSpacing="12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="{x:Bind Model.Name, Mode=OneWay}"
-                           Style="{StaticResource CardTitleTextStyle}"
-                           FontSize="18"
-                           HorizontalAlignment="Left" />
-                <controls:StatusBadge Grid.Column="1" Text="{x:Bind Model.PhaseText, Mode=OneWay}"
-                                      Level="{x:Bind Model.BadgeLevel, Mode=OneWay}"
-                                      HorizontalAlignment="Right" />
-            </Grid>
-
-            <TextBlock Grid.Row="1"
-                       Text="{x:Bind Model.ItemName, Mode=OneWay}"
-                       Style="{StaticResource BodyTextBlockStyle}"
-                       FontSize="16" MinHeight="24"
-                       TextWrapping="NoWrap" MaxLines="1"
-                       ToolTipService.ToolTip="{x:Bind Model.ItemName, Mode=OneWay}"
-                       TextTrimming="CharacterEllipsis" />
-
-            <StackPanel Grid.Row="2" Spacing="10" VerticalAlignment="Center">
-                <TextBlock Text="{x:Bind Model.CountdownText, Mode=OneWay}"
-                           FontSize="28" TextWrapping="NoWrap"
-                           Style="{StaticResource NumericTextStyle}" />
-                <Grid ColumnSpacing="8" Visibility="{x:Bind Model.ProgressVisibility, Mode=OneWay}">
+            <StackPanel Grid.Row="0" Spacing="6" Padding="20,16,20,16">
+                <Grid ColumnSpacing="12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="40" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <ProgressBar Minimum="0" Maximum="100" Height="6" VerticalAlignment="Center"
+                    <TextBlock Text="{x:Bind Model.Name, Mode=OneWay}"
+                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                               VerticalAlignment="Center" />
+                    <controls:StatusBadge Grid.Column="1" Text="{x:Bind Model.PhaseText, Mode=OneWay}"
+                                          Level="{x:Bind Model.BadgeLevel, Mode=OneWay}" />
+                </Grid>
+
+                <TextBlock Text="{x:Bind Model.ItemName, Mode=OneWay}"
+                           Style="{StaticResource BodyTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           MinHeight="20"
+                           TextWrapping="NoWrap" MaxLines="1"
+                           ToolTipService.ToolTip="{x:Bind Model.ItemName, Mode=OneWay}"
+                           TextTrimming="CharacterEllipsis" />
+
+                <TextBlock Text="{x:Bind Model.CountdownText, Mode=OneWay}"
+                           Style="{StaticResource ReadoutTextStyle}"
+                           Margin="0,8,0,0" />
+
+                <Grid ColumnSpacing="10" Visibility="{x:Bind Model.ProgressVisibility, Mode=OneWay}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ProgressBar Minimum="0" Maximum="100" VerticalAlignment="Center"
                                  Value="{x:Bind Model.ProgressValue, Mode=OneWay}" />
                     <TextBlock Grid.Column="1" Text="{x:Bind Model.ProgressText, Mode=OneWay}"
-                               Style="{StaticResource SecondaryTextStyle}" HorizontalAlignment="Right" />
+                               Style="{StaticResource SecondaryTextStyle}" MinWidth="32"
+                               TextAlignment="Right" />
                 </Grid>
             </StackPanel>
 
-            <Grid Grid.Row="3" ColumnSpacing="8" VerticalAlignment="Center">
+            <Rectangle Grid.Row="1" Style="{StaticResource RowDividerStyle}" />
+
+            <Grid Grid.Row="2" ColumnSpacing="8" Padding="20,8,12,8" MinHeight="44">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -65,22 +68,12 @@
                            TextWrapping="NoWrap" MaxLines="1"
                            TextTrimming="CharacterEllipsis" />
                 <!-- 仅"制造中"显示;取消=游戏内点「中止」,销毁性操作,点击前二次确认 -->
-                <Button Grid.Column="1"
-                        Content="取消制造"
-                        Command="{x:Bind Model.CancelCommand}"
-                        Visibility="{x:Bind Model.CancelVisibility, Mode=OneWay}"
-                        Padding="10,3,10,3">
-                    <Button.Resources>
-                        <ResourceDictionary>
-                            <SolidColorBrush x:Key="ButtonForeground"
-                                             Color="{ThemeResource SystemFillColorCritical}" />
-                            <SolidColorBrush x:Key="ButtonForegroundPointerOver"
-                                             Color="{ThemeResource SystemFillColorCritical}" />
-                            <SolidColorBrush x:Key="ButtonForegroundPressed"
-                                             Color="{ThemeResource SystemFillColorCritical}" />
-                        </ResourceDictionary>
-                    </Button.Resources>
-                </Button>
+                <HyperlinkButton Grid.Column="1"
+                                 Content="取消制造"
+                                 Command="{x:Bind Model.CancelCommand}"
+                                 Visibility="{x:Bind Model.CancelVisibility, Mode=OneWay}"
+                                 Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                 Padding="8,4" />
             </Grid>
         </Grid>
     </Border>

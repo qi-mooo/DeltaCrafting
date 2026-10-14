@@ -40,4 +40,24 @@
         <Setter Property="MinHeight" Value="112" />
     </Style>
 
+    <!-- 分组标题:Windows 11 设置页式,位于一组卡片上方。 -->
+    <Style x:Key="GroupHeaderTextStyle" TargetType="TextBlock"
+           BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+        <Setter Property="Margin" Value="1,20,0,4" />
+    </Style>
+
+    <!-- 卡片内行间分隔线 -->
+    <Style x:Key="RowDividerStyle" TargetType="Rectangle">
+        <Setter Property="Height" Value="1" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="Fill" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
+    </Style>
+
+    <!-- 等宽大号读数:总览「下次执行」与设施倒计时 -->
+    <Style x:Key="ReadoutTextStyle" TargetType="TextBlock" BasedOn="{StaticResource NumericTextStyle}">
+        <Setter Property="FontSize" Value="28" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
+    </Style>
+
 </ResourceDictionary>
