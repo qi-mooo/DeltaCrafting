@@ -111,10 +111,12 @@
         </Grid>
 
         <!-- 列表 -->
-        <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Padding="0"
-                Visibility="{x:Bind Results.Visibility, Mode=OneWay}">
-            <ListView x:Name="Results" Visibility="Collapsed" IsItemClickEnabled="True"
-                      ItemClick="OpenEntry" SelectionMode="None" Padding="0,6">
+        <!-- 面板外观直接设在控件上:可见性由代码切换控件本身,外层不另包容器。 -->
+        <ListView x:Name="Results" Grid.Row="1" Visibility="Collapsed" IsItemClickEnabled="True"
+                  ItemClick="OpenEntry" SelectionMode="None" Padding="0,6"
+                  Background="{ThemeResource DeltaPanelBrush}"
+                  BorderBrush="{ThemeResource DeltaPanelStrokeBrush}" BorderThickness="1"
+                  CornerRadius="{StaticResource TokenCornerCard}">
                 <ListView.ItemTemplate><DataTemplate>
                     <Grid Padding="8,14" ColumnSpacing="12" HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
@@ -127,7 +129,6 @@
                     </Grid>
                 </DataTemplate></ListView.ItemTemplate>
             </ListView>
-        </Border>
 
         <!-- 今日密码:大号读数 -->
         <Border x:Name="PasswordDetail" Grid.Row="1" Visibility="Collapsed"
@@ -163,9 +164,8 @@
         </Border>
 
         <!-- 改枪码详情 -->
-        <Border Grid.Row="1" Style="{StaticResource CardBorderStyle}" Padding="0"
-                Visibility="{x:Bind GunDetail.Visibility, Mode=OneWay}">
-            <ScrollViewer x:Name="GunDetail" Visibility="Collapsed" Padding="24,20">
+        <ScrollViewer x:Name="GunDetail" Grid.Row="1" Visibility="Collapsed">
+            <Border Style="{StaticResource CardBorderStyle}" Padding="24,20">
                 <StackPanel Spacing="20">
                     <TextBlock x:Name="GunName" FontSize="24" TextWrapping="Wrap"
                                Style="{StaticResource SubtitleTextBlockStyle}"/>
@@ -178,8 +178,8 @@
                         </StackPanel>
                     </Button>
                 </StackPanel>
-            </ScrollViewer>
-        </Border>
+            </Border>
+        </ScrollViewer>
 
         <StackPanel x:Name="Toolbar" Grid.Row="2" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
             <Button x:Name="BackButton" Click="Back" ToolTipService.ToolTip="返回" AutomationProperties.Name="返回"><FontIcon Glyph="&#xE72B;"/></Button>

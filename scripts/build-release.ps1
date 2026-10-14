@@ -49,7 +49,15 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'dotnet restore failed' }
 
     dotnet build DeltaCrafter.sln -c Release -p:Platform=x64 --no-restore
-    if ($LASTEXITCODE -ne 0) { throw 'dotnet build failed' }
+    if ($LASTEXITCODE -ne 0) {
+        # WinUI 的 XamlCompiler.exe 失败时只返回退出码 1,具体 XAML 错误写在 output.json 里。
+        Get-ChildItem -Path src -Recurse -Filter output.json -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\obj\\' } | ForEach-Object {
+                Write-Output "===== $($_.FullName) ====="
+                Get-Content -LiteralPath $_.FullName -Raw
+            }
+        throw 'dotnet build failed'
+    }
 
     dotnet test tests\DeltaCrafter.Core.Tests\DeltaCrafter.Core.Tests.csproj `
         -c Release -p:Platform=x64 --no-build --no-restore
