@@ -96,7 +96,9 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
 
         var clock = new SystemClock();
         SteamStatus = new SteamStatusMonitor(new SteamActivityClient(), clock);
-        var ocr = new PaddleOcrBrick();
+        var ocr = new PaddleOcrBrick(Log);
+        // 模型加载与 oneDNN 初始化需数秒：启动即在后台预热，不让首轮识别等待。
+        _ = ocr.WarmUpAsync();
         WindowBrick = new GameWindowBrick();
         var capture = new ScreenCaptureBrick();
         var input = new InputBrick();

@@ -1,21 +1,32 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using DeltaCrafter.Core.L0;
 using OpenCvSharp;
 using Sdcb.PaddleInference;
 using Sdcb.PaddleOCR;
 using Sdcb.PaddleOCR.Models.Local;
+using Serilog;
 
 namespace DeltaCrafter.Core.L1;
 
-/// <summary>全流程离线中文/拉丁文字识别。模型按需加载，共享实例串行访问。</summary>
+/// <summary>全流程离线中文/拉丁文字识别。模型按需加载(启动时可预热)，共享实例串行访问。</summary>
 public sealed class PaddleOcrBrick
 {
+    /// <summary>oneDNN 按输入尺寸缓存已编译的算子。各探针区域、倍率与分辨率组合出的尺寸
+    /// 有几十种，默认容量(10)会让缓存反复淘汰、频繁重新编译。</summary>
+    private const int OneDnnShapeCacheCapacity = 48;
+
+    /// <summary>识别期间游戏停在菜单界面，可分出一半核心；封顶 4 线程，再多对 mobile 模型几乎无收益。</summary>
+    internal static int InferenceThreads => Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
+
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly ILogger? _log;
     private readonly Lazy<PaddleOcrAll> _engine = new(() =>
     {
         try
         {
-            var engine = new PaddleOcrAll(LocalFullModels.ChineseV5, PaddleDevice.Mkldnn())
+            var engine = new PaddleOcrAll(LocalFullModels.ChineseV5,
+                PaddleDevice.OneDnn(OneDnnShapeCacheCapacity, InferenceThreads))
             { AllowRotateDetection = false, Enable180Classification = false };
             engine.Detector.MaxSize = null;
             return engine;
@@ -24,6 +35,26 @@ public sealed class PaddleOcrBrick
         {
             throw new InvalidOperationException("PaddleOCR 离线模型加载失败，请检查完整客户端文件和 Visual C++ x64 运行库。已停止文字识别。", ex);
         }
+    });
+
+    public PaddleOcrBrick(ILogger? log = null) => _log = log?.ForContext<PaddleOcrBrick>();
+
+    /// <summary>
+    /// 后台预加载模型并跑一次空白图，把模型加载与 oneDNN 初始化(数秒)挪出首轮执行。
+    /// 失败只记日志：加载异常由 Lazy 缓存，首次真实识别时仍按原错误信息报出。
+    /// </summary>
+    public Task WarmUpAsync() => Task.Run(async () =>
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            var watch = Stopwatch.StartNew();
+            using var blank = new Mat(64, 256, MatType.CV_8UC3, Scalar.White);
+            _engine.Value.Run(blank);
+            _log?.Information("PaddleOCR 已预热({Threads} 线程)，用时 {Ms} ms。", InferenceThreads, watch.ElapsedMilliseconds);
+        }
+        catch (Exception ex) { _log?.Warning(ex, "PaddleOCR 预热失败，将在首次识别时重试并报告原因。"); }
+        finally { _gate.Release(); }
     });
 
     public async Task<OcrReadout> ReadAsync(CapturedFrame frame, NRect? area = null, double upscale = 2,
@@ -50,7 +81,9 @@ public sealed class PaddleOcrBrick
         Marshal.Copy(data, 0, bgra.Data, data.Length);
         using var bgr = new Mat();
         Cv2.CvtColor(bgra, bgr, ColorConversionCodes.BGRA2BGR);
+        var watch = Stopwatch.StartNew();
         var result = _engine.Value.Run(bgr);
+        _log?.Debug("PaddleOCR 推理 {W}x{H}：{Ms} ms", dw, dh, watch.ElapsedMilliseconds);
         double sx = (double)dw / w, sy = (double)dh / h;
         // 不能静默丢弃低置信度倒计时，否则制造中会被误判成可领取。
         var lines = result.Regions.Where(r => !string.IsNullOrWhiteSpace(r.Text))

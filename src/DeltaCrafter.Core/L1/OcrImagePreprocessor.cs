@@ -33,16 +33,20 @@ internal static class OcrImagePreprocessor
         }
 
         // 三次插值保留细笔画的过渡；最近邻在实机上会把「甲」读作「印」。
+        // 每个输出坐标的 4 个抽头与权重只取决于该坐标，按轴预算一次再复用到整行/整列；
+        // 逐像素累加次序不变，输出与逐点计算逐字节一致。
+        var columns = CubicAxis.Build(cw, dw);
+        var rows = CubicAxis.Build(ch, dh);
         var horizontal = new byte[dw * ch];
         for (int y = 0; y < ch; y++)
             for (int x = 0; x < dw; x++)
-                horizontal[y * dw + x] = Sample(gray, y * cw, 1, cw, (x + .5) * cw / dw - .5);
+                horizontal[y * dw + x] = columns.Sample(gray, y * cw, 1, x);
         var resized = new byte[dw * dh];
         int low = 255, high = 0;
         for (int y = 0; y < dh; y++)
             for (int x = 0; x < dw; x++)
             {
-                byte value = Sample(horizontal, x, dw, ch, (y + .5) * ch / dh - .5);
+                byte value = rows.Sample(horizontal, x, dw, y);
                 resized[y * dw + x] = value;
                 low = Math.Min(low, value);
                 high = Math.Max(high, value);
@@ -62,20 +66,59 @@ internal static class OcrImagePreprocessor
         return result;
     }
 
-    private static byte Sample(byte[] source, int start, int stride, int length, double position)
+    /// <summary>一条轴上的三次卷积(Keys a=-0.5)抽头表。越界抽头记权重 0、索引钳到边界，
+    /// 累加 0 不改变和，与"跳过越界抽头"的结果完全相同。</summary>
+    private sealed class CubicAxis
     {
-        int center = (int)Math.Floor(position);
-        double sum = 0, weights = 0;
-        for (int i = center - 1; i <= center + 2; i++)
+        private readonly int[] _index;
+        private readonly double[] _weight;
+        private readonly double[] _total;
+
+        private CubicAxis(int[] index, double[] weight, double[] total)
         {
-            if (i < 0 || i >= length) continue;
-            double distance = Math.Abs(position - i);
-            double weight = distance <= 1
-                ? ((1.5 * distance - 2.5) * distance) * distance + 1
-                : ((-.5 * distance + 2.5) * distance - 4) * distance + 2;
-            sum += source[start + i * stride] * weight;
-            weights += weight;
+            _index = index;
+            _weight = weight;
+            _total = total;
         }
-        return (byte)Math.Clamp((int)Math.Floor(sum / weights + .5), 0, 255);
+
+        internal static CubicAxis Build(int length, int resized)
+        {
+            var index = new int[resized * 4];
+            var weight = new double[resized * 4];
+            var total = new double[resized];
+            for (int d = 0; d < resized; d++)
+            {
+                double position = (d + .5) * length / resized - .5;
+                int center = (int)Math.Floor(position);
+                double weights = 0;
+                for (int k = 0; k < 4; k++)
+                {
+                    int i = center - 1 + k;
+                    double w = 0;
+                    if (i >= 0 && i < length)
+                    {
+                        double distance = Math.Abs(position - i);
+                        w = distance <= 1
+                            ? ((1.5 * distance - 2.5) * distance) * distance + 1
+                            : ((-.5 * distance + 2.5) * distance - 4) * distance + 2;
+                    }
+                    index[d * 4 + k] = Math.Clamp(i, 0, length - 1);
+                    weight[d * 4 + k] = w;
+                    weights += w;
+                }
+                total[d] = weights;
+            }
+            return new CubicAxis(index, weight, total);
+        }
+
+        internal byte Sample(byte[] source, int start, int stride, int d)
+        {
+            int t = d * 4;
+            double sum = source[start + _index[t] * stride] * _weight[t];
+            sum += source[start + _index[t + 1] * stride] * _weight[t + 1];
+            sum += source[start + _index[t + 2] * stride] * _weight[t + 2];
+            sum += source[start + _index[t + 3] * stride] * _weight[t + 3];
+            return (byte)Math.Clamp((int)Math.Floor(sum / _total[d] + .5), 0, 255);
+        }
     }
 }
