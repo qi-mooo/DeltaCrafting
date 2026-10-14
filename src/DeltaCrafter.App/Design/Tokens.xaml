@@ -3,16 +3,10 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- ============ 品牌色(战术绿,与 AppIcon 一致) ============ -->
-    <!-- 覆写系统强调色族与强调色画刷:原生控件(主按钮/开关/进度条/选中指示)统一换成品牌色。
-         两层都覆写,不依赖控件模板从哪一层取色。浅色主题用深绿保证白字对比度 ≥4.5。 -->
-    <Color x:Key="SystemAccentColor">#5FB33F</Color>
-    <Color x:Key="SystemAccentColorLight1">#77C957</Color>
-    <Color x:Key="SystemAccentColorLight2">#8FE36B</Color>
-    <Color x:Key="SystemAccentColorLight3">#B4F09A</Color>
-    <Color x:Key="SystemAccentColorDark1">#4A9A2E</Color>
-    <Color x:Key="SystemAccentColorDark2">#2F7A1F</Color>
-    <Color x:Key="SystemAccentColorDark3">#1F5714</Color>
-
+    <!-- 覆写强调色画刷:原生控件(主按钮/开关/进度条/选中指示)统一换成品牌色。
+         只覆写画刷,不在本字典定义 SystemAccentColor* 颜色:WinAppSDK 1.7 的 XamlCompiler
+         遇到这些 Color 元素会无提示地以退出码 1 崩溃(CI 二分确认)。
+         浅色主题用深绿保证白字对比度 ≥4.5。 -->
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Default">
             <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#8FE36B" />
