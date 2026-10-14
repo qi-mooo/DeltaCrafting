@@ -18,17 +18,15 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- 标题:品牌色竖条 + 动态标题 + 页码 -->
+        <!-- 标题:动态标题 + 页码 -->
         <Grid ColumnSpacing="12">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <Rectangle Width="4" Fill="{ThemeResource DeltaAccentBrush}" RadiusX="1" RadiusY="1"/>
-            <TextBlock x:Name="ToolTitle" Grid.Column="1" Text="工具"
+            <TextBlock x:Name="ToolTitle" Text="工具"
                        Style="{StaticResource TitleTextBlockStyle}" TextWrapping="Wrap"/>
-            <TextBlock x:Name="PageNumber" Grid.Column="2" VerticalAlignment="Center"
+            <TextBlock x:Name="PageNumber" Grid.Column="1" VerticalAlignment="Center"
                        Style="{StaticResource NumericTextStyle}" FontSize="16"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
         </Grid>
@@ -43,7 +41,7 @@
             <Button Grid.Column="0" Tag="password" Click="OpenTool" Style="{StaticResource TileButtonStyle}">
                 <StackPanel Spacing="10">
                     <FontIcon Glyph="&#xE72E;" FontSize="26" HorizontalAlignment="Left"
-                              Foreground="{ThemeResource DeltaAccentBrush}"/>
+                              Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
                     <TextBlock Text="今日密码" Style="{StaticResource SubtitleTextBlockStyle}"/>
                     <TextBlock Text="各地图密码门今日密码" Style="{StaticResource SecondaryTextStyle}"/>
                 </StackPanel>
@@ -51,7 +49,7 @@
             <Button Grid.Column="1" Tag="market" Click="OpenTool" Style="{StaticResource TileButtonStyle}">
                 <StackPanel Spacing="10">
                     <FontIcon Glyph="&#xE7BF;" FontSize="26" HorizontalAlignment="Left"
-                              Foreground="{ThemeResource DeltaAccentBrush}"/>
+                              Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
                     <TextBlock Text="当前集市物品" Style="{StaticResource SubtitleTextBlockStyle}"/>
                     <TextBlock Text="本期集市在售物品与价格" Style="{StaticResource SecondaryTextStyle}"/>
                 </StackPanel>
@@ -59,7 +57,7 @@
             <Button Grid.Column="2" Tag="gun" Click="OpenTool" Style="{StaticResource TileButtonStyle}">
                 <StackPanel Spacing="10">
                     <FontIcon Glyph="&#xE90F;" FontSize="26" HorizontalAlignment="Left"
-                              Foreground="{ThemeResource DeltaAccentBrush}"/>
+                              Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
                     <TextBlock Text="改枪码" Style="{StaticResource SubtitleTextBlockStyle}"/>
                     <TextBlock Text="热门方案或按枪械查询,一键复制" Style="{StaticResource SecondaryTextStyle}"/>
                 </StackPanel>
@@ -75,14 +73,14 @@
             <Button Grid.Column="0" Tag="gun" Click="ChooseMode" Style="{StaticResource TileButtonStyle}">
                 <StackPanel Spacing="10">
                     <FontIcon Glyph="&#xE7C1;" FontSize="26" HorizontalAlignment="Left"
-                              Foreground="{ThemeResource DeltaAccentBrush}"/>
+                              Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
                     <TextBlock Text="烽火地带" Style="{StaticResource SubtitleTextBlockStyle}"/>
                 </StackPanel>
             </Button>
             <Button Grid.Column="1" Tag="operator" Click="ChooseMode" Style="{StaticResource TileButtonStyle}">
                 <StackPanel Spacing="10">
                     <FontIcon Glyph="&#xE909;" FontSize="26" HorizontalAlignment="Left"
-                              Foreground="{ThemeResource DeltaAccentBrush}"/>
+                              Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
                     <TextBlock Text="大战场" Style="{StaticResource SubtitleTextBlockStyle}"/>
                 </StackPanel>
             </Button>
@@ -97,14 +95,14 @@
             <Button Grid.Column="0" Click="PopularGuns" Style="{StaticResource TileButtonStyle}">
                 <StackPanel Spacing="10">
                     <FontIcon Glyph="&#xE734;" FontSize="26" HorizontalAlignment="Left"
-                              Foreground="{ThemeResource DeltaAccentBrush}"/>
+                              Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
                     <TextBlock Text="热门" Style="{StaticResource SubtitleTextBlockStyle}"/>
                 </StackPanel>
             </Button>
             <Button Grid.Column="1" Click="ChooseWeapon" Style="{StaticResource TileButtonStyle}">
                 <StackPanel Spacing="10">
                     <FontIcon Glyph="&#xE721;" FontSize="26" HorizontalAlignment="Left"
-                              Foreground="{ThemeResource DeltaAccentBrush}"/>
+                              Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/>
                     <TextBlock Text="按枪械查询" Style="{StaticResource SubtitleTextBlockStyle}"/>
                 </StackPanel>
             </Button>
@@ -114,29 +112,22 @@
         <!-- 面板外观直接设在控件上:可见性由代码切换控件本身,外层不另包容器。 -->
         <ListView x:Name="Results" Grid.Row="1" Visibility="Collapsed" IsItemClickEnabled="True"
                   ItemClick="OpenEntry" SelectionMode="None" Padding="0,6"
-                  Background="{ThemeResource DeltaPanelBrush}"
-                  BorderBrush="{ThemeResource DeltaPanelStrokeBrush}" BorderThickness="1"
+                  Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                  BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
                   CornerRadius="{StaticResource TokenCornerCard}">
                 <ListView.ItemTemplate><DataTemplate>
-                    <Grid Padding="8,14" ColumnSpacing="12" HorizontalAlignment="Stretch">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Polygon Points="0,10 6,0 12,10" Fill="{ThemeResource DeltaAccentBrush}"
-                                 VerticalAlignment="Center"/>
-                        <TextBlock Grid.Column="1" Text="{Binding ListTitle}" FontSize="18" TextWrapping="Wrap"/>
+                    <Grid Padding="8,14" HorizontalAlignment="Stretch">
+                        <TextBlock Text="{Binding ListTitle}" FontSize="18" TextWrapping="Wrap"/>
                     </Grid>
                 </DataTemplate></ListView.ItemTemplate>
             </ListView>
 
         <!-- 今日密码:大号读数 -->
         <Border x:Name="PasswordDetail" Grid.Row="1" Visibility="Collapsed"
-                Style="{StaticResource AccentCardBorderStyle}">
+                Style="{StaticResource CardBorderStyle}">
             <TextBlock x:Name="PasswordText" FontSize="96" FontWeight="Bold"
                        FontFamily="Cascadia Mono, Consolas, Segoe UI"
-                       CharacterSpacing="200"
-                       Foreground="{ThemeResource DeltaAccentBrush}"
+                       Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
         </Border>
 
@@ -169,7 +160,7 @@
                 <StackPanel Spacing="20">
                     <TextBlock x:Name="GunName" FontSize="24" TextWrapping="Wrap"
                                Style="{StaticResource SubtitleTextBlockStyle}"/>
-                    <TextBlock x:Name="GunText" Style="{StaticResource MonoTextStyle}" FontSize="15"
+                    <TextBlock x:Name="GunText" FontSize="16"
                                TextWrapping="Wrap" IsTextSelectionEnabled="True"/>
                     <Button Click="CopyCode" Style="{StaticResource AccentButtonStyle}">
                         <StackPanel Orientation="Horizontal" Spacing="8">

@@ -4,58 +4,56 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:DeltaCrafter.App.Controls">
 
-    <!-- 设施面板:抬头(设施名 + 状态)→ 物品 → 大号倒计时读数 + 细进度条 → 完成时刻/操作。 -->
     <Border Style="{StaticResource CardBorderStyle}"
-            Padding="0"
             HorizontalAlignment="Stretch"
             MinHeight="{StaticResource TokenFacilityCardHeight}">
-        <Grid>
+        <Grid RowSpacing="12">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!-- 抬头条 -->
-            <Grid Grid.Row="0" ColumnSpacing="12" Padding="16,10,12,10"
-                  Background="{ThemeResource DeltaAccentSubtleBrush}">
+            <Grid Grid.Row="0" ColumnSpacing="12">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <Polygon Points="0,10 6,0 12,10" Fill="{ThemeResource DeltaAccentBrush}"
-                         VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" Text="{x:Bind Model.Name, Mode=OneWay}"
+                <TextBlock Text="{x:Bind Model.Name, Mode=OneWay}"
                            Style="{StaticResource CardTitleTextStyle}"
-                           FontSize="16" VerticalAlignment="Center" />
-                <controls:StatusBadge Grid.Column="2" Text="{x:Bind Model.PhaseText, Mode=OneWay}"
-                                      Level="{x:Bind Model.BadgeLevel, Mode=OneWay}" />
+                           FontSize="18"
+                           HorizontalAlignment="Left" />
+                <controls:StatusBadge Grid.Column="1" Text="{x:Bind Model.PhaseText, Mode=OneWay}"
+                                      Level="{x:Bind Model.BadgeLevel, Mode=OneWay}"
+                                      HorizontalAlignment="Right" />
             </Grid>
 
-            <StackPanel Grid.Row="1" Spacing="8" Padding="16,14,16,8" VerticalAlignment="Center">
-                <TextBlock Text="{x:Bind Model.ItemName, Mode=OneWay}"
-                           Style="{StaticResource BodyTextBlockStyle}"
-                           FontSize="15" MinHeight="22"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           TextWrapping="NoWrap" MaxLines="1"
-                           ToolTipService.ToolTip="{x:Bind Model.ItemName, Mode=OneWay}"
-                           TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Row="1"
+                       Text="{x:Bind Model.ItemName, Mode=OneWay}"
+                       Style="{StaticResource BodyTextBlockStyle}"
+                       FontSize="16" MinHeight="24"
+                       TextWrapping="NoWrap" MaxLines="1"
+                       ToolTipService.ToolTip="{x:Bind Model.ItemName, Mode=OneWay}"
+                       TextTrimming="CharacterEllipsis" />
+
+            <StackPanel Grid.Row="2" Spacing="10" VerticalAlignment="Center">
                 <TextBlock Text="{x:Bind Model.CountdownText, Mode=OneWay}"
-                           Style="{StaticResource HeroNumericTextStyle}" FontSize="32" />
+                           FontSize="28" TextWrapping="NoWrap"
+                           Style="{StaticResource NumericTextStyle}" />
                 <Grid ColumnSpacing="8" Visibility="{x:Bind Model.ProgressVisibility, Mode=OneWay}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="40" />
                     </Grid.ColumnDefinitions>
-                    <ProgressBar Minimum="0" Maximum="100" Height="4" VerticalAlignment="Center"
+                    <ProgressBar Minimum="0" Maximum="100" Height="6" VerticalAlignment="Center"
                                  Value="{x:Bind Model.ProgressValue, Mode=OneWay}" />
                     <TextBlock Grid.Column="1" Text="{x:Bind Model.ProgressText, Mode=OneWay}"
                                Style="{StaticResource SecondaryTextStyle}" HorizontalAlignment="Right" />
                 </Grid>
             </StackPanel>
 
-            <Grid Grid.Row="2" ColumnSpacing="8" Padding="16,0,12,12" MinHeight="40">
+            <Grid Grid.Row="3" ColumnSpacing="8" VerticalAlignment="Center">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />

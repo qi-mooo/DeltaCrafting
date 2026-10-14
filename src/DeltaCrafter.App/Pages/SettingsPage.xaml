@@ -27,7 +27,7 @@
                 </SelectorBar>
 
                 <StackPanel x:Name="GamePanel" Spacing="{StaticResource TokenGapM}">
-                    <TextBlock Text="启动" Style="{StaticResource SectionLabelStyle}" Margin="0,8,0,0" />
+                    <TextBlock Text="启动" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,8,0,0" />
                     <controls:SettingCard Glyph="&#xE7FC;" Header="启动方式"
                                           Description="Steam 模式仅接管本机已安装的游戏,不支持远程串流。">
                         <controls:SettingCard.Slot>
@@ -93,7 +93,7 @@
                                        Value="{x:Bind Vm.LobbyTimeoutSeconds, Mode=TwoWay}" />
                         </controls:SettingCard.Slot>
                     </controls:SettingCard>
-                    <TextBlock Text="Steam 游戏状态" Style="{StaticResource SectionLabelStyle}" Margin="0,8,0,0" />
+                    <TextBlock Text="Steam 游戏状态" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,8,0,0" />
                     <controls:SettingCard Glyph="&#xE7FC;" Header="游戏中暂停任务"
                                           Description="三角洲行动运行中或查询失败时等待 5 分钟再检查，其他游戏不影响任务。">
                         <controls:SettingCard.Slot>
@@ -126,7 +126,7 @@
                 </StackPanel>
 
                 <StackPanel x:Name="DataPanel" Spacing="{StaticResource TokenGapM}" Visibility="Collapsed">
-                    <TextBlock Text="三角洲数据帝" Style="{StaticResource SectionLabelStyle}" Margin="0,8,0,0" />
+                    <TextBlock Text="三角洲数据帝" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,8,0,0" />
                     <controls:SettingCard Glyph="&#xE72E;" Header="数据帝 Token">
                         <controls:SettingCard.Slot>
                             <PasswordBox Width="280" MaxLength="32"
@@ -160,7 +160,7 @@
                 </StackPanel>
 
                 <StackPanel x:Name="RunPanel" Spacing="{StaticResource TokenGapM}" Visibility="Collapsed">
-                    <TextBlock Text="运行" Style="{StaticResource SectionLabelStyle}" Margin="0,8,0,0" />
+                    <TextBlock Text="运行" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,8,0,0" />
                     <controls:SettingCard Glyph="&#xE7E8;" Header="收取后行为"
                                           Description="每轮收取并续造完成后如何处置游戏:关闭省资源;最小化后台挂机;或回到大厅留在前台。">
                         <controls:SettingCard.Slot>
@@ -190,7 +190,7 @@
                 </StackPanel>
 
                 <StackPanel x:Name="DevicePanel" Spacing="{StaticResource TokenGapM}" Visibility="Collapsed">
-                    <TextBlock Text="T-Display-S3 与 Harp" Style="{StaticResource SectionLabelStyle}" Margin="0,8,0,0" />
+                    <TextBlock Text="T-Display-S3 与 Harp" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,8,0,0" />
                     <controls:SettingCard Glyph="&#xE968;" Header="局域网设备 API"
                                           Description="{x:Bind Vm.DeviceApiStatus, Mode=OneWay}">
                         <controls:SettingCard.Slot>
@@ -274,7 +274,7 @@
                 </StackPanel>
 
                 <StackPanel x:Name="AppPanel" Spacing="{StaticResource TokenGapM}" Visibility="Collapsed">
-                    <TextBlock Text="应用" Style="{StaticResource SectionLabelStyle}" Margin="0,8,0,0" />
+                    <TextBlock Text="应用" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,8,0,0" />
                     <controls:SettingCard Glyph="&#xE7B5;" Header="开机自启"
                                           Description="以计划任务在登录时静默启动(最高权限,不弹 UAC)。">
                         <controls:SettingCard.Slot>
@@ -312,7 +312,7 @@
                         </controls:SettingCard.Slot>
                     </controls:SettingCard>
                     <!-- 关于 -->
-                    <Border Style="{StaticResource AccentCardBorderStyle}" Margin="0,8,0,0">
+                    <Border Style="{StaticResource CardBorderStyle}" Margin="0,8,0,0">
                         <StackPanel Spacing="6">
                             <!-- 标题/版本在左,检查更新按钮在最右;更新过程与结论走下方 InfoBar。 -->
                             <Grid ColumnSpacing="12">

@@ -10,7 +10,7 @@
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="999*" MaxWidth="{StaticResource TokenWideMaxWidth}" />
+                <ColumnDefinition Width="999*" MaxWidth="{StaticResource TokenContentMaxWidth}" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="1" Padding="{StaticResource TokenPagePadding}"
@@ -25,62 +25,41 @@
                          Title="{x:Bind Vm.ProfitBannerTitle, Mode=OneWay}"
                          Message="{x:Bind Vm.ProfitBannerMessage, Mode=OneWay}" />
 
-                <!-- 全局循环设置:三块并排的参数磁贴 -->
-                <TextBlock Text="全局参数" Style="{StaticResource SectionLabelStyle}" Margin="0,4,0,-8" />
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Border Grid.Column="0" Style="{StaticResource AccentCardBorderStyle}">
-                        <Grid RowSpacing="8">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <TextBlock Text="自动循环" Style="{StaticResource CardTitleTextStyle}" />
-                            <TextBlock Grid.Row="1" Text="开启后,到达计划时间自动上号收取并续造。"
-                                       Style="{StaticResource SecondaryTextStyle}" />
-                            <ToggleSwitch Grid.Row="2" OnContent="已开启" OffContent="已关闭"
+                <!-- 全局循环设置 -->
+                <Border Style="{StaticResource CardBorderStyle}">
+                    <StackPanel Spacing="16">
+                        <Grid>
+                            <StackPanel Grid.Column="0" Spacing="2">
+                                <TextBlock Text="自动循环" Style="{StaticResource CardTitleTextStyle}" />
+                                <TextBlock Text="开启后,到达计划时间自动上号收取并续造。"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                            </StackPanel>
+                            <ToggleSwitch HorizontalAlignment="Right"
                                           IsOn="{x:Bind Vm.AutoLoopEnabled, Mode=TwoWay}" />
                         </Grid>
-                    </Border>
-                    <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}">
-                        <Grid RowSpacing="8">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <TextBlock Text="材料不足时自动一键补齐" Style="{StaticResource CardTitleTextStyle}"
-                                       TextTrimming="CharacterEllipsis" />
-                            <TextBlock Grid.Row="1" Text="自动购买缺料后开工(消耗游戏币,金额随交易行波动)。关闭则缺料设施标记需人工。"
-                                       Style="{StaticResource SecondaryTextStyle}" />
-                            <ToggleSwitch Grid.Row="2" OnContent="已开启" OffContent="已关闭"
+                        <Grid>
+                            <StackPanel Grid.Column="0" Spacing="2">
+                                <TextBlock Text="材料不足时自动一键补齐" Style="{StaticResource CardTitleTextStyle}" />
+                                <TextBlock Text="自动购买缺料后开工(消耗游戏币,金额随交易行波动)。关闭则缺料设施标记需人工。"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                            </StackPanel>
+                            <ToggleSwitch HorizontalAlignment="Right"
                                           IsOn="{x:Bind Vm.AutoReplenishMaterials, Mode=TwoWay}" />
                         </Grid>
-                    </Border>
-                    <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}">
-                        <Grid RowSpacing="8">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <TextBlock Text="执行缓冲(秒)" Style="{StaticResource CardTitleTextStyle}" />
-                            <TextBlock Grid.Row="1" Text="在游戏显示的完成时刻之后追加的等待,吸收识别与结算误差。"
-                                       Style="{StaticResource SecondaryTextStyle}" />
-                            <NumberBox Grid.Row="2" HorizontalAlignment="Left" Width="160"
+                        <Grid>
+                            <StackPanel Grid.Column="0" Spacing="2">
+                                <TextBlock Text="执行缓冲(秒)" Style="{StaticResource CardTitleTextStyle}" />
+                                <TextBlock Text="在游戏显示的完成时刻之后追加的等待,吸收识别与结算误差。"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                            </StackPanel>
+                            <NumberBox HorizontalAlignment="Right" Width="140"
                                        SpinButtonPlacementMode="Inline"
                                        Minimum="0" Maximum="3600" SmallChange="15"
                                        Value="{x:Bind Vm.RunBufferSeconds, Mode=TwoWay}" />
                         </Grid>
-                    </Border>
-                </Grid>
+                    </StackPanel>
+                </Border>
 
-                <TextBlock Text="设施配置" Style="{StaticResource SectionLabelStyle}" Margin="0,4,0,-8" />
                 <!-- 各设施配置:2×2 网格,顺序与游戏特勤处一致(左上技术中心、右上工作台、
                      左下制药台、右下防具台,由 PlanViewModel.DisplayOrder 保证)。 -->
                 <!-- 本模板内必须用经典 Binding、不得用 x:Bind:ItemsRepeater 对含 x:Bind 的
@@ -96,22 +75,17 @@
                     </ItemsRepeater.Layout>
                     <ItemsRepeater.ItemTemplate>
                         <DataTemplate>
-                            <Border Style="{StaticResource CardBorderStyle}" Padding="0">
-                                <StackPanel>
-                                    <Grid ColumnSpacing="12" Padding="16,8,12,8"
-                                          Background="{ThemeResource DeltaAccentSubtleBrush}">
+                            <Border Style="{StaticResource CardBorderStyle}">
+                                <StackPanel Spacing="12">
+                                    <Grid ColumnSpacing="12">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                            <Polygon Points="0,10 6,0 12,10" Fill="{ThemeResource DeltaAccentBrush}"
-                                                     VerticalAlignment="Center" />
-                                            <TextBlock Text="{Binding Name}"
-                                                       Style="{StaticResource CardTitleTextStyle}" FontSize="16"
-                                                       VerticalAlignment="Center" />
-                                        </StackPanel>
+                                        <TextBlock Text="{Binding Name}"
+                                                   Style="{StaticResource CardTitleTextStyle}"
+                                                   VerticalAlignment="Center" />
                                         <!-- 模式紧邻启用开关且位于其左侧,保持每张设施卡的控制归属清楚。 -->
                                         <ComboBox Grid.Column="1"
                                                   MinWidth="150"
@@ -131,7 +105,7 @@
                                          写入与回显走事件显式处理(即改即存),见 PlanPage.xaml.cs。
                                          回显挂 DataContextChanged 而非 Loaded:ItemsRepeater 复用控件时
                                          必须立即回填,否则残留文本会在失焦时写进别的设施。 -->
-                                    <AutoSuggestBox Header="制造物品" Margin="16,14,16,18"
+                                    <AutoSuggestBox Header="制造物品"
                                                     PlaceholderText="输入关键字搜索,如 AP / 9×19;回车确认"
                                                     QueryIcon="Find"
                                                     HorizontalAlignment="Stretch"

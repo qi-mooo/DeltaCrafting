@@ -5,221 +5,143 @@
     xmlns:controls="using:DeltaCrafter.App.Controls"
     xmlns:vm="using:DeltaCrafter.App.ViewModels">
 
-    <Grid>
-        <!-- AdaptiveTrigger 只在页面根元素上可靠生效,故状态组挂在根 Grid 上。 -->
-        <VisualStateManager.VisualStateGroups>
-            <VisualStateGroup x:Name="LayoutStates">
-                <VisualState x:Name="Wide">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="1100" />
-                    </VisualState.StateTriggers>
-                </VisualState>
-                <VisualState x:Name="Narrow">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="0" />
-                    </VisualState.StateTriggers>
-                    <VisualState.Setters>
-                        <Setter Target="SideColumn.Width" Value="0" />
-                        <Setter Target="SidePanel.(Grid.Row)" Value="1" />
-                        <Setter Target="SidePanel.(Grid.Column)" Value="0" />
-                    </VisualState.Setters>
-                </VisualState>
-            </VisualStateGroup>
-        </VisualStateManager.VisualStateGroups>
-        <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-            <!-- 星号三列确定性居中(同 PlanPage 注释):不依赖 Stretch+MaxWidth 的对齐退化。 -->
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="999*" MaxWidth="{StaticResource TokenWideMaxWidth}" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <!-- 星号三列确定性居中(同 PlanPage 注释):不依赖 Stretch+MaxWidth 的对齐退化。 -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="999*" MaxWidth="{StaticResource TokenContentMaxWidth}" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="1" Padding="{StaticResource TokenPagePadding}"
+                        Spacing="{StaticResource TokenGapL}">
 
-                <!-- 仪表盘:左侧主区(状态 + 设施),右侧侧栏(声音 + 动态)。
-                     窗口变窄时侧栏折到主区下方,见上方 LayoutStates。 -->
-                <Grid x:Name="Dashboard" Grid.Column="1" Padding="{StaticResource TokenPagePadding}"
-                      ColumnSpacing="{StaticResource TokenGapL}" RowSpacing="{StaticResource TokenGapL}">
-
+                <!-- 标题行:页面标题在左,游戏中提示与声音开关在右。 -->
+                <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition x:Name="SideColumn" Width="320" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <!-- ============ 主区 ============ -->
-                    <StackPanel Grid.Row="0" Grid.Column="0" Spacing="{StaticResource TokenGapL}">
-
-                        <controls:PageHeader Title="总览" Subtitle="监控四个特勤处设施,并手动或按计划执行收取与续造。" />
-
-                        <!-- 主状态面板:运行状态 + 下次执行读数 + 主操作 -->
-                        <Border Style="{StaticResource AccentCardBorderStyle}" Padding="24,20">
-                            <Grid ColumnSpacing="24" RowSpacing="16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-
-                                <StackPanel Grid.Row="0" Grid.Column="0" Spacing="6">
-                                    <TextBlock Text="运行状态" Style="{StaticResource SectionLabelStyle}" />
-                                    <TextBlock Text="{x:Bind Vm.RunStateTitle, Mode=OneWay}"
-                                               Style="{StaticResource SubtitleTextBlockStyle}" FontSize="24" />
-                                    <TextBlock Text="{x:Bind Vm.RunStateDetail, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                </StackPanel>
-
-                                <StackPanel Grid.Row="0" Grid.Column="1" Spacing="2" HorizontalAlignment="Right">
-                                    <TextBlock Text="下次执行" Style="{StaticResource SectionLabelStyle}"
-                                               HorizontalAlignment="Right" />
-                                    <TextBlock Text="{x:Bind Vm.NextRunText, Mode=OneWay}"
-                                               Style="{StaticResource HeroNumericTextStyle}"
-                                               HorizontalAlignment="Right" />
-                                </StackPanel>
-
-                                <!-- 操作条:主按钮在最左,危险/辅助操作随后。 -->
-                                <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-                                            Orientation="Horizontal" Spacing="8">
-                                    <Button Style="{StaticResource AccentButtonStyle}"
-                                            MinWidth="132" Height="36"
-                                            Command="{x:Bind Vm.RunNowCommand}"
-                                            IsEnabled="{x:Bind Vm.IsRunning, Mode=OneWay, Converter={StaticResource InvertBool}}">
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <FontIcon Glyph="&#xE768;" FontSize="14" />
-                                            <TextBlock Text="开始制造" FontWeight="SemiBold" />
-                                        </StackPanel>
-                                    </Button>
-                                    <Button Height="36"
-                                            Command="{x:Bind Vm.StopCommand}"
-                                            IsEnabled="{x:Bind Vm.IsRunning, Mode=OneWay}">
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <FontIcon Glyph="&#xE71A;" FontSize="14" />
-                                            <TextBlock Text="停止" />
-                                        </StackPanel>
-                                    </Button>
-                                    <AppBarSeparator />
-                                    <Button Content="识别当前任务" Height="36"
-                                            Command="{x:Bind Vm.SyncNowCommand}"
-                                            IsEnabled="{x:Bind Vm.IsRunning, Mode=OneWay, Converter={StaticResource InvertBool}}"
-                                            ToolTipService.ToolTip="上号识别四个设施当前的状态、物品与剩余时间并同步到调度,不领取、不开工。适合首次使用时特勤处已经在制造的情况。" />
-                                    <Button Content="关闭游戏" Height="36"
-                                            Command="{x:Bind Vm.CloseGameCommand}"
-                                            IsEnabled="{x:Bind Vm.IsRunning, Mode=OneWay, Converter={StaticResource InvertBool}}"
-                                            ToolTipService.ToolTip="关闭本机三角洲行动，Steam 暂缓期间也可使用；任务执行中请先停止。" />
-                                    <Button Content="单步调试" Height="36"
-                                            Visibility="{x:Bind Vm.DebugVisibility, Mode=OneWay}">
-                                        <Button.Flyout>
-                                            <MenuFlyout Placement="Bottom">
-                                                <MenuFlyoutItem Text="仅启动到大厅" Command="{x:Bind Vm.DebugLobbyCommand}" />
-                                                <MenuFlyoutItem Text="进入特勤处" Command="{x:Bind Vm.DebugSpecOpsCommand}" />
-                                                <MenuFlyoutItem Text="截图并识别当前画面" Command="{x:Bind Vm.DebugDumpCommand}" />
-                                                <MenuFlyoutSeparator />
-                                                <MenuFlyoutItem Text="扫描配方目录(补全物品候选)" Command="{x:Bind Vm.DebugScanCatalogCommand}" />
-                                            </MenuFlyout>
-                                        </Button.Flyout>
-                                    </Button>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <InfoBar IsOpen="{x:Bind Vm.LastRunFailed, Mode=OneWay}"
-                                 Severity="Error"
-                                 IsClosable="False"
-                                 Title="上一轮执行失败"
-                                 Message="{x:Bind Vm.LastRunSummary, Mode=OneWay}" />
-
-                        <!-- 四设施:宽屏一行四列,较窄时 2×2 -->
-                        <TextBlock Text="特勤处设施" Style="{StaticResource SectionLabelStyle}" Margin="0,4,0,-8" />
-                        <ItemsRepeater ItemsSource="{x:Bind Vm.Facilities}">
-                            <ItemsRepeater.Layout>
-                                <UniformGridLayout MinItemWidth="250" MinItemHeight="{StaticResource TokenFacilityCardHeight}"
-                                                   MaximumRowsOrColumns="4" ItemsStretch="Fill"
-                                                   MinColumnSpacing="16" MinRowSpacing="16" />
-                            </ItemsRepeater.Layout>
-                            <ItemsRepeater.ItemTemplate>
-                                <DataTemplate x:DataType="vm:FacilityCardModel">
-                                    <controls:FacilityCard Model="{x:Bind}" />
-                                </DataTemplate>
-                            </ItemsRepeater.ItemTemplate>
-                        </ItemsRepeater>
-                    </StackPanel>
-
-                    <!-- ============ 侧栏 ============ -->
-                    <StackPanel x:Name="SidePanel" Grid.Row="0" Grid.Column="1" Spacing="{StaticResource TokenGapL}">
-
-                        <!-- 游戏中提示:占满侧栏宽度的红色标签,比标题旁小字更醒目。 -->
-                        <Border Background="{ThemeResource SystemFillColorCriticalBackgroundBrush}"
-                                BorderBrush="{ThemeResource SystemFillColorCriticalBrush}"
-                                BorderThickness="1"
-                                CornerRadius="{StaticResource TokenCornerCard}"
-                                Padding="16,10"
-                                Visibility="{x:Bind Vm.GamePlayingVisibility, Mode=OneWay}">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                                         Fill="{ThemeResource SystemFillColorCriticalBrush}" />
-                                <TextBlock Text="游戏中" FontSize="16" FontWeight="SemiBold"
-                                           Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                                           AutomationProperties.AutomationId="OverviewGamePlayingLabel" />
-                            </StackPanel>
-                        </Border>
-
-                        <!-- 声音:整块可点的磁贴 -->
-                        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
-                                Padding="16,14"
+                    <controls:PageHeader Title="总览" Subtitle="监控四个特勤处设施,并手动或按计划执行收取与续造。" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                        <controls:StatusBadge Text="游戏中" Level="Critical"
+                                              AutomationProperties.AutomationId="OverviewGamePlayingLabel"
+                                              Visibility="{x:Bind Vm.GamePlayingVisibility, Mode=OneWay}" />
+                        <Button Padding="12,6"
                                 AutomationProperties.AutomationId="OverviewMuteButton"
                                 AutomationProperties.Name="{x:Bind Vm.MuteLabel, Mode=OneWay}"
                                 ToolTipService.ToolTip="{x:Bind Vm.MuteHint, Mode=OneWay}"
                                 Command="{x:Bind Vm.ToggleMuteCommand}"
                                 IsEnabled="{x:Bind Vm.CanToggleMute, Mode=OneWay}">
-                            <Grid ColumnSpacing="14">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon FontSize="26" Glyph="{x:Bind Vm.MuteGlyph, Mode=OneWay}"
-                                          Foreground="{ThemeResource DeltaAccentBrush}" />
-                                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                                    <TextBlock Text="{x:Bind Vm.MuteLabel, Mode=OneWay}" FontWeight="SemiBold" />
-                                    <TextBlock Text="{x:Bind Vm.MuteHint, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}"
-                                               MaxLines="2" TextTrimming="CharacterEllipsis" />
-                                </StackPanel>
-                            </Grid>
-                        </Button>
-
-                        <!-- 最近动态:终端式等宽列表 -->
-                        <Border Style="{StaticResource CardBorderStyle}">
-                            <StackPanel Spacing="10">
-                                <TextBlock Text="最近动态" Style="{StaticResource SectionLabelStyle}" />
-                                <ItemsControl ItemsSource="{x:Bind Vm.RecentLogs}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="x:String">
-                                            <Grid ColumnSpacing="8" Margin="0,0,0,6">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="›" Style="{StaticResource MonoTextStyle}"
-                                                           Foreground="{ThemeResource DeltaAccentBrush}" />
-                                                <TextBlock Grid.Column="1" Text="{x:Bind}"
-                                                           Style="{StaticResource MonoTextStyle}" FontSize="12"
-                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                           TextWrapping="Wrap" MaxLines="3"
-                                                           TextTrimming="CharacterEllipsis" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon FontSize="16" Glyph="{x:Bind Vm.MuteGlyph, Mode=OneWay}" />
+                                <TextBlock Text="{x:Bind Vm.MuteLabel, Mode=OneWay}" />
                             </StackPanel>
-                        </Border>
+                        </Button>
                     </StackPanel>
                 </Grid>
-            </Grid>
-        </ScrollViewer>
-    </Grid>
+
+                <!-- 运行状态卡:左侧状态与操作,右侧「下次执行」读数。 -->
+                <Border Style="{StaticResource CardBorderStyle}" Padding="24,20">
+                    <Grid ColumnSpacing="24" RowSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Spacing="4" VerticalAlignment="Center">
+                            <TextBlock Text="{x:Bind Vm.RunStateTitle, Mode=OneWay}"
+                                       Style="{StaticResource SubtitleTextBlockStyle}" />
+                            <TextBlock Text="{x:Bind Vm.RunStateDetail, Mode=OneWay}"
+                                       Style="{StaticResource SecondaryTextStyle}" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Spacing="2" HorizontalAlignment="Right">
+                            <TextBlock Text="下次执行" Style="{StaticResource SecondaryTextStyle}"
+                                       HorizontalAlignment="Right" />
+                            <TextBlock Text="{x:Bind Vm.NextRunText, Mode=OneWay}"
+                                       Style="{StaticResource NumericTextStyle}"
+                                       HorizontalAlignment="Right" />
+                        </StackPanel>
+
+                        <!-- 主操作在前;辅助操作随后,单步调试仅开发者模式可见。 -->
+                        <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="8">
+                            <Button Style="{StaticResource AccentButtonStyle}" MinWidth="120"
+                                    Command="{x:Bind Vm.RunNowCommand}"
+                                    IsEnabled="{x:Bind Vm.IsRunning, Mode=OneWay, Converter={StaticResource InvertBool}}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE768;" FontSize="14" />
+                                    <TextBlock Text="开始制造" />
+                                </StackPanel>
+                            </Button>
+                            <Button Content="停止" MinWidth="80"
+                                    Command="{x:Bind Vm.StopCommand}"
+                                    IsEnabled="{x:Bind Vm.IsRunning, Mode=OneWay}" />
+                            <Button Content="识别当前任务"
+                                    Command="{x:Bind Vm.SyncNowCommand}"
+                                    IsEnabled="{x:Bind Vm.IsRunning, Mode=OneWay, Converter={StaticResource InvertBool}}"
+                                    ToolTipService.ToolTip="上号识别四个设施当前的状态、物品与剩余时间并同步到调度,不领取、不开工。适合首次使用时特勤处已经在制造的情况。" />
+                            <Button Content="关闭游戏"
+                                    Command="{x:Bind Vm.CloseGameCommand}"
+                                    IsEnabled="{x:Bind Vm.IsRunning, Mode=OneWay, Converter={StaticResource InvertBool}}"
+                                    ToolTipService.ToolTip="关闭本机三角洲行动，Steam 暂缓期间也可使用；任务执行中请先停止。" />
+                            <Button Content="单步调试"
+                                    Visibility="{x:Bind Vm.DebugVisibility, Mode=OneWay}">
+                                <Button.Flyout>
+                                    <MenuFlyout Placement="Bottom">
+                                        <MenuFlyoutItem Text="仅启动到大厅" Command="{x:Bind Vm.DebugLobbyCommand}" />
+                                        <MenuFlyoutItem Text="进入特勤处" Command="{x:Bind Vm.DebugSpecOpsCommand}" />
+                                        <MenuFlyoutItem Text="截图并识别当前画面" Command="{x:Bind Vm.DebugDumpCommand}" />
+                                        <MenuFlyoutSeparator />
+                                        <MenuFlyoutItem Text="扫描配方目录(补全物品候选)" Command="{x:Bind Vm.DebugScanCatalogCommand}" />
+                                    </MenuFlyout>
+                                </Button.Flyout>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <InfoBar IsOpen="{x:Bind Vm.LastRunFailed, Mode=OneWay}"
+                         Severity="Error"
+                         IsClosable="False"
+                         Title="上一轮执行失败"
+                         Message="{x:Bind Vm.LastRunSummary, Mode=OneWay}" />
+
+                <!-- 四设施固定 2×2,与游戏内特勤处排布一致;宽度不足时单列,不会出现 3+1 的残行。 -->
+                <ItemsRepeater ItemsSource="{x:Bind Vm.Facilities}">
+                    <ItemsRepeater.Layout>
+                        <UniformGridLayout MinItemWidth="300" MinItemHeight="{StaticResource TokenFacilityCardHeight}"
+                                           MaximumRowsOrColumns="2" ItemsStretch="Fill"
+                                           MinColumnSpacing="16" MinRowSpacing="16" />
+                    </ItemsRepeater.Layout>
+                    <ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="vm:FacilityCardModel">
+                            <controls:FacilityCard Model="{x:Bind}" />
+                        </DataTemplate>
+                    </ItemsRepeater.ItemTemplate>
+                </ItemsRepeater>
+
+                <!-- 最近日志摘要 -->
+                <Border Style="{StaticResource CardBorderStyle}">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="最近动态" Style="{StaticResource CardTitleTextStyle}" />
+                        <ItemsControl ItemsSource="{x:Bind Vm.RecentLogs}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <TextBlock Text="{x:Bind}" Style="{StaticResource SecondaryTextStyle}"
+                                               TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                               Margin="0,0,0,4" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
 </Page>
