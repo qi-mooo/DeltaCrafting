@@ -344,6 +344,7 @@ of v2 to gain the OTA API.
 | POST | `/api/v1/firmware/chunk` | `updateId`, `offset`, `data` (base64, ≤4096 decoded bytes) |
 | POST | `/api/v1/firmware/commit` | `updateId` |
 | POST | `/api/v1/firmware/abort` | `updateId` |
+| POST | `/api/v1/restart` | No body; device key or web session. Stops playback, waits for SD idle and detaches USB media like an update, then restarts (v14+). Also on the web page under 设置 → 设备 |
 
 Begin uses `board="esp32-s3-dongle-fn8"` and `layout="dual-8mb-v1"` and returns
 an `updateId`. Offsets must exactly match `received`; query progress to resolve a

@@ -14,6 +14,8 @@ public:
     void tick();
     void status(JsonObject doc);
     bool busy() const { return active || rebootAt; }
+    /// 安全重启;调用方负责鉴权(设备密钥或网页会话)。
+    void restart();
 private:
     WebServer &server;
     Player &player;

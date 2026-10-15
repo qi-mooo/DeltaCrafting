@@ -258,6 +258,8 @@ void routes() {
         r.skipSilence=s.skipSilence; r.silenceThresholdMs=s.silenceThresholdMs;
         if (!options(d,r)) { error(400,"invalid_options"); return; } accept(r);
     });
+    // 重启不安装代码、不改密码,网页会话也可调用;存储安全检查与固件更新相同。
+    server.on("/api/v1/restart",HTTP_POST,[] { if (authorized()) updater.restart(); });
     server.on("/api/v1/storage/usb",HTTP_POST,[] {
         StaticJsonDocument<128> d; if(!body(d)) return;
         if(d.containsKey("writable") && !d["writable"].is<bool>()) { error(400,"invalid_options"); return; }

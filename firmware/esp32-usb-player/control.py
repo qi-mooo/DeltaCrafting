@@ -203,6 +203,19 @@ def demo(path):
     return {"ok": True, "file": str(path), "bytes": len(data), "notes": 12}
 
 
+def restart_player(config):
+    """Request a safe restart (v14+) and wait until the player answers again."""
+    result = api(config, "restart", {})
+    time.sleep(3)
+    for _ in range(30):
+        try:
+            status = api(config, "status", timeout=3)
+            return {"ok": True, "restarted": True, "firmware": status["firmware"], "state": status["state"]}
+        except (OSError, RuntimeError, ValueError):
+            time.sleep(1)
+    raise RuntimeError("Restart accepted (" + str(result.get("phase")) + "), but the player did not come back within 30 s.")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=Path(__file__).with_name("player.local.json"))
@@ -223,6 +236,7 @@ def main():
     make = sub.add_parser("make-demo")
     make.add_argument("path", type=Path)
     sub.add_parser("firmware")
+    sub.add_parser("restart", help="Safely restart the player over the network (firmware v14+)")
     sub.add_parser("web-password", help="Set the separate web login password using saved device credentials")
     update = sub.add_parser("update")
     update.add_argument("image", type=Path, help="USB player firmware.bin or DeltaHarp ZIP bundle")
@@ -288,6 +302,10 @@ def main():
                 time.sleep(4)
                 result = serial_request(args.port, {"command": "wifi-configure", "wifiSsid": config["apSsid"],
                                                     "wifiPassword": config["apPassword"]})
+        elif args.command == "restart":
+            if args.port:
+                raise ValueError("restart uses the network API; omit --port")
+            result = restart_player(config)
         elif args.command == "status":
             result = serial_request(args.port, {"command": "info"}) if args.port else api(config, "status")
         elif args.command == "songs":

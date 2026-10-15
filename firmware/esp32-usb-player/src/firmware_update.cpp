@@ -93,6 +93,14 @@ void FirmwareUpdate::abort() {
     DynamicJsonDocument d(256); if (!body(d,192) || !session(d)) return;
     fail("update_aborted"); send(200);
 }
+// 与固件提交后的重启走同一条安全路径:先停播放,再等 SD 空闲、同步并撤下 USB 媒体,
+// 避免电脑写入一半时断电式重启损坏 SD。路由在 main.cpp 中,设备密钥与网页会话均可调用。
+void FirmwareUpdate::restart() {
+    if (busy()) { send(409,"update_in_progress"); return; }
+    if (!player.beginMaintenance()) { send(409,"player_stop_timeout"); return; }
+    if (!storage.suspendUsbForUpdate()) { player.endMaintenance(); send(409,storage.error().c_str()); return; }
+    phase="restarting"; failure=""; rebootAt=millis()+700; send(200);
+}
 void FirmwareUpdate::begin() {
     server.on("/api/v1/firmware",HTTP_GET,[this]{ if(auth()) send(200); });
     server.on("/api/v1/firmware/begin",HTTP_POST,[this]{prepare();});
