@@ -47,10 +47,14 @@ public sealed partial class SettingsViewModel : ObservableObject
     public Visibility CheckingRingVisibility =>
         IsCheckingUpdate ? Visibility.Visible : Visibility.Collapsed;
 
+    /// <summary>设备页「USB 安装固件」。</summary>
+    public UsbFlashViewModel UsbFlash { get; }
+
     public SettingsViewModel(AppHost host, ThemeService theme)
     {
         _host = host;
         _theme = theme;
+        UsbFlash = new UsbFlashViewModel(host);
         gamePath = S.GamePath;
         windowRuleText = DescribeRule();
         try
