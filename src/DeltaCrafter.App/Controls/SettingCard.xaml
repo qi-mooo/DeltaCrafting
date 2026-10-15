@@ -3,8 +3,8 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- Windows 11 设置页行比例:最小高度 68,图标 20,标题用正文字号。 -->
-    <Border Style="{StaticResource CardBorderStyle}" Padding="16,12" MinHeight="68">
+    <!-- Windows 11 设置页行比例(略紧凑):最小高度 60,图标 20,标题用正文字号。 -->
+    <Border Style="{StaticResource CardBorderStyle}" Padding="16,10" MinHeight="60">
         <Grid ColumnSpacing="16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />

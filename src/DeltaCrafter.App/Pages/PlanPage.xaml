@@ -29,7 +29,7 @@
                 <TextBlock Text="循环" Style="{StaticResource GroupHeaderTextStyle}" Margin="1,0,0,-12" />
                 <Border Style="{StaticResource CardBorderStyle}" Padding="0">
                     <StackPanel>
-                        <Grid ColumnSpacing="16" Padding="20,14" MinHeight="68">
+                        <Grid ColumnSpacing="16" Padding="16,10" MinHeight="60">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
@@ -45,7 +45,7 @@
                                           IsOn="{x:Bind Vm.AutoLoopEnabled, Mode=TwoWay}" />
                         </Grid>
                         <Rectangle Style="{StaticResource RowDividerStyle}" />
-                        <Grid ColumnSpacing="16" Padding="20,14" MinHeight="68">
+                        <Grid ColumnSpacing="16" Padding="16,10" MinHeight="60">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
@@ -61,7 +61,7 @@
                                           IsOn="{x:Bind Vm.AutoReplenishMaterials, Mode=TwoWay}" />
                         </Grid>
                         <Rectangle Style="{StaticResource RowDividerStyle}" />
-                        <Grid ColumnSpacing="16" Padding="20,14" MinHeight="68">
+                        <Grid ColumnSpacing="16" Padding="16,10" MinHeight="60">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
@@ -92,7 +92,7 @@
                     <ItemsRepeater.Layout>
                         <UniformGridLayout Orientation="Horizontal"
                                            MaximumRowsOrColumns="2" ItemsStretch="Fill"
-                                           MinItemWidth="380"
+                                           MinItemWidth="360"
                                            MinColumnSpacing="16" MinRowSpacing="16" />
                     </ItemsRepeater.Layout>
                     <ItemsRepeater.ItemTemplate>

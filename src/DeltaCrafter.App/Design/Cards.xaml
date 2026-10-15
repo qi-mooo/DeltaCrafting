@@ -43,7 +43,7 @@
     <!-- 分组标题:Windows 11 设置页式,位于一组卡片上方。 -->
     <Style x:Key="GroupHeaderTextStyle" TargetType="TextBlock"
            BasedOn="{StaticResource BodyStrongTextBlockStyle}">
-        <Setter Property="Margin" Value="1,20,0,4" />
+        <Setter Property="Margin" Value="1,14,0,2" />
     </Style>
 
     <!-- 卡片内行间分隔线 -->
@@ -55,7 +55,7 @@
 
     <!-- 等宽大号读数:总览「下次执行」与设施倒计时 -->
     <Style x:Key="ReadoutTextStyle" TargetType="TextBlock" BasedOn="{StaticResource NumericTextStyle}">
-        <Setter Property="FontSize" Value="28" />
+        <Setter Property="FontSize" Value="26" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="TextWrapping" Value="NoWrap" />
     </Style>
