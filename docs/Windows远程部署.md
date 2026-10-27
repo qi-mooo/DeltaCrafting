@@ -8,10 +8,10 @@
 $exe = 'C:\Users\i\AppData\Local\DeltaCrafter\app\<版本-内容哈希>\DeltaCrafter.exe'
 $work = Split-Path -Parent $exe
 $task = 'DeltaCrafter-RemoteOnce-' + [guid]::NewGuid().ToString('N')
-$user = "$env:USERDOMAIN\$env:USERNAME"
+$user = (whoami.exe).Trim()
 $action = New-ScheduledTaskAction -Execute $exe -WorkingDirectory $work
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)
-$principal = New-ScheduledTaskPrincipal -UserId $user -LogonType InteractiveToken -RunLevel Limited
+$principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
 Register-ScheduledTask -TaskName $task -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
 Start-ScheduledTask -TaskName $task
 Start-Sleep -Seconds 3
@@ -19,7 +19,7 @@ Get-Process -Name DeltaCrafter -ErrorAction SilentlyContinue | Select-Object Id,
 Unregister-ScheduledTask -TaskName $task -Confirm:$false
 ```
 
-任务使用 `InteractiveToken`，所以目标用户必须已经登录桌面；`Limited` 保持普通用户权限，适合应用本身需要管理员权限提示的既有行为。若程序启动失败，先保留任务并查看任务历史，再执行删除命令：
+任务使用 PowerShell 的 `-LogonType Interactive`（交互式令牌），所以目标用户必须已经登录桌面；`Highest` 让自包含启动器的 `requireAdministrator` 清单可以在任务中启动；任务仍绑定当前桌面用户。若程序启动失败，先保留任务并查看任务历史，再执行删除命令：
 
 ```powershell
 Get-ScheduledTaskInfo -TaskName $task
