@@ -158,16 +158,45 @@ public sealed class OcrLearningTests
     }
 
     [Fact]
-    public void Old_or_frequently_reused_samples_require_fresh_ocr()
+    public void Samples_remain_reusable_for_seven_days_and_two_visual_failures_revoke_them()
     {
         var memory = new OcrVisualMemory();
         memory.Observe("target", Frame(), Area, Reading(), true, .9f);
         memory.Observe("target", Frame(), Area, Reading(), true, .9f);
         var sample = Assert.Single(memory.Candidates("target"));
         Assert.True(sample.CanReuse);
-        Assert.False((sample with { VerifiedAt = DateTimeOffset.UtcNow.AddDays(-2) }).CanReuse);
-        for (int i = 0; i < 32; i++) sample.Hit();
-        Assert.False(sample.CanReuse);
+        Assert.True((sample with { VerifiedAt = DateTimeOffset.UtcNow.AddDays(-6) }).CanReuse);
+        Assert.False((sample with { VerifiedAt = DateTimeOffset.UtcNow.AddDays(-8) }).CanReuse);
+        memory.RecordVisualFailure(sample);
+        Assert.Single(memory.Candidates("target"));
+        memory.RecordVisualFailure(Assert.Single(memory.Candidates("target")));
+        Assert.Empty(memory.Candidates("target"));
+    }
+
+    [Fact]
+    public void Visual_hits_do_not_expire_a_sample_before_the_failure_limit()
+    {
+        var memory = new OcrVisualMemory();
+        memory.Observe("target", Frame(), Area, Reading(), true, .9f);
+        memory.Observe("target", Frame(), Area, Reading(), true, .9f);
+        var sample = Assert.Single(memory.Candidates("target"));
+        Assert.True(sample.CanReuse);
+    }
+
+    [Fact]
+    public void Saved_failure_count_survives_restart()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "ocr-learning-" + Guid.NewGuid(), "samples.json");
+        try
+        {
+            var memory = new OcrVisualMemory(path);
+            string key = OcrVisualMemory.Key(Frame(), Area, 2, "probe", "生产", .9f);
+            memory.Observe(key, Frame(), Area, Reading(), true, .9f);
+            memory.Observe(key, Frame(), Area, Reading(), true, .9f);
+            memory.RecordVisualFailure(Assert.Single(memory.Candidates(key)));
+            Assert.Equal(1, Assert.Single(new OcrVisualMemory(path).Candidates(key)).ReuseFailures);
+        }
+        finally { Directory.Delete(Path.GetDirectoryName(path)!, true); }
     }
 
     [Fact]

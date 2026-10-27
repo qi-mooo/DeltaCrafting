@@ -18,6 +18,8 @@ internal sealed class LearnedOcrReader
         _log = log;
     }
 
+    internal OcrLearningStatus LearningStatus => _memory.Snapshot();
+
     internal async Task<OcrReadout> ReadAsync(CapturedFrame frame, NRect area, double upscale,
         string context, string? target = null, float minimumConfidence = OcrReadout.MinimumItemConfidence,
         CancellationToken ct = default)
@@ -71,16 +73,20 @@ internal sealed class LearnedOcrReader
         return (reading, true); // 保留低分/空读数，交给原有诊断与失败策略。
     }
 
-    private static OcrReadout? Compare(CapturedFrame frame, OcrVisualSample[] candidates,
+    private OcrReadout? Compare(CapturedFrame frame, OcrVisualSample[] candidates,
         string? target, float minimumConfidence, CancellationToken ct)
     {
         foreach (var sample in candidates)
-            if (sample.CanReuse && OcrVisualMemory.IsConfident(Select(sample.Reading, target), minimumConfidence) &&
-                sample.Matches(frame, ct: ct))
+        {
+            if (!sample.CanReuse || !OcrVisualMemory.IsConfident(Select(sample.Reading, target), minimumConfidence))
+                continue;
+            if (sample.Matches(frame, ct: ct))
             {
-                sample.Hit();
                 return sample.Reading;
             }
+            // 视觉样本未命中时只记一次失败；OCR 仍会并行完成并可重新学习。
+            _memory.RecordVisualFailure(sample);
+        }
         return null;
     }
 

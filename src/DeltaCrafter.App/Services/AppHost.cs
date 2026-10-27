@@ -30,6 +30,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     public SleepGuardBrick SleepGuard { get; }
     public ToastNotifier Notifier { get; }
     public AutomationCoordinator Coordinator { get; }
+    public ScreenProbe Probe { get; }
     public UpdateService Updater { get; }
     public ProfitPlanService ProfitPlan { get; }
     public DeviceApiService DeviceApi { get; }
@@ -107,21 +108,21 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         Autostart = new AutostartBrick(Log);
         Notifier = new ToastNotifier(Log);
 
-        var probe = new ScreenProbe(WindowBrick, capture, ocr, input, LoadAnchors, Paths.ShotsDir, Log,
+        Probe = new ScreenProbe(WindowBrick, capture, ocr, input, LoadAnchors, Paths.ShotsDir, Log,
             learningPath: Paths.OcrLearningPath);
-        var runner = new StepRunner(probe, Log);
-        var launch = new LaunchFlow(process, WindowBrick, probe, input, runner, () => Settings, Log);
-        var nav = new SpecOpsNavFlow(probe, runner);
-        var collect = new CollectFlow(probe, runner, input, this, this, Log);
-        var craft = new CraftStartFlow(probe, runner, input, this, Log);
-        var abort = new AbortFlow(probe, runner, input, Log);
-        var scan = new CatalogScanFlow(probe, runner, input, this, Log);
-        var shutdown = new ShutdownFlow(process, WindowBrick, probe, runner, Log);
+        var runner = new StepRunner(Probe, Log);
+        var launch = new LaunchFlow(process, WindowBrick, Probe, input, runner, () => Settings, Log);
+        var nav = new SpecOpsNavFlow(Probe, runner);
+        var collect = new CollectFlow(Probe, runner, input, this, this, Log);
+        var craft = new CraftStartFlow(Probe, runner, input, this, Log);
+        var abort = new AbortFlow(Probe, runner, input, Log);
+        var scan = new CatalogScanFlow(Probe, runner, input, this, Log);
+        var shutdown = new ShutdownFlow(process, WindowBrick, Probe, runner, Log);
         var engine = new ScheduleEngine(Store, Paths.StatePath, clock, Log,
             (key, name) => ManufacturePeriods.SecondsFor(ItemsFor(key), name, Settings.ManufactureApi.LevelFor(key)));
 
         Coordinator = new AutomationCoordinator(launch, nav, collect, craft, abort, scan, this,
-            this, this, shutdown, engine, probe, WindowBrick, SleepGuard, () => Settings, () => Plan,
+            this, this, shutdown, engine, Probe, WindowBrick, SleepGuard, () => Settings, () => Plan,
             Notifier, clock, Log, prepareCraft: (plan, ct) => ProfitPlan!.PrepareCraftAsync(plan, ct));
 
         Updater = new UpdateService(this, new UpdateCoordinator(), Log);

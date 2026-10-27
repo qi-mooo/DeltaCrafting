@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DeltaCrafter.App.Services;
 using DeltaCrafter.Core.L0;
+using DeltaCrafter.Core.L1;
 using DeltaCrafter.Core.L3;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -28,6 +29,9 @@ public sealed partial class OverviewViewModel : ObservableObject
     /// 未设置(理论上不会)时保守返回 false,即不执行中止。</summary>
     public Func<FacilityCardModel, Task<bool>>? ConfirmCancelAsync { get; set; }
 
+    /// <summary>OCR 学习详情弹窗由页面提供,避免 ViewModel 直接依赖 XamlRoot。</summary>
+    public Func<Task>? ShowOcrLearningDetailsAsync { get; set; }
+
     [ObservableProperty] private string runStateTitle = "空闲";
     [ObservableProperty] private string runStateDetail = "";
     [ObservableProperty] private string nextRunText = "—";
@@ -39,6 +43,19 @@ public sealed partial class OverviewViewModel : ObservableObject
     [ObservableProperty] private string muteHint = "正在读取声音状态";
     [ObservableProperty] private bool canToggleMute;
     [ObservableProperty] private Visibility gamePlayingVisibility = Visibility.Collapsed;
+    [ObservableProperty] private OcrLearningStatus ocrLearning = OcrLearningStatus.Empty;
+    [ObservableProperty] private string ocrLearningSummary = "尚未学习 OCR 区域";
+
+    public double OcrLearningProgress => OcrLearning.TotalSamples == 0
+        ? 0 : (double)OcrLearning.ConfirmedSamples / OcrLearning.TotalSamples;
+    public Visibility OcrLearningProgressVisibility => OcrLearning.TotalSamples == 0
+        ? Visibility.Collapsed : Visibility.Visible;
+
+    partial void OnOcrLearningChanged(OcrLearningStatus value)
+    {
+        OnPropertyChanged(nameof(OcrLearningProgress));
+        OnPropertyChanged(nameof(OcrLearningProgressVisibility));
+    }
 
     public OverviewViewModel(AutomationCoordinator coordinator, UiLogSink sink, AppHost host)
     {
@@ -64,6 +81,7 @@ public sealed partial class OverviewViewModel : ObservableObject
             var now = DateTimeOffset.Now;
             foreach (var f in Facilities) f.Tick(now);
             RefreshGameStatus();
+            RefreshOcrLearning();
         };
         _ticker.Start();
     }
@@ -79,6 +97,14 @@ public sealed partial class OverviewViewModel : ObservableObject
         MuteGlyph = status.Glyph;
         MuteHint = status.Hint;
         CanToggleMute = status.Audio is not null;
+    }
+
+    private void RefreshOcrLearning()
+    {
+        OcrLearning = _host.Probe.OcrLearningStatus;
+        OcrLearningSummary = OcrLearning.TotalSamples == 0
+            ? "尚未学习 OCR 区域"
+            : $"已确认 {OcrLearning.ConfirmedSamples}/{OcrLearning.TotalSamples} 个区域，快速复用 {OcrLearning.ReusableSamples} 个";
     }
 
     [RelayCommand]
@@ -108,6 +134,7 @@ public sealed partial class OverviewViewModel : ObservableObject
         var (lastAt, summary, failed) = _coordinator.LastRunInfo();
         LastRunFailed = failed;
         LastRunSummary = lastAt is { } t ? $"{t:MM-dd HH:mm} — {summary}" : "尚未执行过";
+        RefreshOcrLearning();
     }
 
     private void PushLog(UiLogLine line)
@@ -132,6 +159,9 @@ public sealed partial class OverviewViewModel : ObservableObject
 
     [RelayCommand]
     private Task CloseGameAsync() => Task.Run(() => _coordinator.CloseGameAsync());
+
+    [RelayCommand]
+    private Task ShowOcrLearningAsync() => ShowOcrLearningDetailsAsync?.Invoke() ?? Task.CompletedTask;
 
     /// <summary>取消某设施的制造:先二次确认,再后台执行中止(执行中不重复触发)。</summary>
     private async Task HandleCancelAsync(FacilityCardModel model)

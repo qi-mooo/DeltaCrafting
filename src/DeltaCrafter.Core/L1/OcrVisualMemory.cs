@@ -7,12 +7,35 @@ using Serilog;
 
 namespace DeltaCrafter.Core.L1;
 
+/// <summary>OCR 区域学习的摘要，供 Windows 总览页显示；不暴露截图像素。</summary>
+public sealed record OcrLearningStatus(
+    int TotalSamples,
+    int ConfirmedSamples,
+    int ReusableSamples,
+    IReadOnlyList<OcrLearningEntry> Entries)
+{
+    public static OcrLearningStatus Empty { get; } = new(0, 0, 0, []);
+}
+
+/// <summary>单个 OCR 学习区域的可读详情。</summary>
+public sealed record OcrLearningEntry(
+    string Text,
+    int Observations,
+    int ReuseFailures,
+    bool Reusable,
+    DateTimeOffset VerifiedAt,
+    int X,
+    int Y,
+    int Width,
+    int Height);
+
 /// <summary>本机 OCR 样本。只用真实 OCR 更新模板，视觉命中不自我训练，避免逐帧漂移。</summary>
 internal sealed class OcrVisualMemory
 {
     private const int FormatVersion = 1;
     private const int MaximumSamples = 96;
     private const int MaximumBytes = 8 * 1024 * 1024;
+    private const int MaximumReuseFailures = 2;
     private readonly object _sync = new();
     private readonly List<OcrVisualSample> _samples = [];
     private readonly string? _path;
@@ -57,6 +80,21 @@ internal sealed class OcrVisualMemory
         lock (_sync) return _samples.Where(s => s.Key == key).Reverse().ToArray();
     }
 
+    internal OcrLearningStatus Snapshot()
+    {
+        lock (_sync)
+        {
+            var entries = _samples
+                .OrderByDescending(s => s.VerifiedAt)
+                .Select(s => new OcrLearningEntry(s.Reading.FullText, s.Observations,
+                    s.ReuseFailures, s.CanReuse, s.VerifiedAt, s.LearnedArea.X, s.LearnedArea.Y,
+                    s.LearnedArea.Width, s.LearnedArea.Height))
+                .ToArray();
+            return new(entries.Length, entries.Count(e => e.Observations >= 2),
+                entries.Count(e => e.Reusable), entries);
+        }
+    }
+
     internal void Observe(string key, CapturedFrame frame, NRect searchArea, OcrReadout reading,
         bool targetOnly, float minimumConfidence)
     {
@@ -90,12 +128,42 @@ internal sealed class OcrVisualMemory
                 _samples.RemoveAt(0);
             _log?.Debug("OCR 学习：文字={Text}; 区域=({X},{Y},{W},{H}); 确认={Count}/2",
                 reading.FullText, learned.X, learned.Y, learned.Width, learned.Height, observations);
-            if (_path is null) return;
-            try { _store.Save(_path, new SavedMemory(FormatVersion, Environment.MachineName, _samples)); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            PersistLocked();
+        }
+    }
+
+    /// <summary>记录一次视觉复用未命中。允许一次暂时性变化，第二次才撤销样本。</summary>
+    internal void RecordVisualFailure(OcrVisualSample sample)
+    {
+        lock (_sync)
+        {
+            int index = _samples.FindIndex(s => ReferenceEquals(s, sample));
+            if (index < 0) return;
+            var current = _samples[index];
+            int failures = current.ReuseFailures + 1;
+            if (failures >= MaximumReuseFailures)
             {
-                _log?.Warning(ex, "无法保存 OCR 学习数据，本次继续使用内存样本：{Path}", _path);
+                _samples.RemoveAt(index);
+                _log?.Debug("OCR 快速复用样本连续失败 {Count} 次，已撤销：{Text}。",
+                    failures, current.Reading.FullText);
             }
+            else
+            {
+                _samples[index] = current with { ReuseFailures = failures };
+                _log?.Debug("OCR 快速复用样本未命中 {Count}/{Max} 次，保留并回退 OCR：{Text}。",
+                    failures, MaximumReuseFailures, current.Reading.FullText);
+            }
+            PersistLocked();
+        }
+    }
+
+    private void PersistLocked()
+    {
+        if (_path is null) return;
+        try { _store.Save(_path, new SavedMemory(FormatVersion, Environment.MachineName, _samples)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log?.Warning(ex, "无法保存 OCR 学习数据，本次继续使用内存样本：{Path}", _path);
         }
     }
 
@@ -174,20 +242,17 @@ internal sealed record OcrPixelArea(int X, int Y, int Width, int Height)
 
 internal sealed record OcrVisualSample(string Key, int FrameWidth, int FrameHeight,
     OcrPixelArea ImageArea, OcrPixelArea LearnedArea, byte[] Pixels, OcrReadout Reading,
-    int Observations, DateTimeOffset VerifiedAt)
+    int Observations, DateTimeOffset VerifiedAt, int ReuseFailures = 0)
 {
-    private int _hits;
     [JsonIgnore] public WeakReference<CapturedFrame>? LastFrame { get; init; }
-    internal bool CanReuse => Observations >= 2 && Volatile.Read(ref _hits) < 32 &&
-        DateTimeOffset.UtcNow - VerifiedAt < TimeSpan.FromDays(1);
-    internal void Hit() => Interlocked.Increment(ref _hits);
-
+    internal bool CanReuse => Observations >= 2 && ReuseFailures < 2 &&
+        DateTimeOffset.UtcNow - VerifiedAt < TimeSpan.FromDays(7);
     internal bool IsValid() => Key is { Length: 64 } && FrameWidth is > 0 and <= 16384 &&
         FrameHeight is > 0 and <= 16384 && ImageArea is not null && LearnedArea is not null &&
         ImageArea.Inside(FrameWidth, FrameHeight) && LearnedArea.Inside(FrameWidth, FrameHeight) &&
         ImageArea.Contains(LearnedArea) && Pixels is not null &&
         (long)ImageArea.Width * ImageArea.Height * 3 == Pixels.Length &&
-        Pixels.Length <= 256 * 1024 * 3 && Observations is >= 1 and <= 2 &&
+        Pixels.Length <= 256 * 1024 * 3 && Observations is >= 1 and <= 2 && ReuseFailures is >= 0 and < 2 &&
         VerifiedAt <= DateTimeOffset.UtcNow.AddMinutes(5) && OcrVisualMemory.IsConfident(Reading, .8f) &&
         Reading.Lines.All(l => l.Words.Count > 0 && l.CenterX >= ImageArea.X &&
             l.CenterY >= ImageArea.Y && l.CenterX < ImageArea.Right && l.CenterY < ImageArea.Bottom);

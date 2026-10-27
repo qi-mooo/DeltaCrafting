@@ -36,6 +36,9 @@ public sealed class ScreenProbe
 
     public AnchorTable Anchors => _anchors();
 
+    /// <summary>返回本机 OCR 学习进度；只包含文字和区域摘要，不返回截图像素。</summary>
+    public OcrLearningStatus OcrLearningStatus => _learnedOcr.LearningStatus;
+
     public ScreenSpec Screen(string name) => Anchors.Screen(name);
 
     public CapturedFrame Capture(nint hwnd) => _capture.CaptureClient(_window.ClientRectOnScreen(hwnd));

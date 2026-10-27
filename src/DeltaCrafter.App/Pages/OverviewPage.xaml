@@ -121,6 +121,32 @@
                          Title="上一轮执行失败"
                          Message="{x:Bind Vm.LastRunSummary, Mode=OneWay}" />
 
+                <!-- OCR 学习进度:整块可点击,详情由页面弹窗显示。 -->
+                <Button Style="{StaticResource TileButtonStyle}"
+                        Command="{x:Bind Vm.ShowOcrLearningCommand}"
+                        AutomationProperties.Name="OCR 学习进度">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE8A7;" FontSize="24"
+                                  Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                  VerticalAlignment="Top" />
+                        <StackPanel Grid.Column="1" Spacing="4">
+                            <TextBlock Text="OCR 学习" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <TextBlock Text="{x:Bind Vm.OcrLearningSummary, Mode=OneWay}"
+                                       Style="{StaticResource SecondaryTextStyle}" />
+                            <ProgressBar Minimum="0" Maximum="1"
+                                         Value="{x:Bind Vm.OcrLearningProgress, Mode=OneWay}"
+                                         Visibility="{x:Bind Vm.OcrLearningProgressVisibility, Mode=OneWay}" />
+                        </StackPanel>
+                        <FontIcon Grid.Column="2" Glyph="&#xE76C;" FontSize="16"
+                                  VerticalAlignment="Center" />
+                    </Grid>
+                </Button>
+
                 <TextBlock Text="特勤处设施" Style="{StaticResource GroupHeaderTextStyle}" Margin="1,4,0,-8" />
                 <!-- 四设施固定 2×2,与游戏内特勤处排布一致;宽度不足时单列,不会出现 3+1 的残行。 -->
                 <ItemsRepeater ItemsSource="{x:Bind Vm.Facilities}">
