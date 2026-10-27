@@ -92,16 +92,23 @@ public sealed partial class MainWindow : Window
             ContentFrame.Navigate(page);
     }
 
-    private void OnNavExpanding(NavigationView sender, NavigationViewItemExpandingEventArgs e)
+    private void OnSettingsMenuOpening(object sender, object e)
     {
-        if (e.ExpandingItemContainer != SettingsNavItem) return;
         RefreshOcrLearning();
         _learningTicker.Start();
     }
 
-    private void OnNavCollapsed(NavigationView sender, NavigationViewItemCollapsedEventArgs e)
+    private void OnSettingsMenuClosed(object sender, object e) => _learningTicker.Stop();
+
+    private void OnNavItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs e)
     {
-        if (e.CollapsedItemContainer == SettingsNavItem) _learningTicker.Stop();
+        if (e.InvokedItemContainer == SettingsNavItem) SettingsMenu.ShowAt(SettingsNavItem);
+    }
+
+    private void OnSettingsClick(object sender, RoutedEventArgs e)
+    {
+        SettingsMenu.Hide();
+        Nav.SelectedItem = SettingsNavItem;
     }
 
     private void RefreshOcrLearning()
@@ -110,15 +117,16 @@ public sealed partial class MainWindow : Window
         LearningSummary.Text = status.TotalSamples == 0
             ? "尚未学习"
             : $"已确认 {status.ConfirmedSamples}/{status.TotalSamples}";
-        LearningReuse.Text = $"可复用 {status.ReusableSamples} 个区域";
+        LearningReuse.Text = $"可复用 {status.ReusableSamples} 个区域 · 查看详情";
         LearningProgress.Value = status.TotalSamples == 0
             ? 0 : (double)status.ConfirmedSamples / status.TotalSamples;
         LearningProgress.Visibility = status.TotalSamples == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    private async void OnNavItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs e)
+    private async void OnLearningClick(object sender, RoutedEventArgs e)
     {
-        if (e.InvokedItemContainer != LearningNavItem || _learningDetailsOpen) return;
+        if (_learningDetailsOpen) return;
+        SettingsMenu.Hide();
         _learningDetailsOpen = true;
         try { await ShowOcrLearningDetailsAsync(); }
         finally { _learningDetailsOpen = false; }
