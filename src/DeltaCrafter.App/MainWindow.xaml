@@ -29,6 +29,9 @@
                         OpenPaneLength="196"
                         IsBackButtonVisible="Collapsed"
                         IsSettingsVisible="False"
+                        Expanding="OnNavExpanding"
+                        Collapsed="OnNavCollapsed"
+                        ItemInvoked="OnNavItemInvoked"
                         SelectionChanged="OnNavSelectionChanged">
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="总览" Tag="overview">
@@ -51,10 +54,26 @@
                 </NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
-                <NavigationViewItem Content="设置" Tag="settings">
+                <NavigationViewItem x:Name="SettingsNavItem" Content="设置" Tag="settings"
+                                    IsExpanded="False" AutomationProperties.AutomationId="SettingsNavItem">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE713;" />
                     </NavigationViewItem.Icon>
+                    <NavigationViewItem.MenuItems>
+                        <NavigationViewItem x:Name="LearningNavItem" SelectsOnInvoked="False"
+                                            AutomationProperties.Name="OCR 学习进度，点击查看详情"
+                                            AutomationProperties.AutomationId="OcrLearningMenuItem">
+                            <StackPanel Spacing="4" Width="120" Padding="0,4">
+                                <TextBlock Text="OCR 学习" />
+                                <TextBlock x:Name="LearningSummary" Text="尚未学习"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                                <ProgressBar x:Name="LearningProgress" Minimum="0" Maximum="1"
+                                             Visibility="Collapsed" AutomationProperties.Name="OCR 学习确认进度" />
+                                <TextBlock x:Name="LearningReuse" Text="可复用 0 个区域"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                            </StackPanel>
+                        </NavigationViewItem>
+                    </NavigationViewItem.MenuItems>
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>
 
