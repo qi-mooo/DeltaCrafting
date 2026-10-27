@@ -6,7 +6,7 @@ namespace DeltaCrafter.Core.L2;
 
 /// <summary>
 /// 画面探针:把「窗口几何 + 截图 + OCR + 点击」组合成流程层可用的原语。
-/// 所有读取都基于"捕获当下一帧",不缓存旧帧——过期画面比没有画面更危险。
+/// 所有判定基于当前帧；学习样本必须与当前区域图像核对，不能单凭历史坐标确认目标。
 /// </summary>
 public sealed class ScreenProbe
 {
@@ -14,13 +14,14 @@ public sealed class ScreenProbe
     private readonly GameWindowBrick _window;
     private readonly ScreenCaptureBrick _capture;
     private readonly PaddleOcrBrick _ocr;
+    private readonly LearnedOcrReader _learnedOcr;
     private readonly InputBrick _input;
     private readonly Func<AnchorTable> _anchors;
     private readonly string _shotsDir;
     private readonly ILogger _log;
 
     public ScreenProbe(GameWindowBrick window, ScreenCaptureBrick capture, PaddleOcrBrick ocr,
-        InputBrick input, Func<AnchorTable> anchors, string shotsDir, ILogger log)
+        InputBrick input, Func<AnchorTable> anchors, string shotsDir, ILogger log, string? learningPath = null)
     {
         _window = window;
         _capture = capture;
@@ -29,6 +30,8 @@ public sealed class ScreenProbe
         _anchors = anchors;
         _shotsDir = shotsDir;
         _log = log.ForContext<ScreenProbe>();
+        _learnedOcr = new((frame, area, scale, ct) => _ocr.ReadAsync(frame, area, scale,
+            cancellationToken: ct), learningPath, _log);
     }
 
     public AnchorTable Anchors => _anchors();
@@ -102,9 +105,10 @@ public sealed class ScreenProbe
         var texts = new List<string>();
         foreach (var probe in probes)
         {
-            var reading = await _ocr.ReadAsync(frame, probe.Roi, probe.Upscale);
+            var reading = await _learnedOcr.ReadAsync(frame, probe.Roi, probe.Upscale,
+                $"navigation:{Anchors.Revision}", target: probe.MustContain);
             string text = OcrEvidence.FindTarget(reading, probe.MustContain)?.Text ?? "";
-            _log.Debug("界面探针(PaddleOCR)：目标={Target}; 可信匹配={Matched}; 原文={Readings}",
+            _log.Debug("界面探针(OCR/区域比对)：目标={Target}; 可信匹配={Matched}; 原文={Readings}",
                 probe.MustContain, text.Length > 0,
                 string.Join(" | ", reading.Lines.Select(l => $"{l.Text} ({l.Confidence:P0})")));
             texts.Add(text);
@@ -173,7 +177,8 @@ public sealed class ScreenProbe
     /// 找不到返回 null,由调用方决定翻页或失败。</summary>
     public async Task<OcrLine?> FindLineAsync(nint hwnd, NRect area, string target)
     {
-        var readout = await _ocr.ReadAsync(Capture(hwnd), area);
+        var readout = await _learnedOcr.ReadAsync(Capture(hwnd), area, 2,
+            $"find-line:{Anchors.Revision}", target: target);
         return OcrEvidence.FindTarget(readout, target);
     }
 
@@ -202,11 +207,11 @@ public sealed class ScreenProbe
         var kw = Anchors.Keywords;
         var targets = kw.ButtonProduce.Concat(kw.ButtonReplenish).Concat(kw.ButtonAbort).ToArray();
         var readout = await ReadItemAsync(frame, roi, targets,
-            minimumConfidence: ProductionButtonMinimumConfidence);
+            minimumConfidence: ProductionButtonMinimumConfidence, learnRegion: true);
         string label = NormalizeProductionButton(readout.FullText);
         if (label != Normalize(readout.FullText))
             _log.Debug("生产操作按钮横线校正：{Raw} → {Label}", readout.FullText, label);
-        _log.Debug("生产操作按钮(PaddleOCR)：{Label}", label);
+        _log.Debug("生产操作按钮(OCR/区域比对)：{Label}", label);
         return label;
     }
 
@@ -223,11 +228,16 @@ public sealed class ScreenProbe
     private async Task<OcrReadout> ReadItemAsync(CapturedFrame frame, NRect roi,
         IReadOnlyList<string> expectedNames, double upscale = 2.0,
         IReadOnlyList<NRect>? iconMasks = null, bool itemTitle = false, bool slot = false,
-        float minimumConfidence = OcrReadout.MinimumItemConfidence)
+        float minimumConfidence = OcrReadout.MinimumItemConfidence, bool learnRegion = false)
     {
-        var result = await _ocr.ReadAsync(frame, roi, upscale, iconMasks);
+        // 槽位包含实时倒计时、列表会滚动，继续读取完整区域。稳定标题/按钮使用并行学习路径。
+        var result = (itemTitle || learnRegion) && !slot && iconMasks is null
+            ? await _learnedOcr.ReadAsync(frame, roi, upscale,
+                $"region:{Anchors.Revision}:{itemTitle}:{string.Join("|", expectedNames)}",
+                minimumConfidence: minimumConfidence)
+            : await _ocr.ReadAsync(frame, roi, upscale, iconMasks);
         var raw = result;
-        _log.Debug("PaddleOCR 物品读数(图标遮罩={Masked})：{Text}",
+        _log.Debug("物品读数(图标遮罩={Masked})：{Text}",
             iconMasks is { Count: > 0 }, result.FullText.Replace('\n', '|'));
         if (itemTitle)
         {

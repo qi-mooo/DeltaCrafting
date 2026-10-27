@@ -4,7 +4,7 @@ namespace DeltaCrafter.Core.L1;
 public sealed record OcrLine(string Text, double CenterX, double CenterY)
 {
     public float Confidence { get; init; } = 1;
-    // 原始帧内的词框,仅供 .300 BLK 五级弹定位同一行左侧的品质图标。
+    // 原始帧内的词框，供 OCR 学习区域大小及 .300 BLK 定位同一行左侧的品质图标。
     public IReadOnlyList<OcrWordBox> Words { get; init; } = [];
 }
 

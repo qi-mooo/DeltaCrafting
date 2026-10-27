@@ -58,12 +58,21 @@ public sealed class PaddleOcrBrick
     });
 
     public async Task<OcrReadout> ReadAsync(CapturedFrame frame, NRect? area = null, double upscale = 2,
-        IReadOnlyList<NRect>? iconMasks = null)
+        IReadOnlyList<NRect>? iconMasks = null, CancellationToken cancellationToken = default)
     {
         if (!double.IsFinite(upscale) || upscale <= 0)
             throw new ArgumentOutOfRangeException(nameof(upscale));
-        await _gate.WaitAsync();
-        try { return await Task.Run(() => Read(frame, area ?? new NRect { W = 1, H = 1 }, upscale, iconMasks)); }
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            return await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                // 已进入原生推理后不可中断；竞速输掉时由调用方观察并丢弃结果。
+                return Read(frame, area ?? new NRect { W = 1, H = 1 }, upscale, iconMasks, cancellationToken);
+            }, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             throw new InvalidOperationException("PaddleOCR 文字识别失败，请检查完整客户端、离线模型及 Visual C++ x64 运行库。已停止本轮，请重试。", ex);
@@ -71,18 +80,23 @@ public sealed class PaddleOcrBrick
         finally { _gate.Release(); }
     }
 
-    private OcrReadout Read(CapturedFrame frame, NRect area, double upscale, IReadOnlyList<NRect>? iconMasks)
+    private OcrReadout Read(CapturedFrame frame, NRect area, double upscale, IReadOnlyList<NRect>? iconMasks,
+        CancellationToken ct)
     {
         var (x, y, w, h) = PixelMapper.ToPixelRect(area, frame.Width, frame.Height);
         double scale = Math.Min(upscale, 2048.0 / Math.Max(w, h));
         int dw = Math.Max(1, (int)(w * scale)), dh = Math.Max(1, (int)(h * scale));
         var data = OcrImagePreprocessor.Prepare(frame, x, y, w, h, dw, dh, iconMasks);
+        ct.ThrowIfCancellationRequested();
         using var bgra = new Mat(dh, dw, MatType.CV_8UC4);
         Marshal.Copy(data, 0, bgra.Data, data.Length);
         using var bgr = new Mat();
         Cv2.CvtColor(bgra, bgr, ColorConversionCodes.BGRA2BGR);
+        ct.ThrowIfCancellationRequested();
+        var engine = _engine.Value;
+        ct.ThrowIfCancellationRequested();
         var watch = Stopwatch.StartNew();
-        var result = _engine.Value.Run(bgr);
+        var result = engine.Run(bgr);
         _log?.Debug("PaddleOCR 推理 {W}x{H}：{Ms} ms", dw, dh, watch.ElapsedMilliseconds);
         double sx = (double)dw / w, sy = (double)dh / h;
         // 不能静默丢弃低置信度倒计时，否则制造中会被误判成可领取。

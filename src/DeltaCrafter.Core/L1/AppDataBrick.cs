@@ -16,6 +16,7 @@ public sealed class AppDataBrick
     public string AnchorsPath => Path.Combine(Root, "anchors.json");
     public string ItemsPath => Path.Combine(Root, "items.json");
     public string ItemMetadataPath => Path.Combine(Root, "item-metadata.json");
+    public string OcrLearningPath => Path.Combine(Root, "ocr-learning.json");
     public string LogsDir => Path.Combine(Root, "logs");
     public string ShotsDir => Path.Combine(Root, "shots");
     /// <summary>更新安装包下载目录。每次下载前清空,避免误用旧包或半截文件。</summary>
