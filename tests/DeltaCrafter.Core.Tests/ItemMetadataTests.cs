@@ -38,10 +38,11 @@ public sealed class ItemMetadataTests
         var names = catalog.Facilities.Values.SelectMany(i => i).Select(i => i.Name).ToArray();
         Assert.True(ItemMetadataCatalog.Apply(catalog, metadata) > 0);
         Assert.Equal(names, catalog.Facilities.Values.SelectMany(i => i).Select(i => i.Name));
-        Assert.Equal(226, names.Length);
+        Assert.Equal(228, names.Length);
         Assert.All(catalog.For(FacilityKey.Workbench), i => Assert.InRange(i.Grade, 1, 7));
         Assert.All(catalog.For(FacilityKey.ArmorStation), i => Assert.InRange(i.Grade, 1, 6));
         Assert.Equal(6, catalog.For(FacilityKey.ArmorStation).Single(i => i.Name == "特里克MAS2.0装甲").Grade);
+        Assert.Equal(6, catalog.For(FacilityKey.ArmorStation).Single(i => i.Name == "GTO重型战术包").Grade);
         Assert.DoesNotContain(names, n => n is "7.62×39mm SUB-4" or "7.62×39mm SUB-5");
         Assert.All(builtIn.Facilities.Values.SelectMany(i => i), i => Assert.Equal(0, i.Grade));
         Assert.Equal(0, ItemMetadataCatalog.Apply(catalog, metadata));
