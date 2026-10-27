@@ -4,7 +4,9 @@ param(
     [ValidatePattern('^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$')]
     [string]$Version,
     [string]$FirmwareBundle,
-    [string]$HarpFirmwareBundle
+    [string]$HarpFirmwareBundle,
+    # CI 只验证软件本体时不打包固件;发布构建不得使用。
+    [switch]$WithoutFirmware
 )
 
 $ErrorActionPreference = 'Stop'
@@ -106,14 +108,14 @@ try {
         $firmwareDir = Join-Path $publishDir 'Firmware'
         New-Item -ItemType Directory -Path $firmwareDir | Out-Null
         Copy-Item -LiteralPath $FirmwareBundle -Destination (Join-Path $firmwareDir 'DeltaCrafter-esp32s3.zip')
-    } elseif ($env:CI -eq 'true') {
+    } elseif ($env:CI -eq 'true' -and -not $WithoutFirmware) {
         throw 'CI packages must include the matching S3 firmware bundle.'
     }
     if ($HarpFirmwareBundle) {
         $firmwareDir = Join-Path $publishDir 'Firmware'
         New-Item -ItemType Directory -Path $firmwareDir -Force | Out-Null
         Copy-Item -LiteralPath $HarpFirmwareBundle -Destination (Join-Path $firmwareDir 'DeltaHarp-esp32s3-usb.zip')
-    } elseif ($env:CI -eq 'true') {
+    } elseif ($env:CI -eq 'true' -and -not $WithoutFirmware) {
         throw 'CI packages must include the matching Harp USB firmware bundle.'
     }
     Compress-Archive -Path (Join-Path $publishDir '*') -DestinationPath $zipPath -CompressionLevel Optimal

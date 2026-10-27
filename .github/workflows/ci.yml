@@ -15,8 +15,66 @@ permissions:
   contents: read
 
 jobs:
+  # 与本分支(或默认分支)最近一次通过 CI 的提交比较,只构建有改动的部分。
+  # 以「上次成功」而非「上次推送」为基准:被取消或失败的推送里的改动不会被漏掉。
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      firmware: ${{ steps.diff.outputs.firmware }}
+      app: ${{ steps.diff.outputs.app }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed components
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          BRANCH: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          result() {
+            echo "firmware=$1" >> "$GITHUB_OUTPUT"
+            echo "app=$2" >> "$GITHUB_OUTPUT"
+            printf '固件: %s\n软件本体: %s\n%s\n' "$1" "$2" "$3" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+          [ "$EVENT" = workflow_dispatch ] && result true true "手动触发,全部构建。"
+
+          base=""
+          for branch in "$BRANCH" "$DEFAULT_BRANCH"; do
+            for sha in $(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --branch "$branch" \
+                --status success --limit 20 --json headSha -q '.[].headSha'); do
+              if git merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then base=$sha; break 2; fi
+            done
+          done
+          [ -z "$base" ] && result true true "没有可作基准的成功构建,全部构建。"
+
+          files=$(git diff --name-only "$base" HEAD)
+          match() { grep -qE "$1" <<<"$files" && echo true || echo false; }
+          firmware=$(match '^(firmware/|\.github/workflows/firmware\.yml$)')
+          app=$(match '^(src/|tests/|scripts/|licenses/|Directory\.Build\.props$|DeltaCrafter\.sln$|nuget\.config$|global\.json$|\.editorconfig$|README\.md$|LICENSE$|THIRD-PARTY-NOTICES\.md$)')
+          # CI 自身或全局换行规则改动时两边都验证。
+          if [ "$(match '^(\.github/workflows/ci\.yml|\.gitattributes)$')" = true ]; then firmware=true; app=true; fi
+          result "$firmware" "$app" "基准 ${base:0:7},变更文件:
+          $files"
+
+  # 两个任务互不依赖,同时有改动时并行运行。
+  firmware:
+    needs: changes
+    if: needs.changes.outputs.firmware == 'true'
+    uses: ./.github/workflows/firmware.yml
+
   build-and-test:
-    needs: firmware
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: windows-latest
 
     steps:
@@ -28,21 +86,11 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Download matching S3 firmware
-        uses: actions/download-artifact@v4
-        with:
-          name: DeltaCrafter-esp32s3-${{ github.sha }}
-          path: ${{ runner.temp }}/s3-firmware
-
-      - name: Download matching Harp USB firmware
-        uses: actions/download-artifact@v4
-        with:
-          name: DeltaHarp-esp32s3-usb-${{ github.sha }}
-          path: ${{ runner.temp }}/harp-firmware
-
+      # 不等固件:CI 包只验证软件本体,固件 ZIP 由同一次运行的固件任务单独上传;
+      # 正式发布(release.yml)仍把两份固件打进安装包。
       - name: Build, test and package Windows app
         shell: pwsh
-        run: .\scripts\build-release.ps1 -FirmwareBundle '${{ runner.temp }}\s3-firmware\DeltaCrafter-esp32s3.zip' -HarpFirmwareBundle '${{ runner.temp }}\harp-firmware\DeltaHarp-esp32s3-usb.zip'
+        run: .\scripts\build-release.ps1 -WithoutFirmware
 
       - name: Upload Windows app
         uses: actions/upload-artifact@v4
@@ -53,6 +101,3 @@ jobs:
             artifacts/*.sha256
           if-no-files-found: error
           retention-days: 14
-
-  firmware:
-    uses: ./.github/workflows/firmware.yml
