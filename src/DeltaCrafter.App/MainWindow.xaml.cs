@@ -31,6 +31,8 @@ public sealed partial class MainWindow : Window
         _learningTicker.Interval = TimeSpan.FromSeconds(1);
         _learningTicker.Tick += (_, _) => RefreshOcrLearning();
         Closed += (_, _) => _learningTicker.Stop();
+        Nav.RegisterPropertyChangedCallback(NavigationView.IsPaneOpenProperty, (_, _) => UpdateLearningVisibility());
+        UpdateLearningVisibility();
 
         Title = WindowTitle;
         // Mica 云母:Win11 生效;更旧系统框架自动回退纯色背景(仅视觉降级,已记日志)。
@@ -92,41 +94,34 @@ public sealed partial class MainWindow : Window
             ContentFrame.Navigate(page);
     }
 
-    private void OnSettingsMenuOpening(object sender, object e)
+    private void UpdateLearningVisibility()
     {
-        RefreshOcrLearning();
-        _learningTicker.Start();
-    }
-
-    private void OnSettingsMenuClosed(object sender, object e) => _learningTicker.Stop();
-
-    private void OnNavItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs e)
-    {
-        if (e.InvokedItemContainer == SettingsNavItem) SettingsMenu.ShowAt(SettingsNavItem);
-    }
-
-    private void OnSettingsClick(object sender, RoutedEventArgs e)
-    {
-        SettingsMenu.Hide();
-        Nav.SelectedItem = SettingsNavItem;
+        LearningNavItem.Visibility = Nav.IsPaneOpen ? Visibility.Visible : Visibility.Collapsed;
+        if (Nav.IsPaneOpen)
+        {
+            RefreshOcrLearning();
+            _learningTicker.Start();
+        }
+        else _learningTicker.Stop();
     }
 
     private void RefreshOcrLearning()
     {
         var status = AppHost.Current.Probe.OcrLearningStatus;
         LearningSummary.Text = status.TotalSamples == 0
-            ? "尚未学习"
-            : $"已确认 {status.ConfirmedSamples}/{status.TotalSamples}";
-        LearningReuse.Text = $"可复用 {status.ReusableSamples} 个区域 · 查看详情";
+            ? "OCR 学习"
+            : $"OCR 学习 {status.ConfirmedSamples}/{status.TotalSamples}";
+        ToolTipService.SetToolTip(LearningNavItem, status.TotalSamples == 0
+            ? "尚未学习 · 点击查看详情"
+            : $"已确认 {status.ConfirmedSamples}/{status.TotalSamples}，可复用 {status.ReusableSamples} 个区域 · 点击查看详情");
         LearningProgress.Value = status.TotalSamples == 0
             ? 0 : (double)status.ConfirmedSamples / status.TotalSamples;
         LearningProgress.Visibility = status.TotalSamples == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    private async void OnLearningClick(object sender, RoutedEventArgs e)
+    private async void OnNavItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs e)
     {
-        if (_learningDetailsOpen) return;
-        SettingsMenu.Hide();
+        if (e.InvokedItemContainer != LearningNavItem || _learningDetailsOpen) return;
         _learningDetailsOpen = true;
         try { await ShowOcrLearningDetailsAsync(); }
         finally { _learningDetailsOpen = false; }

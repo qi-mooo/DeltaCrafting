@@ -52,39 +52,23 @@
                 </NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
-                <NavigationViewItem x:Name="SettingsNavItem" Tag="settings" SelectsOnInvoked="False"
+                <NavigationViewItem x:Name="LearningNavItem" SelectsOnInvoked="False" Visibility="Collapsed"
+                                    AutomationProperties.Name="OCR 学习进度，点击查看详情"
+                                    AutomationProperties.AutomationId="OcrLearningMenuItem">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8A7;" />
+                    </NavigationViewItem.Icon>
+                    <StackPanel Width="112" Spacing="4" Padding="0,4">
+                        <TextBlock x:Name="LearningSummary" Text="OCR 学习" TextTrimming="CharacterEllipsis" />
+                        <ProgressBar x:Name="LearningProgress" Minimum="0" Maximum="1" Height="2"
+                                     Visibility="Collapsed" AutomationProperties.Name="OCR 学习确认进度" />
+                    </StackPanel>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="SettingsNavItem" Content="设置" Tag="settings"
                                     AutomationProperties.Name="设置" AutomationProperties.AutomationId="SettingsNavItem">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE713;" />
                     </NavigationViewItem.Icon>
-                    <StackPanel Orientation="Horizontal" Spacing="64">
-                        <TextBlock Text="设置" />
-                        <FontIcon Glyph="&#xE70E;" FontSize="12" />
-                    </StackPanel>
-                    <NavigationViewItem.ContextFlyout>
-                        <Flyout x:Name="SettingsMenu" Placement="TopEdgeAlignedLeft"
-                                Opening="OnSettingsMenuOpening" Closed="OnSettingsMenuClosed">
-                            <StackPanel Width="240" Spacing="8">
-                                <Button Content="应用设置" Click="OnSettingsClick"
-                                        AutomationProperties.AutomationId="OpenSettingsButton"
-                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" />
-                                <Button Click="OnLearningClick" HorizontalAlignment="Stretch"
-                                        HorizontalContentAlignment="Stretch"
-                                        AutomationProperties.Name="OCR 学习进度，点击查看详情"
-                                        AutomationProperties.AutomationId="OcrLearningMenuItem">
-                                    <StackPanel Spacing="6" Padding="4,8">
-                                        <TextBlock Text="OCR 学习" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                        <TextBlock x:Name="LearningSummary" Text="尚未学习"
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                        <ProgressBar x:Name="LearningProgress" Minimum="0" Maximum="1"
-                                                     Visibility="Collapsed" AutomationProperties.Name="OCR 学习确认进度" />
-                                        <TextBlock x:Name="LearningReuse" Text="可复用 0 个区域 · 查看详情"
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
-                                </Button>
-                            </StackPanel>
-                        </Flyout>
-                    </NavigationViewItem.ContextFlyout>
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>
 
