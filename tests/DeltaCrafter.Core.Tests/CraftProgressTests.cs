@@ -66,8 +66,23 @@ public sealed class CraftProgressTests
         Assert.Equal(28800, ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.PharmacyLab), "高级护甲维修组合", 3));
         Assert.Equal(43200, ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.ArmorStation), "特里克MAS2.0装甲", 3));
         Assert.Equal(43200, ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.ArmorStation), "DICH-9重型头盔", 3));
+        Assert.Equal(43200, ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.ArmorStation), "GTO重型战术包", 3));
+        Assert.Equal(43200, ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.ArmorStation), "D7战术背包", 3));
         Assert.Null(ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.ArmorStation), "特里克MAS2.0装甲", 2));
         Assert.Null(ManufacturePeriods.SecondsFor(catalog.For(FacilityKey.TechCenter), "复合弓", 2));
+    }
+
+    [Fact]
+    public void Built_in_catalog_lists_every_grade_six_armor_recipe()
+    {
+        // manufacturePro 不返回防具台 6 级配方,刷新后它们只来自内置目录;漏一个就永远不会出现在计划页。
+        var store = new JsonStoreBrick();
+        var catalog = store.Load<ItemCatalog>(Path.Combine(AppContext.BaseDirectory, "Data", "items.json"));
+        var periods = store.Load<ItemCatalog>(Path.Combine(AppContext.BaseDirectory, "Data", "manufacture-periods.json"));
+        var builtIn = catalog.For(FacilityKey.ArmorStation).Select(i => CatalogNameResolver.Canonical(i.Name)).ToHashSet();
+        var gradeSix = periods.For(FacilityKey.ArmorStation).Where(i => i.ObjectId / 1000 % 100 == 6).ToArray();
+        Assert.Equal(8, gradeSix.Length);
+        Assert.All(gradeSix, i => Assert.Contains(CatalogNameResolver.Canonical(i.Name), builtIn));
     }
 
     [Fact]
