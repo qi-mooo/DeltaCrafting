@@ -9,7 +9,7 @@ namespace DeltaCrafter.Core.L3;
 /// 总编排(L3):定时循环 + 一轮执行 + 单步调试入口(见 partial)。
 /// 一轮 = 就绪到大厅 → 进特勤处 → 总览一帧观察四槽位 → 逐设施 领取/开工 →
 /// 末尾再观察一帧,以画面为准写调度状态(受阻设施保留「需人工」标记不被覆盖)。
-/// 并发约束:同一时刻只允许一轮执行;失败中止整轮、保留游戏现场、通知并退避;
+/// 并发约束:同一时刻只允许一轮执行;UI 步骤失败保存现场、重启游戏重跑一次，再失败通知并退避;
 /// 「材料不足/未配置物品」是显式受阻,不算失败、不触发退避。
 /// </summary>
 public sealed partial class AutomationCoordinator : IDisposable
@@ -205,13 +205,42 @@ public sealed partial class AutomationCoordinator : IDisposable
             });
 
     public Task<RunReport> RunOnceAsync(string trigger, CancellationToken external) =>
-        ExecuteGuardedAsync(trigger, affectsSchedule: true, requiresCalibration: true, RunRoundAsync, external);
+        ExecuteGuardedAsync(trigger, affectsSchedule: true, requiresCalibration: true,
+            (report, ct) => RecoverRoundAsync(RunRoundAsync, report, ct), external);
 
     /// <summary>「识别当前任务」:上号观察四个设施,把画面上的状态/物品/剩余时间原样写入调度,
     /// 不领取、不开工。面向首次接管——特勤处里已有制造中的任务时,先同步进度再进入循环;
     /// 画面即事实:之前的「需人工」标记也会被本次观察结果覆盖。结束后按设置处置游戏。</summary>
     public Task<RunReport> SyncFacilitiesAsync(string trigger, CancellationToken external) =>
-        ExecuteGuardedAsync(trigger, affectsSchedule: true, requiresCalibration: true, SyncRoundAsync, external);
+        ExecuteGuardedAsync(trigger, affectsSchedule: true, requiresCalibration: true,
+            (report, ct) => RecoverRoundAsync(SyncRoundAsync, report, ct), external);
+
+    private Task RecoverRoundAsync(Func<RunReport, CancellationToken, Task> round, RunReport report, CancellationToken ct) =>
+        RoundRecovery.ExecuteAsync(token => round(report, token), async (failure, token) =>
+        {
+            _log.Warning(failure, "[{Trigger}]步骤失败，关闭游戏后自动重试一次(1/1)。", report.Trigger);
+            Publish(new(EngineMode.Running, "执行失败，正在关闭游戏并重试(1/1)…", null));
+            token.ThrowIfCancellationRequested();
+            var game = _launch.FindRunningClient(includeMinimized: true);
+            if (game is not null)
+            {
+                // 多数步骤已经转储现场；缺失时补存，截图失败不能掩盖原始异常。
+                if (string.IsNullOrWhiteSpace(failure.ScreenshotPath))
+                {
+                    try { await _probe.DumpAsync(game.Hwnd, "recovery-首次失败"); }
+                    catch (Exception ex) { _log.Warning(ex, "自动重试前保存现场失败。"); }
+                }
+                token.ThrowIfCancellationRequested();
+                await _shutdown.ApplyAsync(AfterRunAction.CloseGame, game.Hwnd, token);
+            }
+            token.ThrowIfCancellationRequested();
+            if (_launch.FindRunningClient(includeMinimized: true) is not null)
+                throw new StepFailedException("自动重试关闭游戏", "游戏尚未退出，停止重试。", inner: failure);
+            _steamActivity.ClearBlock();
+            report.Add($"「{failure.StepName}」失败后已关闭游戏，自动重试 1/1");
+            Publish(new(EngineMode.Running, "游戏已关闭，5 秒后重新启动并识别设施(1/1)…", null));
+            await Task.Delay(TimeSpan.FromSeconds(5), token);
+        }, ct);
 
     public Task<RunReport> CloseGameAsync(CancellationToken external = default) =>
         ExecuteGuardedAsync("关闭本机游戏", affectsSchedule: false, requiresCalibration: false, async (report, ct) =>
@@ -443,7 +472,7 @@ public sealed partial class AutomationCoordinator : IDisposable
             if (affectsSchedule && started)
                 _engine.MarkRunFinished(report.Summary(), failed: true, _settings().FailureRetryMinutes);
             _notifier.Notify("特勤处执行失败", ex.Message);
-            // 故意不关游戏:保留失败现场供人工检查。
+            // 自动恢复已用尽或不适用：保留最终失败现场供人工检查。
             Publish(new CoordinatorStatus(EngineMode.Faulted, ex.Message,
                 _engine.ComputeNextRunAt(_plan(), _settings())));
         }

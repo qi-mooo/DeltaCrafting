@@ -40,9 +40,15 @@ jobs:
           name: DeltaCrafter-esp32s3-${{ github.sha }}
           path: ${{ runner.temp }}/s3-firmware
 
+      - name: Download matching Harp USB firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: DeltaHarp-esp32s3-usb-${{ github.sha }}
+          path: ${{ runner.temp }}/harp-firmware
+
       - name: Build release archive
         shell: pwsh
-        run: .\scripts\build-release.ps1 -Version $env:RELEASE_VERSION -FirmwareBundle '${{ runner.temp }}\s3-firmware\DeltaCrafter-esp32s3.zip'
+        run: .\scripts\build-release.ps1 -Version $env:RELEASE_VERSION -FirmwareBundle '${{ runner.temp }}\s3-firmware\DeltaCrafter-esp32s3.zip' -HarpFirmwareBundle '${{ runner.temp }}\harp-firmware\DeltaHarp-esp32s3-usb.zip'
 
       - name: Install pinned Inno Setup
         shell: pwsh

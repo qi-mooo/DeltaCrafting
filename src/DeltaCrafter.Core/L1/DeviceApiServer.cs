@@ -23,6 +23,8 @@ public sealed class DeviceApiServer : IDisposable
     private readonly Func<string, CancellationToken, Task<DataToolImage>>? _toolImage;
     private readonly ILogger _log;
     private readonly DeviceFirmwareStore? _firmware;
+    private readonly DeviceFirmwareStore? _harpFirmware;
+    private readonly HarpFirmwareUpdater? _harpUpdater;
     private readonly byte[] _keyHash;
     private readonly bool _allowControl;
     private Task? _loop;
@@ -37,7 +39,7 @@ public sealed class DeviceApiServer : IDisposable
         Func<DataToolQuery, CancellationToken, Task<DataToolResult>>? getTool = null,
         Func<string, CancellationToken, Task<DeviceActionResult>>? copyToolCode = null,
         Func<string, CancellationToken, Task<DataToolImage>>? toolImage = null,
-        DeviceFirmwareStore? firmware = null)
+        DeviceFirmwareStore? firmware = null, DeviceFirmwareStore? harpFirmware = null, HarpFirmwareUpdater? harpUpdater = null)
     {
         settings.Validate();
         _status = status;
@@ -48,6 +50,8 @@ public sealed class DeviceApiServer : IDisposable
         _copyToolCode = copyToolCode;
         _toolImage = toolImage;
         _firmware = firmware;
+        _harpFirmware = harpFirmware;
+        _harpUpdater = harpUpdater;
         _log = log;
         _allowControl = settings.AllowControl;
         _keyHash = SHA256.HashData(Encoding.UTF8.GetBytes(settings.ApiKey));
@@ -100,7 +104,7 @@ public sealed class DeviceApiServer : IDisposable
     private async Task HandleAsync(HttpListenerContext context)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(context.Request.Url?.AbsolutePath == "/api/v1/firmware-image" ? 180
+        timeout.CancelAfter(TimeSpan.FromSeconds(context.Request.Url?.AbsolutePath is "/api/v1/firmware-image" or "/api/v1/harp/firmware-image" ? 180
             : context.Request.Url?.AbsolutePath is "/api/v1/tools" or "/api/v1/tool-image" ? 30 : 5));
         var ct = timeout.Token;
         try
@@ -122,7 +126,9 @@ public sealed class DeviceApiServer : IDisposable
                 "/api/v1/tool-copy" => "POST",
                 "/api/v1/action" => "POST",
                 "/api/v1/settings" => "POST",
-                "/api/v1/firmware" or "/api/v1/firmware-image" => "GET",
+                "/api/v1/harp/update" => "GET",
+                "/api/v1/harp/update/action" => "POST",
+                "/api/v1/firmware" or "/api/v1/firmware-image" or "/api/v1/harp/firmware" or "/api/v1/harp/firmware-image" => "GET",
                 _ => null,
             };
             if (method is null)
@@ -132,17 +138,24 @@ public sealed class DeviceApiServer : IDisposable
                 context.Response.Headers["Allow"] = method;
                 await ReplyAsync(context, 405, new { error = "method_not_allowed" }, ct);
             }
-            else if (path == "/api/v1/firmware")
+            else if (path == "/api/v1/harp/update")
             {
                 if (!_allowControl) await ReplyAsync(context, 403, new { error = "control_disabled" }, ct);
-                else if (_firmware?.Current is not { } firmware)
+                else if (_harpUpdater is null) await ReplyAsync(context, 404, new { error = "harp_update_unavailable" }, ct);
+                else await ReplyAsync(context, 200, _harpUpdater.State, ct);
+            }
+            else if (path is "/api/v1/firmware" or "/api/v1/harp/firmware")
+            {
+                if (!_allowControl) await ReplyAsync(context, 403, new { error = "control_disabled" }, ct);
+                else if ((path == "/api/v1/firmware" ? _firmware : _harpFirmware)?.Current is not { } firmware)
                     await ReplyAsync(context, 404, new { error = "firmware_unavailable" }, ct);
                 else await ReplyAsync(context, 200, firmware, ct);
             }
-            else if (path == "/api/v1/firmware-image")
+            else if (path is "/api/v1/firmware-image" or "/api/v1/harp/firmware-image")
             {
                 if (!_allowControl) { await ReplyAsync(context, 403, new { error = "control_disabled" }, ct); return; }
-                using var image = _firmware?.OpenImage(request.QueryString["bundle"] ?? "", request.QueryString["role"] ?? "");
+                var store = path == "/api/v1/firmware-image" ? _firmware : _harpFirmware;
+                using var image = store?.OpenImage(request.QueryString["bundle"] ?? "", request.QueryString["role"] ?? "");
                 if (image is null) { await ReplyAsync(context, 404, new { error = "firmware_unavailable" }, ct); return; }
                 context.Response.ContentType = "application/octet-stream";
                 context.Response.ContentLength64 = image.Length;
@@ -213,6 +226,18 @@ public sealed class DeviceApiServer : IDisposable
                 if (count > 1024)
                 {
                     await ReplyAsync(context, 413, new { error = "body_too_large" }, ct);
+                    return;
+                }
+                if (path == "/api/v1/harp/update/action")
+                {
+                    var harpCommand = JsonSerializer.Deserialize<HarpUpdateRequest>(body.AsSpan(0, count), Json);
+                    if (harpCommand is null || !harpCommand.IsValid()) await ReplyAsync(context, 400, new { error = "invalid_harp_action" }, ct);
+                    else if (_harpUpdater is null) await ReplyAsync(context, 404, new { error = "harp_update_unavailable" }, ct);
+                    else
+                    {
+                        var harpResult = _harpUpdater.Submit(harpCommand);
+                        await ReplyAsync(context, harpResult.Code, harpResult.State, ct);
+                    }
                     return;
                 }
                 if (path == "/api/v1/tool-copy")

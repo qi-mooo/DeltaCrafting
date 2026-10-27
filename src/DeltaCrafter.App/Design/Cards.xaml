@@ -30,4 +30,34 @@
         <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Segoe UI" />
     </Style>
 
+    <!-- 工具页入口磁贴:整块可点的大按钮,左对齐图标 + 标题 + 说明。 -->
+    <Style x:Key="TileButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="VerticalContentAlignment" Value="Top" />
+        <Setter Property="Padding" Value="20,18" />
+        <Setter Property="MinHeight" Value="112" />
+    </Style>
+
+    <!-- 分组标题:Windows 11 设置页式,位于一组卡片上方。 -->
+    <Style x:Key="GroupHeaderTextStyle" TargetType="TextBlock"
+           BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+        <Setter Property="Margin" Value="1,14,0,2" />
+    </Style>
+
+    <!-- 卡片内行间分隔线 -->
+    <Style x:Key="RowDividerStyle" TargetType="Rectangle">
+        <Setter Property="Height" Value="1" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="Fill" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
+    </Style>
+
+    <!-- 等宽大号读数:总览「下次执行」与设施倒计时 -->
+    <Style x:Key="ReadoutTextStyle" TargetType="TextBlock" BasedOn="{StaticResource NumericTextStyle}">
+        <Setter Property="FontSize" Value="26" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
+    </Style>
+
 </ResourceDictionary>

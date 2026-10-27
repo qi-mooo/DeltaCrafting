@@ -14,6 +14,7 @@ public class TextMatchTests
         Assert.Equal(TextMatch.Canonical(expected), TextMatch.Canonical(observed));
     }
 
+
     [Fact]
     public void Substring_distance_ignores_price_and_badge_text()
     {

@@ -73,9 +73,12 @@ public sealed class ScreenProbe
 
     /// <summary>是否处于指定界面:探针区域 OCR 文本包含约定关键字。</summary>
     public async Task<bool> IsOnAsync(nint hwnd, string screenName)
+        => await IsOnFrameAsync(Capture(hwnd), screenName);
+
+    internal async Task<bool> IsOnFrameAsync(CapturedFrame frame, string screenName)
     {
         var spec = Screen(screenName);
-        var texts = await ReadScreenTextsAsync(Capture(hwnd), spec);
+        var texts = await ReadScreenTextsAsync(frame, spec);
         bool on = MatchesScreenTexts(spec, texts);
         _log.Debug("界面判定 {Screen}:{Result}(读到:{Text})", screenName, on, Compact(string.Join(" | ", texts)));
         return on;
@@ -83,7 +86,19 @@ public sealed class ScreenProbe
 
     public async Task<IReadOnlyList<string>> ReadScreenTextsAsync(CapturedFrame frame, ScreenSpec spec)
     {
-        var probes = new[] { spec.Probe }.Concat(spec.AdditionalProbes);
+        IReadOnlyList<string> texts = [];
+        foreach (var probes in ProbeGroups(spec))
+        {
+            if (probes.Count == 0) continue;
+            texts = await ReadProbeGroupAsync(frame, probes);
+            if (MatchesProbeGroup(probes, texts)) return texts;
+        }
+        // 不将失败组合的部分读数当作另一组合的成功证据。
+        return [];
+    }
+
+    private async Task<IReadOnlyList<string>> ReadProbeGroupAsync(CapturedFrame frame, IReadOnlyList<TextProbe> probes)
+    {
         var texts = new List<string>();
         foreach (var probe in probes)
         {
@@ -99,10 +114,18 @@ public sealed class ScreenProbe
     }
 
     internal static bool MatchesScreenTexts(ScreenSpec spec, IReadOnlyList<string> texts)
+        => ProbeGroups(spec).Any(probes => MatchesProbeGroup(probes, texts));
+
+    private static IEnumerable<IReadOnlyList<TextProbe>> ProbeGroups(ScreenSpec spec)
     {
-        var probes = new[] { spec.Probe }.Concat(spec.AdditionalProbes).ToArray();
-        if (texts.Count != probes.Length) return false;
-        for (int i = 0; i < probes.Length; i++)
+        yield return new[] { spec.Probe }.Concat(spec.AdditionalProbes).ToArray();
+        foreach (var group in spec.AlternativeProbeGroups) yield return group;
+    }
+
+    private static bool MatchesProbeGroup(IReadOnlyList<TextProbe> probes, IReadOnlyList<string> texts)
+    {
+        if (probes.Count == 0 || texts.Count != probes.Count) return false;
+        for (int i = 0; i < probes.Count; i++)
         {
             string expected = Normalize(probes[i].MustContain);
             if (expected.Length == 0 || !Normalize(texts[i]).Contains(expected, StringComparison.Ordinal)) return false;
@@ -123,6 +146,8 @@ public sealed class ScreenProbe
     public void ClickFramePoint(nint hwnd, double frameX, double frameY)
     {
         var rect = _window.ClientRectOnScreen(hwnd);
+        _log.Debug("点击识别物品 → 客户区({X:0},{Y:0})，屏幕({ScreenX},{ScreenY})",
+            frameX, frameY, rect.Left + (int)Math.Round(frameX), rect.Top + (int)Math.Round(frameY));
         _input.ClickAt(rect.Left + (int)Math.Round(frameX), rect.Top + (int)Math.Round(frameY));
     }
 

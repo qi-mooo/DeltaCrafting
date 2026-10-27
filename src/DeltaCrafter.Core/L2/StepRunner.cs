@@ -18,7 +18,9 @@ public sealed record Step(
 /// </summary>
 public sealed class StepRunner
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(700);
+    /// <summary>校验间隔。画面在两次校验之间的任意时刻都可能刚好就绪，流程本就要承受
+    /// "一出现即命中"；缩短间隔只减少平均多等的时长，不引入新的时序。</summary>
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(400);
     private readonly ScreenProbe _probe;
     private readonly ILogger _log;
 

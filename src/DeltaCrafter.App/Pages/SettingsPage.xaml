@@ -15,298 +15,385 @@
             <StackPanel Grid.Column="1" Padding="{StaticResource TokenPagePadding}"
                         Spacing="{StaticResource TokenGapM}">
 
-                <controls:PageHeader Title="设置" />
+                <controls:PageHeader Title="设置" Subtitle="所有修改即时生效并自动保存。" />
 
-                <!-- 游戏 -->
-                <TextBlock Text="游戏" Style="{StaticResource BodyStrongTextBlockStyle}"
-                           Margin="0,8,0,0" />
-                <controls:SettingCard Glyph="&#xE7FC;" Header="启动方式"
-                                      Description="Steam 模式仅接管本机已安装的游戏,不支持远程串流。">
-                    <controls:SettingCard.Slot>
-                        <ComboBox SelectedIndex="{x:Bind Vm.LaunchModeIndex, Mode=TwoWay}" MinWidth="180">
-                            <ComboBoxItem Content="游戏启动器 / 可执行文件" />
-                            <ComboBoxItem Content="Steam (本机游戏)" />
-                        </ComboBox>
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
+                <!-- 分区标签:每次只显示一个分区,切换逻辑见 SettingsPage.xaml.cs。 -->
+                <SelectorBar x:Name="Sections" SelectionChanged="OnSectionChanged">
+                    <SelectorBarItem Text="游戏" Tag="GamePanel" IsSelected="True" />
+                    <SelectorBarItem Text="数据" Tag="DataPanel" />
+                    <SelectorBarItem Text="运行" Tag="RunPanel" />
+                    <SelectorBarItem Text="设备" Tag="DevicePanel" />
+                    <SelectorBarItem Text="应用" Tag="AppPanel" />
+                </SelectorBar>
 
-                <controls:SettingCard Glyph="&#xE7FC;" Header="游戏路径"
-                                      Visibility="{x:Bind Vm.LauncherSettingsVisibility, Mode=OneWay}"
-                                      Description="{x:Bind Vm.GamePath, Mode=OneWay}">
-                    <controls:SettingCard.Slot>
-                        <Button Content="浏览…" Command="{x:Bind Vm.BrowseGamePathCommand}" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
+                <StackPanel x:Name="GamePanel" Spacing="4">
+                    <TextBlock Text="启动" Style="{StaticResource GroupHeaderTextStyle}" Margin="1,8,0,4" />
+                    <controls:SettingCard Glyph="&#xE7FC;" Header="启动方式"
+                                          Description="Steam 模式仅接管本机已安装的游戏,不支持远程串流。">
+                        <controls:SettingCard.Slot>
+                            <ComboBox SelectedIndex="{x:Bind Vm.LaunchModeIndex, Mode=TwoWay}" MinWidth="180">
+                                <ComboBoxItem Content="游戏启动器 / 可执行文件" />
+                                <ComboBoxItem Content="Steam (本机游戏)" />
+                            </ComboBox>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
 
-                <controls:SettingCard Glyph="&#xE7FC;" Header="Steam 客户端"
-                                      Visibility="{x:Bind Vm.SteamSettingsVisibility, Mode=OneWay}"
-                                      Description="{x:Bind Vm.SteamPathDescription, Mode=OneWay}">
-                    <controls:SettingCard.Slot>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="选择 steam.exe…" Command="{x:Bind Vm.BrowseSteamPathCommand}" />
-                            <Button Content="自动检测" Command="{x:Bind Vm.ResetSteamPathCommand}" />
-                        </StackPanel>
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE7FC;" Header="游戏路径"
+                                          Visibility="{x:Bind Vm.LauncherSettingsVisibility, Mode=OneWay}"
+                                          Description="{x:Bind Vm.GamePath, Mode=OneWay}">
+                        <controls:SettingCard.Slot>
+                            <Button Content="浏览…" Command="{x:Bind Vm.BrowseGamePathCommand}" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
 
-                <controls:SettingCard Glyph="&#xE943;" Header="Steam App ID"
-                                      Visibility="{x:Bind Vm.SteamSettingsVisibility, Mode=OneWay}"
-                                      Description="默认 2507950。不同发行版本请填写 Steam 商店网址 /app/ 后的数字,并将游戏语言设为简体中文。">
-                    <controls:SettingCard.Slot>
-                        <TextBox Width="160" Text="{x:Bind Vm.SteamAppId, Mode=TwoWay}"
-                                 InputScope="Number" AutomationProperties.Name="Steam App ID" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE7FC;" Header="Steam 客户端"
+                                          Visibility="{x:Bind Vm.SteamSettingsVisibility, Mode=OneWay}"
+                                          Description="{x:Bind Vm.SteamPathDescription, Mode=OneWay}">
+                        <controls:SettingCard.Slot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="选择 steam.exe…" Command="{x:Bind Vm.BrowseSteamPathCommand}" />
+                                <Button Content="自动检测" Command="{x:Bind Vm.ResetSteamPathCommand}" />
+                            </StackPanel>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
 
-                <controls:SettingCard Glyph="&#xE7B3;" Header="游戏窗口"
-                                      Description="{x:Bind Vm.WindowRuleText, Mode=OneWay}">
-                    <controls:SettingCard.Slot>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="定位窗口…" Click="OnPickWindow" />
-                            <Button Content="重置" Command="{x:Bind Vm.ResetWindowRuleCommand}" />
-                        </StackPanel>
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE943;" Header="Steam App ID"
+                                          Visibility="{x:Bind Vm.SteamSettingsVisibility, Mode=OneWay}"
+                                          Description="默认 2507950。不同发行版本请填写 Steam 商店网址 /app/ 后的数字,并将游戏语言设为简体中文。">
+                        <controls:SettingCard.Slot>
+                            <TextBox Width="160" Text="{x:Bind Vm.SteamAppId, Mode=TwoWay}"
+                                     InputScope="Number" AutomationProperties.Name="Steam App ID" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
 
-                <controls:SettingCard Glyph="&#xE916;" Header="启动超时(秒)"
-                                      Description="启动后等待游戏窗口出现的上限。">
-                    <controls:SettingCard.Slot>
-                        <NumberBox Width="140" SpinButtonPlacementMode="Inline"
-                                   Minimum="30" Maximum="900" SmallChange="10"
-                                   Value="{x:Bind Vm.LaunchTimeoutSeconds, Mode=TwoWay}" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE7B3;" Header="游戏窗口"
+                                          Description="{x:Bind Vm.WindowRuleText, Mode=OneWay}">
+                        <controls:SettingCard.Slot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="定位窗口…" Click="OnPickWindow" />
+                                <Button Content="重置" Command="{x:Bind Vm.ResetWindowRuleCommand}" />
+                            </StackPanel>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
 
-                <controls:SettingCard Glyph="&#xE916;" Header="进入大厅超时(秒)"
-                                      Description="窗口出现后等待登录、加载与公告弹窗完成的上限。">
-                    <controls:SettingCard.Slot>
-                        <NumberBox Width="140" SpinButtonPlacementMode="Inline"
-                                   Minimum="30" Maximum="900" SmallChange="10"
-                                   Value="{x:Bind Vm.LobbyTimeoutSeconds, Mode=TwoWay}" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE916;" Header="启动超时(秒)"
+                                          Description="启动后等待游戏窗口出现的上限。">
+                        <controls:SettingCard.Slot>
+                            <NumberBox Width="140" SpinButtonPlacementMode="Inline"
+                                       Minimum="30" Maximum="900" SmallChange="10"
+                                       Value="{x:Bind Vm.LaunchTimeoutSeconds, Mode=TwoWay}" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
 
-                <TextBlock Text="Steam 游戏状态" Style="{StaticResource BodyStrongTextBlockStyle}"
-                           Margin="0,12,0,0" />
-                <controls:SettingCard Glyph="&#xE7FC;" Header="游戏中暂停任务"
-                                      Description="三角洲行动运行中或查询失败时等待 5 分钟再检查，其他游戏不影响任务。">
-                    <controls:SettingCard.Slot>
-                        <ToggleSwitch IsOn="{x:Bind Vm.SteamActivityEnabled, Mode=TwoWay}" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-                <controls:SettingCard Glyph="&#xE77B;" Header="Steam ID">
-                    <controls:SettingCard.Slot>
-                        <TextBox Width="220" MaxLength="17" InputScope="Number"
-                                 Text="{x:Bind Vm.SteamActivityId, Mode=TwoWay}"
-                                 AutomationProperties.Name="Steam ID" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-                <controls:SettingCard Glyph="&#xE72E;" Header="Steam API key">
-                    <controls:SettingCard.Slot>
-                        <PasswordBox Width="280" MaxLength="32"
-                                     Password="{x:Bind Vm.SteamActivityApiKey, Mode=TwoWay}"
-                                     AutomationProperties.Name="Steam API key" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-                <controls:SettingCard Glyph="&#xE968;" Header="当前状态"
-                                      Description="{x:Bind Vm.SteamActivityStatus, Mode=OneWay}">
-                    <controls:SettingCard.Slot>
-                        <Button Command="{x:Bind Vm.CheckSteamActivityCommand}"
-                                ToolTipService.ToolTip="检查 Steam 状态" AutomationProperties.Name="检查 Steam 状态">
-                            <FontIcon Glyph="&#xE72C;" />
-                        </Button>
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-
-                <TextBlock Text="三角洲数据帝" Style="{StaticResource BodyStrongTextBlockStyle}"
-                           Margin="0,12,0,0" />
-                <controls:SettingCard Glyph="&#xE72E;" Header="数据帝 Token">
-                    <controls:SettingCard.Slot>
-                        <PasswordBox Width="280" MaxLength="32"
-                                     Password="{x:Bind Vm.ManufactureToken, Mode=TwoWay}"
-                                     AutomationProperties.Name="数据帝 Token" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-                <controls:SettingCard Glyph="&#xE713;" Header="设施等级"
-                                      Description="按游戏内等级设置,用于计算制造时长与每小时利润。">
-                    <controls:SettingCard.Slot>
-                        <Grid ColumnSpacing="12" RowSpacing="8">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-                            <NumberBox Header="技术中心" Width="110" Minimum="1" Maximum="3"
-                                       SpinButtonPlacementMode="Compact" Value="{x:Bind Vm.TechLevel, Mode=TwoWay}" />
-                            <NumberBox Grid.Column="1" Header="工作台" Width="110" Minimum="1" Maximum="3"
-                                       SpinButtonPlacementMode="Compact" Value="{x:Bind Vm.WorkbenchLevel, Mode=TwoWay}" />
-                            <NumberBox Grid.Row="1" Header="制药台" Width="110" Minimum="1" Maximum="3"
-                                       SpinButtonPlacementMode="Compact" Value="{x:Bind Vm.PharmacyLevel, Mode=TwoWay}" />
-                            <NumberBox Grid.Row="1" Grid.Column="1" Header="防具台" Width="110" Minimum="1" Maximum="3"
-                                       SpinButtonPlacementMode="Compact" Value="{x:Bind Vm.ArmorLevel, Mode=TwoWay}" />
-                        </Grid>
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-                <controls:SettingCard Glyph="&#xE72C;" Header="可制造物品列表"
-                                      Description="{x:Bind Vm.ManufactureDataStatus, Mode=OneWay}">
-                    <controls:SettingCard.Slot>
-                        <Button Content="刷新数据" Command="{x:Bind Vm.RefreshManufactureDataCommand}" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-
-                <!-- 运行 -->
-                <TextBlock Text="运行" Style="{StaticResource BodyStrongTextBlockStyle}"
-                           Margin="0,12,0,0" />
-                <controls:SettingCard Glyph="&#xE7E8;" Header="收取后行为"
-                                      Description="每轮收取并续造完成后如何处置游戏:关闭省资源;最小化后台挂机;或回到大厅留在前台。">
-                    <controls:SettingCard.Slot>
-                        <ComboBox SelectedIndex="{x:Bind Vm.AfterRunIndex, Mode=TwoWay}" MinWidth="180">
-                            <ComboBoxItem Content="收完即关闭" />
-                            <ComboBoxItem Content="保持运行(最小化)" />
-                            <ComboBoxItem Content="保持运行(留在大厅)" />
-                        </ComboBox>
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-
-                <controls:SettingCard Glyph="&#xE945;" Header="失败重试间隔(分钟)"
-                                      Description="某一轮失败后,间隔多久才会再次自动尝试。">
-                    <controls:SettingCard.Slot>
-                        <NumberBox Width="140" SpinButtonPlacementMode="Inline"
-                                   Minimum="1" Maximum="720" SmallChange="5"
-                                   Value="{x:Bind Vm.FailureRetryMinutes, Mode=TwoWay}" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-
-                <controls:SettingCard Glyph="&#xEC32;" Header="等待期间阻止睡眠"
-                                      Description="仅阻止系统进入睡眠,不改变熄屏。电脑需保持通电唤醒。">
-                    <controls:SettingCard.Slot>
-                        <ToggleSwitch IsOn="{x:Bind Vm.PreventSleep, Mode=TwoWay}" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-
-                <!-- 应用 -->
-                <TextBlock Text="应用" Style="{StaticResource BodyStrongTextBlockStyle}"
-                           Margin="0,12,0,0" />
-                <controls:SettingCard Glyph="&#xE7B5;" Header="开机自启"
-                                      Description="以计划任务在登录时静默启动(最高权限,不弹 UAC)。">
-                    <controls:SettingCard.Slot>
-                        <ToggleSwitch IsOn="{x:Bind Vm.AutostartEnabled, Mode=TwoWay}" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-
-                <InfoBar IsOpen="{x:Bind Vm.HasAutostartError, Mode=OneWay}"
-                         Severity="Error" IsClosable="False"
-                         Title="开机自启设置失败"
-                         Message="{x:Bind Vm.AutostartError, Mode=OneWay}" />
-
-                <controls:SettingCard Glyph="&#xE756;" Header="关闭按钮行为"
-                                      Description="开启后点关闭最小化到托盘,后台继续按计划运行。">
-                    <controls:SettingCard.Slot>
-                        <ToggleSwitch IsOn="{x:Bind Vm.CloseToTray, Mode=TwoWay}" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-
-                <controls:SettingCard Glyph="&#xE771;" Header="主题"
-                                      Description="深色 / 浅色 / 跟随系统。">
-                    <controls:SettingCard.Slot>
-                        <ComboBox SelectedIndex="{x:Bind Vm.ThemeIndex, Mode=TwoWay}" MinWidth="150">
-                            <ComboBoxItem Content="跟随系统" />
-                            <ComboBoxItem Content="浅色" />
-                            <ComboBoxItem Content="深色" />
-                        </ComboBox>
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-
-                <TextBlock Text="T-Display-S3" Style="{StaticResource BodyStrongTextBlockStyle}"
-                           Margin="0,12,0,0" />
-                <controls:SettingCard Glyph="&#xE968;" Header="局域网设备 API"
-                                      Description="{x:Bind Vm.DeviceApiStatus, Mode=OneWay}">
-                    <controls:SettingCard.Slot>
-                        <ToggleSwitch IsOn="{x:Bind Vm.DeviceApiEnabled, Mode=TwoWay}" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-                <controls:SettingCard Glyph="&#xE839;" Header="监听端口"
-                                      Description="与 S3 连接同一局域网,在防火墙中允许此端口。">
-                    <controls:SettingCard.Slot>
-                        <NumberBox Width="140" SpinButtonPlacementMode="Inline"
-                                   Minimum="1024" Maximum="65535" SmallChange="1"
-                                   Value="{x:Bind Vm.DeviceApiPort, Mode=TwoWay}" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-                <controls:SettingCard Glyph="&#xE72E;" Header="配对密钥"
-                                      Description="复制到固件配置。重新生成后,旧密钥立即失效。">
-                    <controls:SettingCard.Slot>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Command="{x:Bind Vm.CopyDeviceApiKeyCommand}"
-                                    ToolTipService.ToolTip="复制配对密钥" AutomationProperties.Name="复制配对密钥">
-                                <FontIcon Glyph="&#xE8C8;" />
-                            </Button>
-                            <Button Command="{x:Bind Vm.GenerateDeviceApiKeyCommand}"
-                                    ToolTipService.ToolTip="重新生成密钥" AutomationProperties.Name="重新生成密钥">
+                    <controls:SettingCard Glyph="&#xE916;" Header="进入大厅超时(秒)"
+                                          Description="窗口出现后等待登录、加载与公告弹窗完成的上限。">
+                        <controls:SettingCard.Slot>
+                            <NumberBox Width="140" SpinButtonPlacementMode="Inline"
+                                       Minimum="30" Maximum="900" SmallChange="10"
+                                       Value="{x:Bind Vm.LobbyTimeoutSeconds, Mode=TwoWay}" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <TextBlock Text="Steam 游戏状态" Style="{StaticResource GroupHeaderTextStyle}" />
+                    <controls:SettingCard Glyph="&#xE7FC;" Header="游戏中暂停任务"
+                                          Description="三角洲行动运行中或查询失败时等待 5 分钟再检查，其他游戏不影响任务。">
+                        <controls:SettingCard.Slot>
+                            <ToggleSwitch IsOn="{x:Bind Vm.SteamActivityEnabled, Mode=TwoWay}" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE77B;" Header="Steam ID">
+                        <controls:SettingCard.Slot>
+                            <TextBox Width="220" MaxLength="17" InputScope="Number"
+                                     Text="{x:Bind Vm.SteamActivityId, Mode=TwoWay}"
+                                     AutomationProperties.Name="Steam ID" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE72E;" Header="Steam API key">
+                        <controls:SettingCard.Slot>
+                            <PasswordBox Width="280" MaxLength="32"
+                                         Password="{x:Bind Vm.SteamActivityApiKey, Mode=TwoWay}"
+                                         AutomationProperties.Name="Steam API key" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE968;" Header="当前状态"
+                                          Description="{x:Bind Vm.SteamActivityStatus, Mode=OneWay}">
+                        <controls:SettingCard.Slot>
+                            <Button Command="{x:Bind Vm.CheckSteamActivityCommand}"
+                                    ToolTipService.ToolTip="检查 Steam 状态" AutomationProperties.Name="检查 Steam 状态">
                                 <FontIcon Glyph="&#xE72C;" />
                             </Button>
-                        </StackPanel>
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
-                <controls:SettingCard Glyph="&#xE7F4;" Header="允许设备控制"
-                                      Description="允许设备执行任务,以及保存设施和全局设置。">
-                    <controls:SettingCard.Slot>
-                        <ToggleSwitch IsOn="{x:Bind Vm.DeviceApiAllowControl, Mode=TwoWay}" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                </StackPanel>
 
-                <controls:SettingCard Glyph="&#xE896;" Header="S3 在线固件"
-                                      Description="{x:Bind Vm.DeviceFirmwareStatus, Mode=OneWay}">
-                    <controls:SettingCard.Slot>
-                        <Button Command="{x:Bind Vm.ImportDeviceFirmwareCommand}"
-                                AutomationProperties.AutomationId="ImportDeviceFirmwareButton"
-                                ToolTipService.ToolTip="导入固件 ZIP" AutomationProperties.Name="导入固件 ZIP">
-                            <FontIcon Glyph="&#xE8B5;" />
-                        </Button>
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
+                <StackPanel x:Name="DataPanel" Spacing="4" Visibility="Collapsed">
+                    <TextBlock Text="三角洲数据帝" Style="{StaticResource GroupHeaderTextStyle}" Margin="1,8,0,4" />
+                    <controls:SettingCard Glyph="&#xE72E;" Header="数据帝 Token">
+                        <controls:SettingCard.Slot>
+                            <PasswordBox Width="280" MaxLength="32"
+                                         Password="{x:Bind Vm.ManufactureToken, Mode=TwoWay}"
+                                         AutomationProperties.Name="数据帝 Token" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE713;" Header="设施等级"
+                                          Description="按游戏内等级设置,用于计算制造时长与每小时利润。">
+                        <controls:SettingCard.Slot>
+                            <Grid ColumnSpacing="12" RowSpacing="8">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                                <NumberBox Header="技术中心" Width="110" Minimum="1" Maximum="3"
+                                           SpinButtonPlacementMode="Compact" Value="{x:Bind Vm.TechLevel, Mode=TwoWay}" />
+                                <NumberBox Grid.Column="1" Header="工作台" Width="110" Minimum="1" Maximum="3"
+                                           SpinButtonPlacementMode="Compact" Value="{x:Bind Vm.WorkbenchLevel, Mode=TwoWay}" />
+                                <NumberBox Grid.Row="1" Header="制药台" Width="110" Minimum="1" Maximum="3"
+                                           SpinButtonPlacementMode="Compact" Value="{x:Bind Vm.PharmacyLevel, Mode=TwoWay}" />
+                                <NumberBox Grid.Row="1" Grid.Column="1" Header="防具台" Width="110" Minimum="1" Maximum="3"
+                                           SpinButtonPlacementMode="Compact" Value="{x:Bind Vm.ArmorLevel, Mode=TwoWay}" />
+                            </Grid>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE72C;" Header="可制造物品列表"
+                                          Description="{x:Bind Vm.ManufactureDataStatus, Mode=OneWay}">
+                        <controls:SettingCard.Slot>
+                            <Button Content="刷新数据" Command="{x:Bind Vm.RefreshManufactureDataCommand}" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                </StackPanel>
 
-                <!-- 关于 -->
-                <Border Style="{StaticResource CardBorderStyle}" Margin="0,12,0,0">
-                    <StackPanel Spacing="6">
-                        <!-- 标题/版本在左,检查更新按钮在最右;更新过程与结论走下方 InfoBar。 -->
-                        <Grid ColumnSpacing="12">
+                <StackPanel x:Name="RunPanel" Spacing="4" Visibility="Collapsed">
+                    <TextBlock Text="运行" Style="{StaticResource GroupHeaderTextStyle}" Margin="1,8,0,4" />
+                    <controls:SettingCard Glyph="&#xE7E8;" Header="收取后行为"
+                                          Description="每轮收取并续造完成后如何处置游戏:关闭省资源;最小化后台挂机;或回到大厅留在前台。">
+                        <controls:SettingCard.Slot>
+                            <ComboBox SelectedIndex="{x:Bind Vm.AfterRunIndex, Mode=TwoWay}" MinWidth="180">
+                                <ComboBoxItem Content="收完即关闭" />
+                                <ComboBoxItem Content="保持运行(最小化)" />
+                                <ComboBoxItem Content="保持运行(留在大厅)" />
+                            </ComboBox>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+
+                    <controls:SettingCard Glyph="&#xE945;" Header="失败重试间隔(分钟)"
+                                          Description="某一轮失败后,间隔多久才会再次自动尝试。">
+                        <controls:SettingCard.Slot>
+                            <NumberBox Width="140" SpinButtonPlacementMode="Inline"
+                                       Minimum="1" Maximum="720" SmallChange="5"
+                                       Value="{x:Bind Vm.FailureRetryMinutes, Mode=TwoWay}" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+
+                    <controls:SettingCard Glyph="&#xEC32;" Header="等待期间阻止睡眠"
+                                          Description="仅阻止系统进入睡眠,不改变熄屏。电脑需保持通电唤醒。">
+                        <controls:SettingCard.Slot>
+                            <ToggleSwitch IsOn="{x:Bind Vm.PreventSleep, Mode=TwoWay}" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                </StackPanel>
+
+                <StackPanel x:Name="DevicePanel" Spacing="4" Visibility="Collapsed">
+                    <TextBlock Text="T-Display-S3 与 Harp" Style="{StaticResource GroupHeaderTextStyle}" Margin="1,8,0,4" />
+                    <controls:SettingCard Glyph="&#xE968;" Header="局域网设备 API"
+                                          Description="{x:Bind Vm.DeviceApiStatus, Mode=OneWay}">
+                        <controls:SettingCard.Slot>
+                            <ToggleSwitch IsOn="{x:Bind Vm.DeviceApiEnabled, Mode=TwoWay}" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE839;" Header="监听端口"
+                                          Description="与 S3 连接同一局域网,在防火墙中允许此端口。">
+                        <controls:SettingCard.Slot>
+                            <NumberBox Width="140" SpinButtonPlacementMode="Inline"
+                                       Minimum="1024" Maximum="65535" SmallChange="1"
+                                       Value="{x:Bind Vm.DeviceApiPort, Mode=TwoWay}" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE72E;" Header="配对密钥"
+                                          Description="复制到固件配置。重新生成后,旧密钥立即失效。">
+                        <controls:SettingCard.Slot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Command="{x:Bind Vm.CopyDeviceApiKeyCommand}"
+                                        ToolTipService.ToolTip="复制配对密钥" AutomationProperties.Name="复制配对密钥">
+                                    <FontIcon Glyph="&#xE8C8;" />
+                                </Button>
+                                <Button Command="{x:Bind Vm.GenerateDeviceApiKeyCommand}"
+                                        ToolTipService.ToolTip="重新生成密钥" AutomationProperties.Name="重新生成密钥">
+                                    <FontIcon Glyph="&#xE72C;" />
+                                </Button>
+                            </StackPanel>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE7F4;" Header="允许设备控制"
+                                          Description="允许设备执行任务,以及保存设施和全局设置。">
+                        <controls:SettingCard.Slot>
+                            <ToggleSwitch IsOn="{x:Bind Vm.DeviceApiAllowControl, Mode=TwoWay}" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+
+                    <controls:SettingCard Glyph="&#xE896;" Header="S3 在线固件"
+                                          Description="{x:Bind Vm.DeviceFirmwareStatus, Mode=OneWay}">
+                        <controls:SettingCard.Slot>
+                            <Button Command="{x:Bind Vm.ImportDeviceFirmwareCommand}"
+                                    AutomationProperties.AutomationId="ImportDeviceFirmwareButton"
+                                    ToolTipService.ToolTip="导入固件 ZIP" AutomationProperties.Name="导入固件 ZIP">
+                                <FontIcon Glyph="&#xE8B5;" />
+                            </Button>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+
+                    <controls:SettingCard Glyph="&#xE896;" Header="Harp USB 在线固件"
+                                          Description="{x:Bind Vm.HarpFirmwareStatus, Mode=OneWay}">
+                        <controls:SettingCard.Slot>
+                            <Button Command="{x:Bind Vm.ImportHarpFirmwareCommand}"
+                                    AutomationProperties.AutomationId="ImportHarpFirmwareButton"
+                                    ToolTipService.ToolTip="导入 Harp 固件 ZIP" AutomationProperties.Name="导入 Harp 固件 ZIP">
+                                <FontIcon Glyph="&#xE8B5;" />
+                            </Button>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+
+                    <controls:SettingCard Glyph="&#xE968;" Header="Harp 播放器"
+                                          Description="{x:Bind Vm.HarpDiscoveryStatus, Mode=OneWay}">
+                        <controls:SettingCard.Slot>
+                            <StackPanel Spacing="8">
+                                <ComboBox Width="300" ItemsSource="{x:Bind Vm.HarpDevices}" DisplayMemberPath="Label"
+                                          SelectedItem="{x:Bind Vm.SelectedHarpDevice, Mode=TwoWay}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="扫描" Command="{x:Bind Vm.ScanHarpCommand}" />
+                                    <Button Content="连接" Command="{x:Bind Vm.ConnectHarpCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE895;" Header="更新 Harp 播放器"
+                                          Description="{x:Bind Vm.HarpUpdateStatus, Mode=OneWay}">
+                        <controls:SettingCard.Slot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="检查更新" Command="{x:Bind Vm.CheckHarpUpdateCommand}" />
+                                <Button Content="安装" Command="{x:Bind Vm.InstallHarpUpdateCommand}" />
+                            </StackPanel>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+
+                    <!-- USB 首次安装:给未装过本项目固件、无法在线更新的 ESP32-S3 整片写入。 -->
+                    <TextBlock Text="USB 安装固件" Style="{StaticResource GroupHeaderTextStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <Grid ColumnSpacing="12" RowSpacing="10">
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Spacing="6">
-                                <TextBlock Text="关于" Style="{StaticResource CardTitleTextStyle}" />
-                                <TextBlock Style="{StaticResource SecondaryTextStyle}">
-                                    <Run Text="三角洲特勤助手" />
-                                    <Run Text="{x:Bind Vm.VersionText}" />
-                                </TextBlock>
-                                <TextBlock Text="通过画面识别与模拟操作自动收取并续造特勤处物资。请在游戏设置中使用 16:9 无边框窗口,并以管理员身份运行本程序。"
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                            </StackPanel>
-                            <Button Grid.Column="1" VerticalAlignment="Top"
-                                    Command="{x:Bind Vm.CheckUpdateCommand}">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <ProgressRing Width="16" Height="16"
-                                                  IsActive="{x:Bind Vm.IsCheckingUpdate, Mode=OneWay}"
-                                                  Visibility="{x:Bind Vm.CheckingRingVisibility, Mode=OneWay}" />
-                                    <TextBlock Text="检查更新" />
-                                </StackPanel>
-                            </Button>
-                        </Grid>
-                        <InfoBar IsOpen="{x:Bind Vm.HasUpdateStatus, Mode=OneWay}"
-                                 Severity="{x:Bind Vm.UpdateSeverity, Mode=OneWay}" IsClosable="False"
-                                 Message="{x:Bind Vm.UpdateStatus, Mode=OneWay}" />
-                        <HyperlinkButton Content="打开数据与配置文件夹"
-                                         Command="{x:Bind Vm.OpenDataFolderCommand}"
-                                         Padding="0,4,0,0" />
-                    </StackPanel>
-                </Border>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                <!-- 开发者 -->
-                <controls:SettingCard Glyph="&#xEC7A;" Header="开发者模式"
-                                      Description="显示总览页的「单步调试」工具(分段执行、画面诊断、扫描配方目录)。">
-                    <controls:SettingCard.Slot>
-                        <ToggleSwitch IsOn="{x:Bind Vm.DeveloperMode, Mode=TwoWay}" />
-                    </controls:SettingCard.Slot>
-                </controls:SettingCard>
+                            <TextBlock Grid.ColumnSpan="3" Style="{StaticResource SecondaryTextStyle}"
+                                       Text="用于新板子或无法在线更新的设备。用数据线连接电脑;若找不到串口或连接失败,按住 BOOT 键插入 USB 后松开再试。" />
+
+                            <ComboBox Grid.Row="1" Header="固件" HorizontalAlignment="Stretch"
+                                      ItemsSource="{x:Bind Vm.UsbFlash.Targets}"
+                                      SelectedIndex="{x:Bind Vm.UsbFlash.TargetIndex, Mode=TwoWay}"
+                                      IsEnabled="{x:Bind Vm.UsbFlash.IsBusy, Mode=OneWay, Converter={StaticResource InvertBool}}" />
+                            <ComboBox Grid.Row="1" Grid.Column="1" Header="串口" HorizontalAlignment="Stretch"
+                                      ItemsSource="{x:Bind Vm.UsbFlash.Ports}" DisplayMemberPath="Label"
+                                      SelectedItem="{x:Bind Vm.UsbFlash.SelectedPort, Mode=TwoWay}"
+                                      IsEnabled="{x:Bind Vm.UsbFlash.IsBusy, Mode=OneWay, Converter={StaticResource InvertBool}}" />
+                            <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" Spacing="8"
+                                        VerticalAlignment="Bottom">
+                                <Button Command="{x:Bind Vm.UsbFlash.RefreshPortsCommand}"
+                                        ToolTipService.ToolTip="刷新串口" AutomationProperties.Name="刷新串口">
+                                    <FontIcon Glyph="&#xE72C;" FontSize="16" />
+                                </Button>
+                                <Button Content="安装" Style="{StaticResource AccentButtonStyle}"
+                                        AutomationProperties.AutomationId="UsbFlashInstallButton"
+                                        Command="{x:Bind Vm.UsbFlash.InstallCommand}" />
+                            </StackPanel>
+
+                            <ProgressBar Grid.Row="2" Grid.ColumnSpan="3" Minimum="0" Maximum="100"
+                                         Value="{x:Bind Vm.UsbFlash.ProgressValue, Mode=OneWay}"
+                                         Visibility="{x:Bind Vm.UsbFlash.ProgressVisibility, Mode=OneWay}" />
+                            <TextBlock Grid.Row="3" Grid.ColumnSpan="3" Style="{StaticResource SecondaryTextStyle}"
+                                       Text="{x:Bind Vm.UsbFlash.Status, Mode=OneWay}" />
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel x:Name="AppPanel" Spacing="4" Visibility="Collapsed">
+                    <TextBlock Text="应用" Style="{StaticResource GroupHeaderTextStyle}" Margin="1,8,0,4" />
+                    <controls:SettingCard Glyph="&#xE7B5;" Header="开机自启"
+                                          Description="以计划任务在登录时静默启动(最高权限,不弹 UAC)。">
+                        <controls:SettingCard.Slot>
+                            <ToggleSwitch IsOn="{x:Bind Vm.AutostartEnabled, Mode=TwoWay}" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+
+                    <InfoBar IsOpen="{x:Bind Vm.HasAutostartError, Mode=OneWay}"
+                             Severity="Error" IsClosable="False"
+                             Title="开机自启设置失败"
+                             Message="{x:Bind Vm.AutostartError, Mode=OneWay}" />
+
+                    <controls:SettingCard Glyph="&#xE756;" Header="关闭按钮行为"
+                                          Description="开启后点关闭最小化到托盘,后台继续按计划运行。">
+                        <controls:SettingCard.Slot>
+                            <ToggleSwitch IsOn="{x:Bind Vm.CloseToTray, Mode=TwoWay}" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+
+                    <controls:SettingCard Glyph="&#xE771;" Header="主题"
+                                          Description="深色 / 浅色 / 跟随系统。">
+                        <controls:SettingCard.Slot>
+                            <ComboBox SelectedIndex="{x:Bind Vm.ThemeIndex, Mode=TwoWay}" MinWidth="150">
+                                <ComboBoxItem Content="跟随系统" />
+                                <ComboBoxItem Content="浅色" />
+                                <ComboBoxItem Content="深色" />
+                            </ComboBox>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <!-- 开发者 -->
+                    <controls:SettingCard Glyph="&#xEC7A;" Header="开发者模式"
+                                          Description="显示总览页的「单步调试」工具(分段执行、画面诊断、扫描配方目录)。">
+                        <controls:SettingCard.Slot>
+                            <ToggleSwitch IsOn="{x:Bind Vm.DeveloperMode, Mode=TwoWay}" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <!-- 关于 -->
+                    <Border Style="{StaticResource CardBorderStyle}" Margin="0,20,0,0">
+                        <StackPanel Spacing="6">
+                            <!-- 标题/版本在左,检查更新按钮在最右;更新过程与结论走下方 InfoBar。 -->
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="关于" Style="{StaticResource CardTitleTextStyle}" />
+                                    <TextBlock Style="{StaticResource SecondaryTextStyle}">
+                                        <Run Text="三角洲特勤助手" />
+                                        <Run Text="{x:Bind Vm.VersionText}" />
+                                    </TextBlock>
+                                    <TextBlock Text="通过画面识别与模拟操作自动收取并续造特勤处物资。请在游戏设置中使用 16:9 无边框窗口,并以管理员身份运行本程序。"
+                                               Style="{StaticResource SecondaryTextStyle}" />
+                                </StackPanel>
+                                <Button Grid.Column="1" VerticalAlignment="Top"
+                                        Command="{x:Bind Vm.CheckUpdateCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <ProgressRing Width="16" Height="16"
+                                                      IsActive="{x:Bind Vm.IsCheckingUpdate, Mode=OneWay}"
+                                                      Visibility="{x:Bind Vm.CheckingRingVisibility, Mode=OneWay}" />
+                                        <TextBlock Text="检查更新" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                            <InfoBar IsOpen="{x:Bind Vm.HasUpdateStatus, Mode=OneWay}"
+                                     Severity="{x:Bind Vm.UpdateSeverity, Mode=OneWay}" IsClosable="False"
+                                     Message="{x:Bind Vm.UpdateStatus, Mode=OneWay}" />
+                            <HyperlinkButton Content="打开数据与配置文件夹"
+                                             Command="{x:Bind Vm.OpenDataFolderCommand}"
+                                             Padding="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
 
             </StackPanel>
         </Grid>

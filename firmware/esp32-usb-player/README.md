@@ -1,0 +1,425 @@
+# DeltaHarp USB MIDI Player
+
+已完成的硬件实测与尚未验证项见 [本次验证记录](VERIFIED.md)。
+日常使用：网页上传 MIDI 到 SD 卡并收藏 → 屏幕选择收藏曲目并播放，无需电脑软件或手动弹出。
+USB 板已支持 HTTP 固件更新；屏幕固件在原有 T-Display 项目中新增口琴播放器菜单。
+屏幕 v30 的「全局设置 → 系统更新 → Harp 播放器更新」可检查 Windows App 内附的播放器固件并安装。
+
+ESP32-S3 Dongle reads MIDI from its onboard SD card and outputs USB keyboard and
+mouse reports using the HarpAutoPlayer note mapping. The computer does not parse
+or schedule the MIDI. The existing DeltaCrafter T-Display-S3 firmware controls it
+over Wi-Fi from Tools > Harp Player.
+
+## Hardware
+
+Verified against `ESP32-S3-Dongle.pdf`, board v1.0g, ESP32-S3FN8, 8 MB flash,
+no PSRAM. Connect the native USB plug to the target computer.
+
+| SD signal | GPIO |
+| --- | --- |
+| CLK | 36 |
+| CMD / SPI MOSI | 35 |
+| D0 / SPI MISO | 37 |
+| D1 | 38 |
+| D2 | 33 |
+| D3 / SPI CS | 34 |
+
+Default: SDMMC 1-bit using GPIO 36/35/37. Do not apply these pins to unrelated
+S3 boards, especially versions with octal PSRAM. The SD library supports exFAT
+and FAT32, UTF-8 names, subdirectories up to three levels, and 564 songs maximum.
+
+## Upload and play
+
+1. Plug in the Dongle and log in to its web page. Upload MIDI directly to the
+   SD card and star songs; the display lists only these favorites.
+2. From v11 USB reader mode is read-only by default. Web upload/delete acquires
+   exclusive SD ownership, temporarily disconnects USB, writes and syncs, then
+   reconnects the reader. No desktop software or manual eject is required in
+   this default mode. Uploads require playback to be stopped.
+3. To copy files using Explorer, choose **临时允许电脑写入** in web Settings.
+   Browsing and playback remain available. Afterwards safely eject the SD disk
+   on that computer; the next web upload automatically restores read-only USB.
+   **恢复自动读写切换** also reconnects an ejected card in read-only mode.
+4. The default three-second countdown gives time to focus the game's instrument.
+   Pause releases all keys and mouse buttons. Resume restores the held note.
+
+The firmware cannot flush a computer's unsubmitted filesystem cache. A sector
+mutex or two-second idle period does not make two FAT/exFAT writers safe. Device
+writes are therefore rejected while a writable host mount is active, even when
+idle. Only read-only host mounts or an OS eject permit the automatic device write
+lease. Upload cancellation, errors and the 30-second timeout release the lease.
+USB write protection is advertised via the MSC callback and enforced again in
+the sector callback. Reconnecting USB invalidates the host's old directory view.
+Song scans and MIDI loading still use a fresh read-only block view after two
+seconds without USB writes. Queued or completed writes invalidate the entire
+read and the player retries, retaining its old song list on transient failures.
+MIDI events are fully parsed into memory before playback, so later SD writes do
+not affect the current song. New copies are visible only after the host submits
+its cached writes; FAT/exFAT cannot expose the host's uncommitted file cache.
+Each read window has a ten-second deadline. Player writes are blocked at the
+block-device interface even if the filesystem library attempts a cache sync.
+
+From v3 the firmware begin API prepares media on the S3 itself: after a two-second
+device-I/O quiet period it synchronizes the card and withdraws USB MSC media.
+No Windows disk operation is used. From v11 a temporary writable USB mount must
+be safely ejected before OTA too. Wi-Fi provisioning still requires OS eject.
+
+## Built-in web page (v13)
+
+Visit `http://<player-ip>/` (or `http://delta-harp.local/` where mDNS is supported).
+Log in with the device's web password; no BOOT action or device API key is needed.
+Provision or reset this separate password with `python3 control.py web-password`
+using the saved device credential. The password prompt does not echo or put it in
+command-line arguments. The firmware stores only a random salt and PBKDF2-SHA256
+verifier in NVS; no shared password is embedded in public firmware or page assets.
+The browser remembers its credential in local storage. The device persists up to
+eight credential hashes, so reopening the browser, device reboot and OTA do not
+require logging in again. Logout revokes that credential; password changes revoke
+all browser credentials. The browser never saves the password itself. When more
+than eight browsers log in, the oldest credential is replaced.
+Five failed logins temporarily block attempts for 30 seconds. Windows and the
+display retain their existing independent device pairing for control and OTA.
+In web Settings, Open device pairing starts the same 60-second discovery pairing
+window without touching BOOT. The button shows remaining time and can close the
+window early. Only an authenticated browser or device can open it.
+Mobile layout fixes page scale and uses 16-pixel text inputs to prevent focus zoom.
+All assets are embedded in flash and work offline; the page does not load a CDN.
+
+From v12, the music-note button beside each song opens browser preview. Sound is
+synthesized locally on the phone/computer with Web Audio; preview never submits
+game playback commands. It supports pause/resume, stop, seeking and volume.
+The preview selects the same automatic melody track/channel and highest held
+pitch as Harp, including tempo changes and sustain. It uses the current speed,
+transpose and saved start time without changing device preferences or favorites.
+From v13 the preview uses a synthesized harmonica voice: free-reed harmonics,
+soft breath attack/release and subtle sustained-note vibrato, embedded offline.
+This is a synthesized melody preview, not the game's instrument sound; it plays
+once and retains internal rests regardless of the game's loop/skip-rest settings.
+It validates each declared MIDI track and tolerates padding left after a complete
+track set, which matches the ESP32 player parser used for older library files.
+Stop any active or paused game performance before loading a preview. Reading MIDI
+is authenticated and read-only, and leaves the USB card reader connected. Closing
+the preview or leaving the page stops browser sound. Audio starts only after a tap.
+
+The full library supports search and star/unstar. Up to 64 favorites persist in
+player NVS across reboot and OTA; the screen fetches only `/api/v1/favorites`.
+From v11, Upload MIDI writes multiple `.mid`, `.midi` or `.kar` files directly to
+SD `/@web/`, up to 512 KiB each and 64 uploaded songs. Uploads do not consume the
+ESP32 internal data partition. The page reports SD space after the first write.
+Uploaded songs retain their `/@web/` paths and work from existing S3 favorites.
+On the first v11 boot, old v10 internal songs are copied to SD, synced and compared
+byte for byte before removing flash originals. A collision with different content
+or failed write preserves the old file and reports `migrationError`; nothing is
+silently overwritten or formatted. This migration runs before USB starts.
+Stop playback before uploading or deleting. Transfers use 3 KiB chunks and a
+hidden SD temporary file, with parser validation before rename. Duplicate names
+are rejected. Cancellation, timeout and next boot remove incomplete uploads.
+Deleting from the web is restricted to the `/@web/` upload directory.
+Playback controls include play/pause/resume/stop. Settings save speed (50–200%),
+transpose (-24–24), countdown (0–30 seconds) and repeat.
+From v9, automatic long-rest skipping is enabled by default. A silent interval
+longer than three seconds in the selected melody track/channel is shortened to
+0.5 seconds. Settings can disable it or change the threshold to 2–60 seconds.
+Both threshold and retained rest use original MIDI time, so playback speed scales
+them normally. Held notes, overlapping chords and sustain pedal are observed;
+spacing between note-ons alone is never considered silence. Short rests and the
+trailing end of the file are preserved. The existing leading-silence trim is unchanged.
+These preferences persist on the player and apply to web and S3 playback without
+adding screen menu items. The player bar shows accumulated skipped time. Its
+timeline still uses original song coordinates and jumps forward at each skip;
+saved start time, manual seeking and looping retain their original positions.
+The player bar accepts a start time in seconds or `mm:ss`, a draggable timeline,
+and ten-second backward/forward jumps. Seek preserves pause and rebuilds held
+notes and sustain at the selected position; repeat returns to the selected start.
+Editing the start time saves it automatically on the player. It is a shared default
+for every new song started from the web or S3 and survives reboot and OTA. If the
+saved start exceeds a song's duration, playback reports an error rather than
+silently changing the chosen start. The progress slider only seeks the current
+song and does not overwrite this saved starting position.
+`POST /api/v1/play` accepts `startMs` (0–3600000); `POST /api/v1/seek` accepts
+`positionMs` within the loaded duration. Invalid or unloaded seeks are rejected.
+`GET/POST /api/v1/preferences` includes `startMs`; omitting it preserves the saved
+value. Omitting `startMs` from `/play` uses that value (including S3 requests).
+The USB action stops
+playback and reconnects the reader if it was ejected. Web controls never play a
+song automatically on page load. Screen pages remain awake while controlling music.
+
+Additional authenticated API routes: `GET/POST /api/v1/preferences`,
+`GET /api/v1/favorites?offset=0`, and `POST /api/v1/favorites` with
+`{"file":"/song.mid","favorite":true}`. Favorite pages contain up to 32 rows;
+an empty favorites list stays empty and never falls back to the complete library.
+`POST /api/v1/web/login` accepts a password and returns a limited browser session;
+`POST /api/v1/web/logout` revokes it. Browser sessions can control playback and
+favorites and open/close pairing with `POST /api/v1/web/pairing` (`enabled`), but
+cannot directly install firmware or change the password. The device-key-only
+`POST /api/v1/web/password` sets the separate password. The old web-pair route is removed.
+
+## Pairing and control
+
+Player v3 supports UDP broadcast discovery on port **40110**. No USB serial pairing
+or manual copying of player addresses/API keys is required in normal use.
+
+1. Keep the player, Windows client and screen on the same reachable 2.4 GHz LAN.
+   Wi-Fi provisioning is separate from pairing; the existing player already has
+   its Wi-Fi settings in NVS. Broadcast cannot cross isolated guest networks/VLANs.
+2. Windows: Settings > T-Display-S3 > Harp player > Scan, select a device, Connect.
+3. Screen v30: Global settings > Scan / Connect player, select a device.
+4. First network pairing opens a 60-second window on boot. Otherwise log in to
+   web Settings and choose Open device pairing, then scan again and connect.
+   Holding the player's BOOT button for one second remains an alternative.
+   Windows and the screen can both pair within that window. Do not hold BOOT during reset.
+5. Pairing is saved by stable device ID. Later scans recover changed DHCP addresses;
+   the desktop resolves the selected ID again before checking/installing firmware.
+
+Discovery responds to a random nonce with public ID/name/version and a short-lived
+pairing challenge. It never broadcasts the API key. While the physical pairing
+window is open, `POST /api/v1/pair` exchanges the ID/challenge for a key over the
+trusted LAN. Existing controllers reuse their saved key outside the window.
+HTTP is local plaintext; the pairing window grants local network peers access.
+
+Player firmware v2 can first be updated to v3 using existing saved credentials.
+USB serial commands remain optional maintenance tools for Wi-Fi provisioning and
+recovery. They are not part of the normal pairing flow. The generated private
+player AP and its credentials are retained; LAN broadcast discovery assumes that
+both devices have already joined the same network.
+
+CLI network pairing: `python3 control.py discover`, then
+`python3 control.py pair-network <deviceId>` while the pairing window is open.
+Credentials are saved in ignored `player.local.json`, never printed.
+
+CLI commands use Wi-Fi by default. Adding `--port` uses USB serial instead,
+which is also useful for a computer without a working Wi-Fi adapter:
+
+```sh
+python3 control.py status
+python3 control.py refresh
+python3 control.py songs
+python3 control.py play /song.mid --speed 100 --countdown 3
+python3 control.py pause
+python3 control.py resume
+python3 control.py stop
+python3 control.py settings --speed 125 --loop
+python3 control.py usb
+python3 control.py --port /dev/cu.PLAYER play /song.mid --dry-run --countdown 0
+python3 control.py make-demo /path/to/SD/DeltaHarp-Test.mid
+```
+
+`--dry-run` executes parsing, scheduling and mapping without pressing keys;
+status exposes `emittedNotes`. Accepted commands run asynchronously: poll status
+for `busy`, `state` and `error`. A normal play request always restores HID output.
+Web preferences persist across songs and reboot; per-play overrides and dry-run do not.
+
+## HTTP API
+
+Control routes require `Authorization: Bearer <apiKey-or-web-session>`; only the
+web page, password login and physical-window pairing entry are public. Firmware
+and password management require the device key. This is a local HTTP API;
+use a trusted LAN or the WPA2-protected player AP.
+
+| Method | Path | Body / result |
+| --- | --- | --- |
+| GET | `/api/v1/status` | State, error, timing, selected track/channel, SD owner |
+| GET | `/api/v1/songs?offset=0` | 32 songs per page; total and absolute SD paths |
+| GET | `/api/v1/preview/midi?file=<encoded-path>` | Authenticated read-only MIDI download, known library entries only, up to 512 KiB; 409 during active/paused/queued playback |
+| POST | `/api/v1/library/refresh` | Scan a read-only song view, including while USB is mounted |
+| POST | `/api/v1/play` | `{"file":"/song.mid","countdown":3}` |
+| POST | `/api/v1/seek` | `{"positionMs":10000}`; preserves pause |
+| POST | `/api/v1/pause` | Release HID, retain position |
+| POST | `/api/v1/resume` | Restore the current note and continue |
+| POST | `/api/v1/stop` | Release HID and cancel queued playback |
+| POST | `/api/v1/settings` | Optional `speed`, `transpose`, `loop`, `skipSilence`, `silenceThresholdMs` (current playback only) |
+| POST | `/api/v1/storage/usb` | Stop and export SD to the computer |
+| GET | `/api/v1/uploads` | Internal songs, available/used bytes and limits |
+| POST | `/api/v1/uploads/begin` | `name`, `size`; returns `uploadId`, `chunkBytes` |
+| POST | `/api/v1/uploads/chunk` | `uploadId`, sequential `offset`, Base64 `data` |
+| POST | `/api/v1/uploads/finish` | `uploadId`; parse and save, returns virtual `file` path |
+| POST | `/api/v1/uploads/abort` | `uploadId`; discard temporary upload |
+| POST | `/api/v1/uploads/remove` | `file`; delete an internal upload only |
+
+
+Play options: `speed` 50..200 percent, `transpose` -24..24 semitones, `loop`
+boolean, `countdown` 0..30 seconds, `track` -1 for automatic or 0..31,
+`channel` -1 for automatic or 0..15, `startMs` 0..3600000 (less than song duration),
+`skipSilence` boolean, `silenceThresholdMs` 2000..60000, and `dryRun` boolean.
+`GET/POST /api/v1/preferences` persists both silence options; omitted values are
+preserved. `/play` inherits saved silence options unless explicitly overridden.
+`/status` reports effective `skipSilence`, `silenceThresholdMs`, and accumulated
+`skippedSilenceMs` (reset on each new play, including repeated skips during looping).
+HTTP 202 means queued,
+not completed. Invalid bodies return 400, missing authentication 401, unavailable
+missing storage / conflicting operations 409, and full command queues 503.
+
+Serial equivalents are newline-delimited JSON. Local USB possession authorizes
+control; serial does not require a key:
+
+```json
+{"command":"info"}
+{"command":"songs","offset":0}
+{"command":"control","action":"refresh"}
+{"command":"control","action":"play","file":"/song.mid","countdown":3}
+{"command":"control","action":"pause"}
+{"command":"control","action":"resume"}
+{"command":"control","action":"stop"}
+{"command":"control","action":"usb"}
+```
+
+Formatting is deliberately a separate local command. After OS eject, obtain
+`cardId` from `info` and send the exact identity:
+
+```json
+{"command":"format-exfat","cardId":"<actual cardId>","confirm":"ERASE_SD_CARD"}
+```
+
+This erases the card. Poll status for completion and return it to USB reader
+mode. Alternatively format the identified removable disk with the OS exFAT tool.
+
+## Firmware update over HTTP
+
+### From the T-Display and Windows App
+
+Use display firmware v29 or later and player firmware v3 or later for discovery. Windows App
+release packages include `Firmware/DeltaHarp-esp32s3-usb.zip`; the app validates
+and loads it on startup. Import replacements under Settings > T-Display-S3 >
+Harp USB online firmware. Scan and connect the player there, then use Check / Install in the desktop app,
+even without a screen connected. The client retrieves and saves pairing automatically.
+
+For screen controls, also enable the desktop device API and Allow device control.
+Pair the screen to the desktop and player separately. Desktop and screen must
+select the same player ID; all devices must be reachable on the LAN. Directly
+connecting only to the player's AP cannot reach the desktop on its original LAN.
+
+On screen v30 open Global settings > System update > Harp player update.
+Windows calls the player begin
+API; **USB S3 prepares its own SD/USB state**. It stops playback, waits for device
+I/O to settle, syncs accepted writes, hides MSC media, and starts OTA. Active SD
+I/O returns `sd_io_busy`; Windows waits and retries only this explicit busy result.
+No Windows eject or USB pairing is involved. This drains only writes already
+received by the S3, not unsubmitted computer caches; finish file copying first.
+The screen submits check/install commands and polls progress.
+**Windows sends the image directly to the player. The screen never relays firmware.**
+The desktop job continues when the screen returns to its menu or disconnects.
+Windows verifies the pinned image, sends chunks, resolves lost acknowledgements,
+commits once and confirms the new partition and version after reboot.
+Same-version reinstall is allowed; downgrades and incompatible targets are refused.
+Closing the desktop app interrupts an unfinished upload. Check again to retry.
+Reboot returns the card to USB reader mode.
+
+Desktop job endpoints use the **desktop** key and require Allow control:
+
+- `POST /api/v1/harp/update/action`: `action` (`check` or `install`), a fresh
+  32-character hex `requestId`; install also requires the last successful `checkId`.
+  Optional `playerId` must match the paired device; legacy `playerUrl` only checks the
+  configured address. Neither can select another target.
+  Returns 202 when accepted, 200 for the same request, or 409 for conflicts.
+- `GET /api/v1/harp/update`: `requestId`, `checkId`, `playerId`, `playerUrl`, `phase`, `current`,
+  `version`, `busy`, `ready`, `percent`, `detail`. No player credentials or image bytes.
+
+The lower-level desktop `/api/v1/harp/firmware` and `/api/v1/harp/firmware-image`
+endpoints remain available for tools. They are not used by the screen update flow.
+The destination endpoints below use the **player's** key. See the
+[Harp project overview](../../docs/Harp项目说明.md) and [verification limits](VERIFIED.md).
+
+### Direct API or command line
+
+From `delta-harp-v2`, the USB player also supports system firmware updates over
+the authenticated API. v3 prepares storage itself; old v2 still requires OS eject
+for its first upgrade to v3. Run:
+
+```sh
+python3 control.py firmware
+python3 control.py update .pio/build/esp32-usb-player/DeltaHarp-esp32s3-usb.zip
+# Or upload just the player application image:
+python3 control.py update .pio/build/esp32-usb-player/firmware.bin
+```
+
+The CLI uploads 4096-byte chunks, verifies the whole-file SHA-256, commits, and
+checks that the device returns on the other application partition. No USB cable
+replug or download mode is needed. Existing v1 players need one USB installation
+of v2 to gain the OTA API.
+
+| Method | Path | JSON body |
+| --- | --- | --- |
+| GET | `/api/v1/firmware` | Version, partition, progress, error, size limit |
+| POST | `/api/v1/firmware/begin` | `board`, `layout`, `size`, `sha256` |
+| POST | `/api/v1/firmware/chunk` | `updateId`, `offset`, `data` (base64, ≤4096 decoded bytes) |
+| POST | `/api/v1/firmware/commit` | `updateId` |
+| POST | `/api/v1/firmware/abort` | `updateId` |
+| POST | `/api/v1/restart` | No body; device key or web session. Stops playback, waits for SD idle and detaches USB media like an update, then restarts (v14+). Also on the web page under 设置 → 设备 |
+
+Begin uses `board="esp32-s3-dongle-fn8"` and `layout="dual-8mb-v1"` and returns
+an `updateId`. Offsets must exactly match `received`; query progress to resolve a
+lost response before retrying. After 30 seconds without an accepted session
+request, the unfinished update is aborted and playback controls become available.
+
+Begin stops playback, releases HID, and blocks playback/storage/configuration
+changes until commit or abort. v3 advertises `autoStoragePrepare=true` and handles
+USB media withdrawal itself after two seconds without device read/write activity.
+A failed update, abort or inactivity timeout re-exposes media if OTA hid it.
+It does not mount or change the host filesystem and cannot flush host-side caches. Data is written only to the inactive app slot.
+Commit checks size, SHA-256, the embedded player/board/layout marker and ESP-IDF's
+image checksum/chip validation before changing the boot partition. Wrong-board,
+truncated or corrupt images never become the selected boot image. An interrupted
+upload leaves the previous application selected; abort does not erase it.
+
+OTA updates the application, preserving NVS pairing/Wi-Fi configuration, bootloader,
+partition table and SD card. Reboot returns to USB reader mode. This build does
+not enable automatic rollback after a valid image boots but later crashes; a
+bad application can require USB recovery. The board marker prevents accidental
+cross-flashing, and is not a cryptographic firmware signature. Only a paired
+controller on the trusted LAN/AP should be given the API key.
+
+## MIDI behavior and limits
+
+Uses the vendored TinyMidiLoader parser with bounded allocation and malformed
+input checks. Supports SMF 0/1 with PPQN timing and tempo changes, up to 32 tracks,
+512 KiB file size, 160 KiB parser allocations and one hour of music. Available
+heap may impose a lower practical limit. SMPTE, format 2 and RIFF/RMI wrappers
+are rejected. Large arrangements should be exported as a single melody track.
+
+Automatic selection chooses one melodic track/channel, excludes MIDI channel 10,
+then chooses the octave covering most notes. Chords reduce to the highest active
+pitch; sustain is honored. Track recommendation is a heuristic and differs from
+the Windows program. The firmware does not implement its multi-track arrangement
+or vocal-contour preprocessing.
+
+| Note class | HID key | Mouse modifier |
+| --- | --- | --- |
+| C D E F G A B | Z X C V B N M | None at base octave |
+| Sharp / flat equivalent | Same natural key | Middle button |
+| One octave below | Same key | Left button |
+| One octave above | Same key | Right button |
+| Top C / C-sharp | Comma | Right, plus middle for sharp |
+
+The selected base covers 38 semitones. Out-of-range pitches produce no key.
+Modifiers precede key-down by 12 ms; notes shorter than that preparation window
+can be skipped. Timing is millisecond-resolution and may jitter under USB load.
+USB disconnect/suspend pauses playback. This reproduces the mapping, not every
+behavior of the original Windows executable. Game acceptance and audible timing
+still require testing on the actual game computer.
+
+## Build and recovery
+
+```sh
+pio run -d firmware/esp32-usb-player
+python3 firmware/esp32-usb-player/tests/run_native.py
+python3 firmware/esp32-usb-player/package.py
+TDISPLAY_S3_DIR=/path/to/T-Display-S3 pio run -d firmware/t-display-s3/audio
+TDISPLAY_S3_DIR=/path/to/T-Display-S3 pio run -d firmware/t-display-s3
+python3 firmware/t-display-s3/tests/run_native.py
+```
+
+Run build commands from the repository root. USB bundle:
+`firmware/esp32-usb-player/.pio/build/esp32-usb-player/DeltaHarp-esp32s3-usb.zip`.
+Display bundle: `firmware/t-display-s3/.pio/build/deltacrafter-monitor/DeltaCrafter-esp32s3.zip`.
+These are different firmware targets; never flash the screen image onto the Dongle.
+
+The USB bundle includes a checksum-verified flash script, source, ELF and exact
+offsets. Install `esptool==4.5.1` and `pyserial==3.5`, put the Dongle into download
+mode (hold BOOT, press RESET, release BOOT), then run `python flash.py --port ...`.
+Press RESET after flashing. For an already-running player, opening its CDC port at
+1200 baud enters the ROM downloader; the serial port name may change. With
+esptool 5, `--after watchdog-reset` starts this FN8 board reliably after writing.
+
+Initial full-flash backup from the connected board is retained locally under
+`backups/68ee8f6d4a44-original.bin`; it is excluded from source and release bundles.
+No firmware operation automatically formats an SD card.

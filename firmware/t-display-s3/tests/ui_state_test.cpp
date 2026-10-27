@@ -46,20 +46,31 @@ int main()
     ui.move(-1);
     assert(ui.home == 5);
     ui.open(ui.homeDestination());
-    assert(ui.page == UiPage::Tools && ui.count() == 5 && !ui.settingsHint());
-    ui.open(UiPage::Tools, 3); // Dedicated audio program, followed by return.
+    assert(ui.page == UiPage::Tools && ui.count() == 6 && !ui.settingsHint());
+    ui.open(UiPage::Tools, 3); // Audio, harp player, then return.
     ui.move(1);
     assert(ui.row == 4);
     ui.move(1);
+    assert(ui.row == 5);
+    ui.move(1);
     assert(ui.row == 0);
+    ui.open(UiPage::Harp, 3); ui.move(1); assert(ui.row == 0 && ui.count() == 4);
+    assert(ui.keepsAwake());
+    ui.toolCount = 16; ui.open(UiPage::HarpDevices,17); ui.move(1); assert(ui.row==0 && ui.count()==18);
+    ui.open(UiPage::HarpFirmware, 2); ui.move(1); assert(ui.row == 0 && ui.count() == 3);
+    ui.toolCount = 0; ui.open(UiPage::HarpSongs); assert(ui.count()==1); ui.move(1); assert(ui.row==0);
+    ui.toolCount = 3; ui.open(UiPage::HarpSongs,2); ui.move(1); assert(ui.row==3); ui.move(1); assert(ui.row==0);
+    ui.toolCount = 64; ui.open(UiPage::HarpSongs,64); ui.move(1); assert(ui.row==0 && ui.count()==65);
+    assert(ui.keepsAwake());
+    ui.open(UiPage::SystemUpdate,2); ui.move(1); assert(ui.row==0 && ui.count()==3);
     ui.open(UiPage::Home);
     ui.move(-1);
     assert(ui.home == 4);
     ui.open(UiPage::Global);
     ui.move(-1);
-    assert(ui.row == 10); // Return option follows auto sleep.
+    assert(ui.row == 11); // Return follows player discovery.
     ui.move(1);
-    assert(ui.row == 0 && ui.count() == 11);
+    assert(ui.row == 0 && ui.count() == 12 && !ui.keepsAwake());
     ui.open(UiPage::AutoSleep, 2);
     assert(ui.count() == 7);
     ui.move(-1); assert(ui.row == 1);

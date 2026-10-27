@@ -11,17 +11,17 @@
     <CornerRadius x:Key="TokenCornerBadge">12</CornerRadius>
 
     <!-- ============ 间距令牌 ============ -->
-    <Thickness x:Key="TokenPagePadding">36,24,36,32</Thickness>
-    <Thickness x:Key="TokenCardPadding">20,16,20,16</Thickness>
+    <Thickness x:Key="TokenPagePadding">28,16,28,24</Thickness>
+    <Thickness x:Key="TokenCardPadding">16,12,16,12</Thickness>
     <x:Double x:Key="TokenGapXS">4</x:Double>
     <x:Double x:Key="TokenGapS">8</x:Double>
     <x:Double x:Key="TokenGapM">12</x:Double>
-    <x:Double x:Key="TokenGapL">20</x:Double>
+    <x:Double x:Key="TokenGapL">16</x:Double>
     <x:Double x:Key="TokenGapXL">28</x:Double>
 
     <!-- ============ 尺寸令牌 ============ -->
-    <x:Double x:Key="TokenContentMaxWidth">1080</x:Double>
-    <x:Double x:Key="TokenOverviewMaxWidth">1360</x:Double>
-    <x:Double x:Key="TokenFacilityCardHeight">224</x:Double>
+    <x:Double x:Key="TokenContentMaxWidth">1200</x:Double>
+    <x:Double x:Key="TokenOverviewMaxWidth">1600</x:Double>
+    <x:Double x:Key="TokenFacilityCardHeight">168</x:Double>
 
 </ResourceDictionary>

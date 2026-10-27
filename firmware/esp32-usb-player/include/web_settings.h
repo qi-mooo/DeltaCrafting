@@ -1,0 +1,19 @@
+#pragma once
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#include <Preferences.h>
+#include <vector>
+#include "playback_silence.h"
+
+struct WebSettings {
+    int speed=100, transpose=0, countdown=3;
+    bool loop=false, skipSilence=true;
+    uint32_t silenceThresholdMs=Harp::SilenceMap::DefaultThresholdMs;
+    uint32_t startMs=0;
+    std::vector<String> favorites;
+    bool contains(const String &path) const;
+    void begin();
+    bool savePlayback(int nextSpeed,int nextTranspose,int nextCountdown,bool nextLoop,uint32_t nextStartMs,
+        bool nextSkipSilence,uint32_t nextSilenceThresholdMs);
+    bool favorite(const String &path,bool selected);
+};

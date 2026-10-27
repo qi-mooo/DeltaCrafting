@@ -157,8 +157,10 @@ public sealed class CraftStartFlow
 
         _probe.ClickFramePoint(hwnd, line.CenterX, line.CenterY);
         var titleArea = ItemTitleOcr.AreaFor(displayName, prodSpec.Roi(AnchorKeys.RoiDetailTitle));
+        await Task.Delay(400, ct); // 等游戏处理鼠标抬起，再移开以消除悬停框。
         if (blkGrade is not null) _probe.MovePointerToRoi(hwnd, titleArea);
-        long deadline = Environment.TickCount64 + 8000;
+        var selectionRetry = new ItemSelectionRetry(Environment.TickCount64);
+        long deadline = Environment.TickCount64 + (blkGrade is not null ? 15_000 : 8_000);
         // 普通物品保留原有标题强匹配。.300 BLK 五级弹额外确认金色行的白色选中框,
         // 因为同名标题无法区分等级。所有确认必须在补齐材料/生产之前完成。
         while (Environment.TickCount64 < deadline)
@@ -170,7 +172,20 @@ public sealed class CraftStartFlow
                 var (frame, readout) = await _probe.ReadAreaFrameAsync(hwnd, listArea, [expectedName]);
                 var selected = BlkAmmoMatcher.Find(frame, readout.Lines, listArea, requireSelected: true, grade: grade);
                 string title = await _probe.ReadFrameRoiAsync(frame, titleArea, expectedName);
+                _log.Debug(".300 BLK 选中确认：目标品质行选中={Selected}，详情标题={Title}", selected is not null, title);
                 if (selected is not null && BlkAmmoIdentity.IsBareName(title)) return;
+                var candidate = BlkAmmoMatcher.Find(frame, readout.Lines, listArea, grade: grade);
+                bool empty = selected is null && candidate is not null && string.IsNullOrEmpty(title)
+                    && await _probe.IsOnFrameAsync(frame, AnchorKeys.ProductionEmpty);
+                if (selectionRetry.TryRetry(Environment.TickCount64, empty, candidate is not null, selected is not null))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    _log.Warning(".300 BLK 首次点击未生效，空图纸区与名称/品质已重新确认，补点一次。");
+                    _probe.ClickFramePoint(hwnd, candidate!.X, candidate.Y);
+                    await Task.Delay(400, ct);
+                    _probe.MovePointerToRoi(hwnd, titleArea);
+                    deadline = Environment.TickCount64 + 15_000;
+                }
             }
             else
             {

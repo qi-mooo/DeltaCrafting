@@ -10,13 +10,15 @@ public sealed class DeviceFirmwareStore
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly string _root;
+    private readonly DeviceFirmwareTarget _target;
     private readonly object _gate = new();
     private DeviceFirmwareManifest? _current;
     public DeviceFirmwareManifest? Current => Volatile.Read(ref _current);
 
-    public DeviceFirmwareStore(string root)
+    public DeviceFirmwareStore(string root, DeviceFirmwareTarget target = DeviceFirmwareTarget.Display)
     {
         _root = root;
+        _target = target;
         Directory.CreateDirectory(root);
         string pointer = Path.Combine(root, "current.json");
         if (File.Exists(pointer))
@@ -72,7 +74,8 @@ public sealed class DeviceFirmwareStore
 
     public Stream? OpenImage(string bundleId, string role)
     {
-        if (!DeviceFirmwareManifest.ValidHash(bundleId) || role is not ("monitor" or "audio")) return null;
+        if (!DeviceFirmwareManifest.ValidHash(bundleId)
+            || (_target == DeviceFirmwareTarget.Harp ? role != "player" : role is not ("monitor" or "audio"))) return null;
         try
         {
             var manifest = ReadManifest(bundleId);
@@ -94,10 +97,15 @@ public sealed class DeviceFirmwareStore
         return Parse(bytes) with { BundleId = id };
     }
 
-    private static DeviceFirmwareManifest Parse(byte[] bytes)
+    private DeviceFirmwareManifest Parse(byte[] bytes)
     {
-        var manifest = JsonSerializer.Deserialize<DeviceFirmwareManifest>(bytes, Json)
+        var manifest = _target == DeviceFirmwareTarget.Harp
+            ? JsonSerializer.Deserialize<HarpFirmwareBundle>(bytes, Json)?.ToDeviceManifest()
+            : JsonSerializer.Deserialize<DeviceFirmwareManifest>(bytes, Json);
+        manifest = manifest
             ?? throw new InvalidDataException("缺少固件清单。");
+        if (_target == DeviceFirmwareTarget.Display && manifest.Board != "lilygo-t-display-s3")
+            throw new InvalidDataException("此处只接受 T-Display 固件包。");
         manifest.Validate();
         return manifest;
     }
@@ -118,6 +126,7 @@ public sealed class DeviceFirmwareStore
     {
         // ESP image header: magic + ESP32-S3 chip ID. IDF performs full image verification on the device.
         if (data.Length != image.Size || data[0] != 0xe9 || data[12] != 9 || data[13] != 0
+            || (image.Role == "player" && data.AsSpan().IndexOf("DeltaHarp:esp32-s3-dongle-fn8:dual-8mb-v1:app"u8) < 0)
             || Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant() != image.Sha256)
             throw new InvalidDataException("固件映像校验失败: " + image.Role);
     }

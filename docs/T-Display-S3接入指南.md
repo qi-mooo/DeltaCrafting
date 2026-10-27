@@ -54,6 +54,14 @@ Windows 串口填写实际的 `COM5` 等端口,macOS 填 `/dev/cu.usbmodemXXXX`�
 
 ## 屏幕与按键
 
+屏幕 v29 提供「工具 → 口琴播放器 → Harp 固件更新」。Windows 发布包同时包含
+`Firmware/DeltaHarp-esp32s3-usb.zip`，启动时准备播放器固件；也可在设置中的
+「Harp USB 在线固件」单独导入。在客户端扫描、选择并连接播放器，可直接检查/安装。
+启用 API 和允许设备控制后，屏幕也可发起检查/安装并查看进度；Windows 直接向 USB 板推送固件。
+屏幕需分别配对 Windows App 和 Harp，两组地址/密钥独立，三者需局域网互通。
+播放器至少需 v3 支持广播扫描；客户端通过 API 让 USB S3 自行等待 SD 空闲、同步设备端写入并撤下媒体。操作与恢复说明见
+[Harp 在线更新](../firmware/t-display-s3/README.md#harp-播放器在线更新)。
+
 | 操作 | 行为 |
 | --- | --- |
 | GPIO 0 单击 | 进入菜单或确认选中设置 |
@@ -100,6 +108,21 @@ USB 充电电压可能偏高,无电池情况不一定能可靠识别。
 ```http
 Authorization: Bearer <配对密钥>
 ```
+
+### Harp 固件分发
+
+`GET /api/v1/harp/firmware` 返回经过校验的播放器清单：板型、分区布局、版本、
+修订号、`bundleId` 和 `images`（单个 `player` 应用）。
+`GET /api/v1/harp/firmware-image?bundle=<bundleId>&role=player` 返回该固定包的二进制镜像。
+两者均需桌面配对密钥和「允许设备控制」；无包返回 404，未授权返回 401/403。
+导入新版后仍保留旧包，进行中的更新不受影响。镜像请求上限 180 秒。
+这些镜像接口保留供工具使用；屏幕更新流程使用下方任务接口，不下载或转发固件。
+
+`POST /api/v1/harp/update/action` 接受 `action=check|install`、32 位十六进制 `requestId`，
+安装另需上次检查成功返回的 `checkId`。可附 `playerId` 核对已配对设备，旧 `playerUrl` 仅核对地址，不能通过请求修改推送目标。
+接受返回 202，重复请求返回 200，忙碌或检查失效返回 409。
+`GET /api/v1/harp/update` 返回版本、目标地址、任务阶段、进度和结果，不包含播放器密钥。
+两者均需配对与允许控制。任务由客户端独立执行，屏幕断开后仍继续。
 
 ### GET /api/v1/status
 

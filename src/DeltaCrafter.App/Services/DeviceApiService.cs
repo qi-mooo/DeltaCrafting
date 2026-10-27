@@ -15,7 +15,11 @@ public sealed class DeviceApiService : IDisposable
     private CancellationTokenSource? _remoteStop;
     private Task? _remoteRun;
     private readonly DeviceFirmwareStore _firmware;
+    private readonly DeviceFirmwareStore _harpFirmware;
+    private readonly HarpFirmwareUpdater _harpUpdater;
+    public HarpUpdateState HarpUpdate => _harpUpdater.State;
     public string FirmwareStatus { get; private set; } = "尚未准备 S3 固件包";
+    public string HarpFirmwareStatus { get; private set; } = "尚未准备 Harp USB 固件包";
 
     public string StatusText => _api.StatusText;
     public event Action? Changed;
@@ -24,6 +28,11 @@ public sealed class DeviceApiService : IDisposable
     {
         _host = host;
         _firmware = new DeviceFirmwareStore(Path.Combine(host.Paths.Root, "firmware"));
+        _harpFirmware = new DeviceFirmwareStore(Path.Combine(host.Paths.Root, "harp-firmware"), DeviceFirmwareTarget.Harp);
+        _harpUpdater = new(_harpFirmware);
+        _harpUpdater.Configure(host.Settings.HarpPlayer);
+        _harpUpdater.Changed += () => _dispatcher.TryEnqueue(() => Changed?.Invoke());
+        if (_harpFirmware.Current is { } harp) HarpFirmwareStatus = "可供更新: " + harp.FirmwareVersion;
         if (_firmware.Current is { } current) FirmwareStatus = "可供更新: " + current.FirmwareVersion;
         _api = new DeviceApiCoordinator(
             ct => OnUiAsync(Snapshot, ct),
@@ -33,10 +42,14 @@ public sealed class DeviceApiService : IDisposable
             {
                 string token = await OnUiAsync(() => _host.Settings.ManufactureApi.Token, ct);
                 return await _host.DataTools.FetchAsync(query, token, ct);
-            }, (code, ct) => OnUiAsync(() => _host.DataTools.CopyGunCode(code), ct), _host.DataTools.ImageAsync, _firmware);
+            }, (code, ct) => OnUiAsync(() => _host.DataTools.CopyGunCode(code), ct), _host.DataTools.ImageAsync, _firmware, _harpFirmware, _harpUpdater);
         _api.Changed += () => _dispatcher.TryEnqueue(() => Changed?.Invoke());
-        string bundle = Path.Combine(AppContext.BaseDirectory, "Firmware", "DeltaCrafter-esp32s3.zip");
+        // 固件随发布包放在启动器旁,不在解压出的版本目录里。
+        string firmwareDir = Path.Combine(AppLocation.LauncherDirectory, "Firmware");
+        string bundle = Path.Combine(firmwareDir, "DeltaCrafter-esp32s3.zip");
         if (File.Exists(bundle)) _ = ImportFirmwareAsync(bundle, onlyNewer: true);
+        string harpBundle = Path.Combine(firmwareDir, "DeltaHarp-esp32s3-usb.zip");
+        if (File.Exists(harpBundle)) _ = ImportHarpFirmwareAsync(harpBundle, onlyNewer: true);
     }
 
     public async Task ImportFirmwareAsync(string path, bool onlyNewer = false)
@@ -56,6 +69,31 @@ public sealed class DeviceApiService : IDisposable
     }
 
     public void Apply() => _api.Apply(_host.Settings.DeviceApi);
+
+    public bool ConfigureHarp(HarpPlayerSettings settings) => _harpUpdater.Configure(settings);
+
+    public string StartHarpUpdate(bool install)
+    {
+        var result = _harpUpdater.Submit(new(install ? "install" : "check", Guid.NewGuid().ToString("N"), HarpUpdate.CheckId));
+        Changed?.Invoke();
+        return result.State.Detail;
+    }
+
+    public async Task ImportHarpFirmwareAsync(string path, bool onlyNewer = false)
+    {
+        try
+        {
+            var manifest = await Task.Run(() => _harpFirmware.Import(path, onlyNewer));
+            HarpFirmwareStatus = "可供更新: " + manifest.FirmwareVersion;
+            _host.Log.Information("Harp USB 在线固件已准备: {Version}", manifest.FirmwareVersion);
+        }
+        catch (Exception ex)
+        {
+            HarpFirmwareStatus = "固件导入失败: " + ex.Message;
+            _host.Log.Warning(ex, "Harp USB 固件导入失败。");
+        }
+        _dispatcher.TryEnqueue(() => Changed?.Invoke());
+    }
 
     private DeviceStatus Snapshot()
     {
@@ -192,5 +230,6 @@ public sealed class DeviceApiService : IDisposable
     {
         _shutdown.Cancel();
         _api.Dispose();
+        _harpUpdater.Dispose();
     }
 }

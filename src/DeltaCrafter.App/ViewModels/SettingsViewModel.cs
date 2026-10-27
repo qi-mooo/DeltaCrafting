@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DeltaCrafter.App.Services;
@@ -46,22 +47,34 @@ public sealed partial class SettingsViewModel : ObservableObject
     public Visibility CheckingRingVisibility =>
         IsCheckingUpdate ? Visibility.Visible : Visibility.Collapsed;
 
+    /// <summary>设备页「USB 安装固件」。</summary>
+    public UsbFlashViewModel UsbFlash { get; }
+
     public SettingsViewModel(AppHost host, ThemeService theme)
     {
         _host = host;
         _theme = theme;
+        UsbFlash = new UsbFlashViewModel(host);
         gamePath = S.GamePath;
         windowRuleText = DescribeRule();
         try
         {
             _autostartEnabled = host.Autostart.IsEnabled();
-            if (_autostartEnabled) host.Autostart.EnsureCurrent(Environment.ProcessPath!);
+            if (_autostartEnabled) host.Autostart.EnsureCurrent(AppLocation.LauncherPath);
         }
         catch (Exception ex) { AutostartError = ex.Message; }
         host.DeviceApi.Changed += () =>
         {
+            _harpActionMessage = "";
             OnPropertyChanged(nameof(DeviceApiStatus));
             OnPropertyChanged(nameof(DeviceFirmwareStatus));
+            OnPropertyChanged(nameof(HarpFirmwareStatus));
+            OnPropertyChanged(nameof(HarpUpdateStatus));
+            OnPropertyChanged(nameof(HarpCanConfigure));
+            CheckHarpUpdateCommand.NotifyCanExecuteChanged();
+            InstallHarpUpdateCommand.NotifyCanExecuteChanged();
+            ScanHarpCommand.NotifyCanExecuteChanged();
+            ConnectHarpCommand.NotifyCanExecuteChanged();
         };
         host.ProfitPlan.Changed += () =>
         {
@@ -107,6 +120,70 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public string DeviceApiStatus => _host.DeviceApi.StatusText;
     public string DeviceFirmwareStatus => _host.DeviceApi.FirmwareStatus;
+    public string HarpFirmwareStatus => _host.DeviceApi.HarpFirmwareStatus;
+    private string _harpActionMessage = "";
+    public string HarpUpdateStatus => _host.DeviceApi.HarpUpdate.Busy
+        ? $"{_host.DeviceApi.HarpUpdate.Detail} · {_host.DeviceApi.HarpUpdate.Percent}%"
+        : string.IsNullOrEmpty(_harpActionMessage) ? _host.DeviceApi.HarpUpdate.Detail : _harpActionMessage;
+    public bool HarpCanConfigure => !_host.DeviceApi.HarpUpdate.Busy;
+    private bool CanInstallHarp => HarpCanConfigure && _host.DeviceApi.HarpUpdate.Ready;
+    public ObservableCollection<HarpDiscoveredDevice> HarpDevices { get; } = new();
+    [ObservableProperty] private HarpDiscoveredDevice? selectedHarpDevice;
+    [ObservableProperty] private string harpDiscoveryStatus = "扫描同一局域网的 Harp 播放器";
+    private bool _harpScanning;
+    private bool CanScanHarp => HarpCanConfigure && !_harpScanning;
+    private bool CanConnectHarp => CanScanHarp && SelectedHarpDevice is not null;
+    partial void OnSelectedHarpDeviceChanged(HarpDiscoveredDevice? value) => ConnectHarpCommand.NotifyCanExecuteChanged();
+    [RelayCommand(CanExecute = nameof(CanScanHarp))]
+    private async Task ScanHarpAsync()
+    {
+        _harpScanning=true; ScanHarpCommand.NotifyCanExecuteChanged(); ConnectHarpCommand.NotifyCanExecuteChanged();
+        HarpDiscoveryStatus="正在广播扫描…";
+        try
+        {
+            var devices=await HarpDiscoveryClient.ScanAsync(CancellationToken.None);
+            HarpDevices.Clear(); foreach(var device in devices) HarpDevices.Add(device);
+            SelectedHarpDevice=devices.FirstOrDefault(d=>d.DeviceId==S.HarpPlayer.DeviceId) ?? devices.FirstOrDefault();
+            HarpDiscoveryStatus=devices.Count==0?"未发现 Harp,请确认已联网且支持广播发现":"选择播放器后连接；首次配对按住播放器 BOOT 一秒";
+        }
+        catch(Exception) { HarpDiscoveryStatus="扫描失败,请检查局域网和防火墙"; }
+        finally { _harpScanning=false; ScanHarpCommand.NotifyCanExecuteChanged(); ConnectHarpCommand.NotifyCanExecuteChanged(); }
+    }
+    [RelayCommand(CanExecute = nameof(CanConnectHarp))]
+    private async Task ConnectHarpAsync()
+    {
+        if(SelectedHarpDevice is not {} device) return;
+        _harpScanning=true; ScanHarpCommand.NotifyCanExecuteChanged(); ConnectHarpCommand.NotifyCanExecuteChanged();
+        try
+        {
+            var settings=!device.Pairable && S.HarpPlayer.DeviceId==device.DeviceId && S.HarpPlayer.IsValid()
+                ? S.HarpPlayer with {Url=device.Url} : await HarpDiscoveryClient.PairAsync(device,CancellationToken.None);
+            if(!_host.DeviceApi.ConfigureHarp(settings)) { HarpDiscoveryStatus="更新进行中,稍后再连接"; return; }
+            S.HarpPlayer=settings; Save(); HarpDiscoveryStatus="已连接 "+device.Label;
+        }
+        catch(Exception ex) { HarpDiscoveryStatus=ex is InvalidOperationException?ex.Message:"连接失败,请重新扫描"; }
+        finally { _harpScanning=false; ScanHarpCommand.NotifyCanExecuteChanged(); ConnectHarpCommand.NotifyCanExecuteChanged(); }
+    }
+    [RelayCommand(CanExecute = nameof(HarpCanConfigure))]
+    private void CheckHarpUpdate()
+    {
+        _harpActionMessage = _host.DeviceApi.StartHarpUpdate(false);
+        OnPropertyChanged(nameof(HarpUpdateStatus));
+    }
+    [RelayCommand(CanExecute = nameof(CanInstallHarp))]
+    private void InstallHarpUpdate()
+    {
+        _harpActionMessage = _host.DeviceApi.StartHarpUpdate(true);
+        OnPropertyChanged(nameof(HarpUpdateStatus));
+    }
+
+    [RelayCommand]
+    private async Task ImportHarpFirmwareAsync()
+    {
+        nint hwnd = App.MainWindowRef is { } w ? WinRT.Interop.WindowNative.GetWindowHandle(w) : 0;
+        string? file = Win32Dialogs.PickFirmwareFile(hwnd);
+        if (file is not null) await _host.DeviceApi.ImportHarpFirmwareAsync(file);
+    }
 
     [RelayCommand]
     private async Task ImportDeviceFirmwareAsync()
@@ -323,7 +400,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             if (_autostartEnabled == value) return;
             try
             {
-                if (value) _host.Autostart.Enable(Environment.ProcessPath!);
+                if (value) _host.Autostart.Enable(AppLocation.LauncherPath);
                 else _host.Autostart.Disable();
                 _autostartEnabled = value;
                 AutostartError = "";

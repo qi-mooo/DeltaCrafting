@@ -68,7 +68,18 @@ DeltaCrafter 用于按照预先设定的计划管理《三角洲行动》国服�
 
 从固件 v16 起，S3「全局设置 → 固件更新」可通过 Wi-Fi 更新四宫格和静音两个程序，显示进度并自动重启。
 Windows 发布包包含对应固件，设置页也支持导入固件 ZIP；旧 S3 首次需要 USB 升级到 v16。
+全新或无法在线更新的 ESP32-S3（屏幕或 Harp 播放器）可在「设置 → 设备 → USB 安装固件」用数据线直接安装：
+选择固件与串口后点「安装」，客户端自动进入下载模式、写入并逐个校验映像，无需 Python 或 esptool；
+连接失败时按住 BOOT 键插入 USB 后再试。只写入固件映像区域，已保存的 Wi-Fi 与配对配置保留。
 详情见 [在线更新与首次安装](firmware/t-display-s3/README.md#wi-fi-在线更新)。
+
+屏幕 v29 的「工具 → 口琴播放器 → Harp 固件更新」可检查并更新独立 USB MIDI 播放器。
+Windows 发布包同时内附 `Firmware/DeltaHarp-esp32s3-usb.zip`，设置页支持导入固件、扫描配对播放器和直接更新。
+客户端调用 API 让 USB S3 自行准备 SD/USB 状态，再直接推送固件，屏幕只发起操作并显示进度。
+播放器 v3 支持局域网广播扫描与网络配对，无需通过 USB 配对。Harp 硬件、原程序解析和 API 见
+[Harp 项目说明](docs/Harp项目说明.md)。
+三者连接同一局域网，开启设备 API 和允许控制后即可使用；详见
+[Harp 更新与配对](firmware/t-display-s3/README.md#harp-播放器在线更新)。
 
 ## 功能特性
 
@@ -107,7 +118,7 @@ Windows 发布包包含对应固件，设置页也支持导入固件 ZIP；旧 S
 
 Release 中的安装包和免安装压缩包均为自包含版本，普通用户无需另外安装 .NET 运行时。
 
-无需安装 Windows 中文 OCR 语言包。请完整解压客户端，保留随包提供的模型和原生 DLL。
+无需安装 Windows 中文 OCR 语言包。`DeltaCrafter.exe` 是自安装启动器，内含完整客户端、OCR 模型和原生 DLL：首次运行或升级后会解压到 `%LocalAppData%\DeltaCrafter\app`（约数百 MB，只解压一次，旧版本自动清理），之后直接启动。请保留与 exe 同目录的 `Firmware` 文件夹。
 
 ## 下载与安装
 

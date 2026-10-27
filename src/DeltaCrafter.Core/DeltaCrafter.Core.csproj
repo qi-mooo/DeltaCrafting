@@ -19,6 +19,8 @@
     <PackageReference Include="Sdcb.PaddleInference.runtime.win64.mkl" Version="3.3.1.70" />
     <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.11.0.20250507" />
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <!-- 首次 USB 刷写 ESP32-S3:串口不在共享框架内,需显式引入(与目标框架同为 8.0)。 -->
+    <PackageReference Include="System.IO.Ports" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>

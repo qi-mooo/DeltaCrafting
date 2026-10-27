@@ -54,7 +54,7 @@ inline void enter(TFT_eSPI &display, DisplayBrightness &brightness)
     rtc_gpio_pullup_en(GPIO_NUM_14);
     rtc_gpio_hold_en(GPIO_NUM_14);
     esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
-    // Configuration/resume state lives in NVS. Disable optional RTC retention
+    // Configuration/UI resume state lives in flash. Disable optional RTC retention
     // where exposed by the SDK; newer S3 SDKs do not expose separate RAM domains.
 #if ESP_IDF_VERSION_MAJOR < 5 || SOC_PM_SUPPORT_RTC_SLOW_MEM_PD
     esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_OFF);

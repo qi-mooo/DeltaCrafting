@@ -5,7 +5,7 @@ using Serilog;
 namespace DeltaCrafter.Core.L2;
 
 /// <summary>
-/// 一轮成功后的游戏处置(仅成功路径调用;失败保留现场):
+/// 一轮成功后的游戏处置，或自动恢复前关闭游戏(失败现场由调用方先保存):
 /// 关闭进程 / 最小化后台 / 返回大厅留在前台(挂机)。
 /// 返回大厅走顶栏「开始游戏」页签点击 + 大厅探针校验,不用 ESC(ESC 在大厅层级行为不确定)。
 /// </summary>
@@ -29,6 +29,7 @@ public sealed class ShutdownFlow
 
     public async Task ApplyAsync(AfterRunAction action, nint hwnd, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         switch (action)
         {
             case AfterRunAction.CloseGame:

@@ -63,7 +63,8 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="{x:Bind TimeText}"
-                                       Style="{StaticResource SecondaryTextStyle}" />
+                                       Style="{StaticResource SecondaryTextStyle}"
+                                       FontFamily="Cascadia Mono, Consolas, Segoe UI" />
                             <TextBlock Grid.Column="1" Text="{x:Bind LevelText}"
                                        Foreground="{x:Bind Level, Converter={StaticResource LogLevelBrush}}" />
                             <TextBlock Grid.Column="2" Text="{x:Bind Message}"
