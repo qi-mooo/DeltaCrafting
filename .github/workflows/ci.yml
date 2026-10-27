@@ -60,9 +60,8 @@ jobs:
           files=$(git diff --name-only "$base" HEAD)
           match() { grep -qE "$1" <<<"$files" && echo true || echo false; }
           firmware=$(match '^(firmware/|\.github/workflows/firmware\.yml$)')
+          # 只看源码本身;改 CI 配置不触发任何一方的重建。
           app=$(match '^(src/|tests/|scripts/|licenses/|Directory\.Build\.props$|DeltaCrafter\.sln$|nuget\.config$|global\.json$|\.editorconfig$|README\.md$|LICENSE$|THIRD-PARTY-NOTICES\.md$)')
-          # CI 自身或全局换行规则改动时两边都验证。
-          if [ "$(match '^(\.github/workflows/ci\.yml|\.gitattributes)$')" = true ]; then firmware=true; app=true; fi
           result "$firmware" "$app" "基准 ${base:0:7},变更文件:
           $files"
 
