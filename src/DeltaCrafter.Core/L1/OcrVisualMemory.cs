@@ -267,31 +267,45 @@ internal sealed record OcrVisualSample(string Key, int FrameWidth, int FrameHeig
         Reading.Lines.All(l => l.Words.Count > 0 && l.CenterX >= ImageArea.X &&
             l.CenterY >= ImageArea.Y && l.CenterX < ImageArea.Right && l.CenterY < ImageArea.Bottom);
 
-    /// <summary>原尺寸逐像素 RGB 比较，不缩略、不用全区平均相似度掩盖单个字的变化。
-    /// ignore 用于 OCR 裁剪边界守卫：区域外出现新字或移动时，必须扩大搜索。</summary>
+    /// <summary>在小范围平移中逐像素比较 RGB，容忍截图抗锯齿和一两像素取整误差，
+    /// 但拒绝明显的新笔画。ignore 用于 OCR 裁剪边界守卫：区域外出现新字或移动时，必须扩大搜索。</summary>
     internal bool Matches(CapturedFrame frame, OcrPixelArea? ignore = null, CancellationToken ct = default)
     {
         if (frame.Width != FrameWidth || frame.Height != FrameHeight) return false;
-        long delta = 0, count = 0;
-        for (int y = 0; y < ImageArea.Height; y++)
+        // 游戏 UI 的词框会因缩放取整和动画产生 1～2 像素漂移。尝试相邻位置，
+        // 否则同一按钮每帧都会被逐像素比较判成不同外观，学习无法复用。
+        for (int dy = -2; dy <= 2; dy++)
+        for (int dx = -2; dx <= 2; dx++)
         {
-            ct.ThrowIfCancellationRequested();
-            for (int x = 0; x < ImageArea.Width; x++)
+            if (ImageArea.X + dx < 0 || ImageArea.Y + dy < 0 ||
+                ImageArea.Right + dx > frame.Width || ImageArea.Bottom + dy > frame.Height)
+                continue;
+            long delta = 0, count = 0;
+            bool hardDifference = false;
+            for (int y = 0; y < ImageArea.Height && !hardDifference; y++)
             {
-                int fx = ImageArea.X + x, fy = ImageArea.Y + y;
-                if (ignore is not null && fx >= ignore.X && fx < ignore.Right && fy >= ignore.Y && fy < ignore.Bottom)
-                    continue;
-                int source = (fy * frame.Width + fx) * 4, saved = (y * ImageArea.Width + x) * 3;
-                for (int c = 0; c < 3; c++)
+                ct.ThrowIfCancellationRequested();
+                for (int x = 0; x < ImageArea.Width; x++)
                 {
-                    int difference = Math.Abs(frame.Bgra[source + c] - Pixels[saved + c]);
-                    if (difference > 6) return false;
-                    delta += difference;
-                    count++;
+                    int fx = ImageArea.X + dx + x, fy = ImageArea.Y + dy + y;
+                    if (ignore is not null && fx >= ignore.X && fx < ignore.Right && fy >= ignore.Y && fy < ignore.Bottom)
+                        continue;
+                    int source = (fy * frame.Width + fx) * 4, saved = (y * ImageArea.Width + x) * 3;
+                    for (int c = 0; c < 3; c++)
+                    {
+                        int difference = Math.Abs(frame.Bgra[source + c] - Pixels[saved + c]);
+                        if (difference >= 96) { hardDifference = true; break; }
+                        delta += difference;
+                        count++;
+                    }
+                    if (hardDifference) break;
                 }
             }
+            // Allow small antialiasing/color drift, while a high contrast changed
+            // stroke (or a broad state change) still forces a real OCR check.
+            if (!hardDifference && count > 0 && delta <= count * 5) return true;
         }
-        return delta <= count; // 平均通道差不超过 1，单点差不超过 6/255。
+        return false;
     }
 
     internal static byte[] Crop(CapturedFrame frame, OcrPixelArea area)

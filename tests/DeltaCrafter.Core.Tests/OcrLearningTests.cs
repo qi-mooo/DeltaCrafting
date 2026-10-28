@@ -133,6 +133,19 @@ public sealed class OcrLearningTests
     }
 
     [Fact]
+    public void Visual_comparison_tolerates_small_position_drift_but_rejects_new_stroke()
+    {
+        var memory = new OcrVisualMemory();
+        memory.Observe("region", Frame(), Area, Reading(), false, .9f);
+        var sample = Assert.Single(memory.Candidates("region"));
+        var shifted = Frame(x: 81, y: 41);
+        Assert.True(sample.Matches(shifted));
+        int changed = (50 * shifted.Width + 90) * 4;
+        shifted.Bgra[changed] = shifted.Bgra[changed] < 128 ? (byte)255 : (byte)0;
+        Assert.False(sample.Matches(shifted));
+    }
+
+    [Fact]
     public void Target_presence_ignores_other_content_but_complete_labels_guard_the_entire_region()
     {
         var memory = new OcrVisualMemory();
