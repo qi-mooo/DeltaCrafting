@@ -281,6 +281,7 @@ internal sealed record OcrVisualSample(string Key, int FrameWidth, int FrameHeig
                 ImageArea.Right + dx > frame.Width || ImageArea.Bottom + dy > frame.Height)
                 continue;
             long delta = 0, count = 0;
+            long[] channelDelta = [0, 0, 0];
             bool hardDifference = false;
             for (int y = 0; y < ImageArea.Height && !hardDifference; y++)
             {
@@ -296,6 +297,7 @@ internal sealed record OcrVisualSample(string Key, int FrameWidth, int FrameHeig
                         int difference = Math.Abs(frame.Bgra[source + c] - Pixels[saved + c]);
                         if (difference >= 80) { hardDifference = true; break; }
                         delta += difference;
+                        channelDelta[c] += difference;
                         count++;
                     }
                     if (hardDifference) break;
@@ -303,7 +305,8 @@ internal sealed record OcrVisualSample(string Key, int FrameWidth, int FrameHeig
             }
             // Allow small antialiasing/color drift, while a high contrast changed
             // stroke (or a broad state change) still forces a real OCR check.
-            if (!hardDifference && count > 0 && delta <= count * 5) return true;
+            if (!hardDifference && count > 0 && delta <= count * 5 &&
+                channelDelta.All(value => value <= count / 3 * 6 + 3)) return true;
         }
         return false;
     }
