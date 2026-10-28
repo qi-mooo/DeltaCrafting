@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using DeltaCrafter.Core.L0;
 using Serilog;
 
@@ -25,6 +26,7 @@ internal sealed class LearnedOcrReader
         CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        var watch = Stopwatch.StartNew();
         string key = OcrVisualMemory.Key(frame, area, upscale, context, target, minimumConfidence);
         var candidates = _memory.Candidates(key);
         var race = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -44,7 +46,8 @@ internal sealed class LearnedOcrReader
                 if (selected is not null)
                     _memory.Observe(key, frame, area, selected, target is not null, minimumConfidence);
             }
-            _log?.Debug("OCR 并行竞速：{Source} 返回 {Context}。", fromOcr ? "OCR" : "区域比对", context);
+            _log?.Debug("OCR 并行竞速：{Source} 返回 {Context}，耗时 {Ms} ms，候选外观 {Count} 个。",
+                fromOcr ? "OCR" : "区域比对", context, watch.ElapsedMilliseconds, candidates.Length);
             return reading;
         }
         finally
@@ -84,8 +87,7 @@ internal sealed class LearnedOcrReader
             {
                 return sample.Reading;
             }
-            // 视觉样本未命中时只记一次失败；OCR 仍会并行完成并可重新学习。
-            _memory.RecordVisualFailure(sample);
+            // 当前页没有这个按钮很正常；由真实 OCR 确认同一文字位置后再判断旧外观是否失效。
         }
         return null;
     }

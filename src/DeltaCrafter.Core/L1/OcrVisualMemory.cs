@@ -7,7 +7,7 @@ using Serilog;
 
 namespace DeltaCrafter.Core.L1;
 
-/// <summary>OCR 区域学习的摘要，供 Windows 总览页显示；不暴露截图像素。</summary>
+/// <summary>OCR 区域学习的摘要；同一文字位置的不同外观合并计数，不暴露截图像素。</summary>
 public sealed record OcrLearningStatus(
     int TotalSamples,
     int ConfirmedSamples,
@@ -84,11 +84,22 @@ internal sealed class OcrVisualMemory
     {
         lock (_sync)
         {
-            var entries = _samples
-                .OrderByDescending(s => s.VerifiedAt)
-                .Select(s => new OcrLearningEntry(s.Reading.FullText, s.Observations,
-                    s.ReuseFailures, s.CanReuse, s.VerifiedAt, s.LearnedArea.X, s.LearnedArea.Y,
-                    s.LearnedArea.Width, s.LearnedArea.Height))
+            var groups = new List<List<OcrVisualSample>>();
+            foreach (var sample in _samples.OrderByDescending(s => s.VerifiedAt))
+            {
+                var group = groups.FirstOrDefault(g => g[0].Key == sample.Key &&
+                    SameReading(g[0].Reading, sample.Reading));
+                if (group is null) groups.Add([sample]);
+                else group.Add(sample);
+            }
+            var entries = groups.Select(g =>
+                {
+                    var latest = g[0];
+                    return new OcrLearningEntry(latest.Reading.FullText, g.Max(s => s.Observations),
+                        latest.ReuseFailures, g.Any(s => s.CanReuse), latest.VerifiedAt,
+                        latest.LearnedArea.X, latest.LearnedArea.Y,
+                        latest.LearnedArea.Width, latest.LearnedArea.Height);
+                })
                 .ToArray();
             return new(entries.Length, entries.Count(e => e.Observations >= 2),
                 entries.Count(e => e.Reusable), entries);
@@ -110,15 +121,36 @@ internal sealed class OcrVisualMemory
 
         lock (_sync)
         {
-            var previous = _samples.LastOrDefault(s => s.Key == key && s.Matches(frame));
-            int observations = 1;
-            if (previous is not null)
+            var related = _samples.Where(s => s.Key == key && SameReading(s.Reading, reading)).ToArray();
+            var matching = _samples.Where(s => s.Key == key && s.Matches(frame)).ToArray();
+            bool contradictory = matching.Any(s => !SameReading(s.Reading, reading));
+            var previous = related.LastOrDefault();
+            bool newFrame = previous is null || previous.LastFrame is null ||
+                !previous.LastFrame.TryGetTarget(out var last) || !ReferenceEquals(last, frame);
+            int observations = contradictory || previous is null ? 1 :
+                Math.Min(2, related.Max(s => s.Observations) + (newFrame ? 1 : 0));
+
+            // 确认次数来自不同帧的真实 OCR，不要求按钮背景、抗锯齿或悬停外观逐像素相同。
+            // 保留少量外观模板共享确认次数；相同截图上的矛盾读数必须重新确认。
+            foreach (var sample in matching) _samples.Remove(sample);
+            foreach (var sample in related.Except(matching))
             {
-                bool same = SameReading(previous.Reading, reading);
-                bool newFrame = previous.LastFrame is null ||
-                    !previous.LastFrame.TryGetTarget(out var last) || !ReferenceEquals(last, frame);
-                observations = same ? Math.Min(2, previous.Observations + (newFrame ? 1 : 0)) : 1;
-                _samples.Remove(previous);
+                int index = _samples.IndexOf(sample);
+                int failures = sample.ReuseFailures;
+                // 只有 OCR 再次确认该文字仍在原位置，且所有已知外观都失配，才记复用失败。
+                // 切换到其他页面、按钮变为另一种状态或 OCR 读不清，都不是模板失效证据。
+                if (newFrame && matching.Length == 0 && sample.CanReuse)
+                {
+                    failures++;
+                    if (failures >= MaximumReuseFailures)
+                    {
+                        _samples.RemoveAt(index);
+                        _log?.Debug("OCR 确认目标仍在原位置，旧外观累计失配 {Count} 次，已撤销：{Text}。",
+                            failures, sample.Reading.FullText);
+                        continue;
+                    }
+                }
+                _samples[index] = sample with { Observations = observations, ReuseFailures = failures };
             }
             _samples.Add(new(key, frame.Width, frame.Height, image, learned, pixels, reading,
                 observations, DateTimeOffset.UtcNow) { LastFrame = new(frame) });
@@ -128,31 +160,6 @@ internal sealed class OcrVisualMemory
                 _samples.RemoveAt(0);
             _log?.Debug("OCR 学习：文字={Text}; 区域=({X},{Y},{W},{H}); 确认={Count}/2",
                 reading.FullText, learned.X, learned.Y, learned.Width, learned.Height, observations);
-            PersistLocked();
-        }
-    }
-
-    /// <summary>记录一次视觉复用未命中。允许一次暂时性变化，第二次才撤销样本。</summary>
-    internal void RecordVisualFailure(OcrVisualSample sample)
-    {
-        lock (_sync)
-        {
-            int index = _samples.FindIndex(s => ReferenceEquals(s, sample));
-            if (index < 0) return;
-            var current = _samples[index];
-            int failures = current.ReuseFailures + 1;
-            if (failures >= MaximumReuseFailures)
-            {
-                _samples.RemoveAt(index);
-                _log?.Debug("OCR 快速复用样本连续失败 {Count} 次，已撤销：{Text}。",
-                    failures, current.Reading.FullText);
-            }
-            else
-            {
-                _samples[index] = current with { ReuseFailures = failures };
-                _log?.Debug("OCR 快速复用样本未命中 {Count}/{Max} 次，保留并回退 OCR：{Text}。",
-                    failures, MaximumReuseFailures, current.Reading.FullText);
-            }
             PersistLocked();
         }
     }
@@ -182,8 +189,11 @@ internal sealed class OcrVisualMemory
     private static bool SameReading(OcrReadout first, OcrReadout second) =>
         first.FullText == second.FullText && first.Lines.Count == second.Lines.Count &&
         first.Lines.Zip(second.Lines).All(p => p.First.Text == p.Second.Text &&
-            Math.Abs(p.First.CenterX - p.Second.CenterX) <= 2 &&
-            Math.Abs(p.First.CenterY - p.Second.CenterY) <= 2);
+            Math.Abs(p.First.CenterX - p.Second.CenterX) <= PositionTolerance(p.First, p.Second) &&
+            Math.Abs(p.First.CenterY - p.Second.CenterY) <= PositionTolerance(p.First, p.Second));
+
+    private static double PositionTolerance(OcrLine first, OcrLine second) =>
+        Math.Clamp(Math.Min(first.Words.Max(w => w.Height), second.Words.Max(w => w.Height)) * .25, 2, 6);
 
     private static bool HasDetail(byte[] pixels)
     {

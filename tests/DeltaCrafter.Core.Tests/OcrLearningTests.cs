@@ -158,7 +158,7 @@ public sealed class OcrLearningTests
     }
 
     [Fact]
-    public void Samples_remain_reusable_for_seven_days_and_two_visual_failures_revoke_them()
+    public void Samples_remain_reusable_for_seven_days_and_two_verified_misses_retire_old_appearance()
     {
         var memory = new OcrVisualMemory();
         memory.Observe("target", Frame(), Area, Reading(), true, .9f);
@@ -167,10 +167,13 @@ public sealed class OcrLearningTests
         Assert.True(sample.CanReuse);
         Assert.True((sample with { VerifiedAt = DateTimeOffset.UtcNow.AddDays(-6) }).CanReuse);
         Assert.False((sample with { VerifiedAt = DateTimeOffset.UtcNow.AddDays(-8) }).CanReuse);
-        memory.RecordVisualFailure(sample);
-        Assert.Single(memory.Candidates("target"));
-        memory.RecordVisualFailure(Assert.Single(memory.Candidates("target")));
-        Assert.Empty(memory.Candidates("target"));
+        memory.Observe("target", TintedFrame(10), Area, Reading(), true, .9f);
+        var retained = Assert.Single(memory.Candidates("target"), s => ReferenceEquals(s.Pixels, sample.Pixels));
+        Assert.Equal(1, retained.ReuseFailures);
+        Assert.True(retained.CanReuse);
+        memory.Observe("target", TintedFrame(20), Area, Reading(), true, .9f);
+        Assert.DoesNotContain(memory.Candidates("target"), s => ReferenceEquals(s.Pixels, sample.Pixels));
+        Assert.Equal(1, memory.Snapshot().ReusableSamples);
     }
 
     [Fact]
@@ -193,8 +196,11 @@ public sealed class OcrLearningTests
             string key = OcrVisualMemory.Key(Frame(), Area, 2, "probe", "生产", .9f);
             memory.Observe(key, Frame(), Area, Reading(), true, .9f);
             memory.Observe(key, Frame(), Area, Reading(), true, .9f);
-            memory.RecordVisualFailure(Assert.Single(memory.Candidates(key)));
-            Assert.Equal(1, Assert.Single(new OcrVisualMemory(path).Candidates(key)).ReuseFailures);
+            memory.Observe(key, TintedFrame(10), Area, Reading(), true, .9f);
+            var restored = new OcrVisualMemory(path);
+            Assert.Single(restored.Candidates(key), s => s.ReuseFailures == 1);
+            Assert.Equal(1, restored.Snapshot().TotalSamples);
+            Assert.Equal(1, restored.Snapshot().ReusableSamples);
         }
         finally { Directory.Delete(Path.GetDirectoryName(path)!, true); }
     }
@@ -337,6 +343,87 @@ public sealed class OcrLearningTests
         Assert.Empty(memory.Candidates("button"));
         Assert.Empty(memory.Candidates("probe0"));
         Assert.Single(memory.Candidates("probe99"));
+    }
+
+    [Fact]
+    public void Confirmation_accumulates_across_appearance_changes_and_small_ocr_box_jitter()
+    {
+        var memory = new OcrVisualMemory();
+        memory.Observe("target", Frame(), Area, Reading(), true, .9f);
+        memory.Observe("target", TintedFrame(20), Area, Reading(x: 83, y: 42), true, .9f);
+
+        Assert.Equal(2, memory.Candidates("target").Length);
+        Assert.All(memory.Candidates("target"), s => Assert.True(s.CanReuse));
+        var status = memory.Snapshot();
+        Assert.Equal(1, status.TotalSamples);
+        Assert.Equal(1, status.ConfirmedSamples);
+        Assert.Equal(1, status.ReusableSamples);
+        Assert.Equal(new OcrPixelArea(71, 30, 64, 44), memory.Candidates("target")[0].LearnedArea);
+    }
+
+    [Fact]
+    public void Same_frame_with_changed_pixels_does_not_confirm_learning()
+    {
+        var memory = new OcrVisualMemory();
+        var frame = Frame();
+        memory.Observe("target", frame, Area, Reading(), true, .9f);
+        frame.Bgra[(50 * frame.Width + 90) * 4] ^= 128;
+        memory.Observe("target", frame, Area, Reading(), true, .9f);
+        Assert.Equal(1, memory.Snapshot().TotalSamples);
+        Assert.Equal(0, memory.Snapshot().ConfirmedSamples);
+    }
+
+    [Fact]
+    public void Nearby_distinct_locations_do_not_share_confirmation()
+    {
+        var memory = new OcrVisualMemory();
+        memory.Observe("target", Frame(), Area, Reading(), true, .9f);
+        memory.Observe("target", Frame(x: 110), Area, Reading(x: 110), true, .9f);
+        Assert.Equal(2, memory.Snapshot().TotalSamples);
+        Assert.Equal(0, memory.Snapshot().ConfirmedSamples);
+    }
+
+    [Fact]
+    public void Contradictory_ocr_for_identical_pixels_requires_confirmation_again()
+    {
+        var memory = new OcrVisualMemory();
+        memory.Observe("target", Frame(), Area, Reading(), false, .9f);
+        memory.Observe("target", Frame(), Area, Reading(), false, .9f);
+        Assert.Equal(1, memory.Snapshot().ReusableSamples);
+        memory.Observe("target", Frame(), Area, Reading("中止"), false, .9f);
+        Assert.Equal("中止", Assert.Single(memory.Snapshot().Entries).Text);
+        Assert.Equal(0, memory.Snapshot().ReusableSamples);
+    }
+
+    [Fact]
+    public async Task Looking_for_a_button_on_other_screens_does_not_forget_it()
+    {
+        OcrReadout next = Reading();
+        bool blockOcr = false;
+        var pending = new TaskCompletionSource<OcrReadout>();
+        var reader = new LearnedOcrReader((_, _, _, ct) =>
+            blockOcr ? pending.Task.WaitAsync(ct) : Task.FromResult(next));
+        await reader.ReadAsync(Frame(), Area, 2, "probe", target: "生产");
+        await reader.ReadAsync(Frame(), Area, 2, "probe", target: "生产");
+        next = Empty;
+        for (int i = 0; i < 4; i++)
+            Assert.Empty((await reader.ReadAsync(Frame(blank: true), Area, 2, "probe", target: "生产")).Lines);
+        Assert.Equal(1, reader.LearningStatus.ReusableSamples);
+        Assert.Equal(0, Assert.Single(reader.LearningStatus.Entries).ReuseFailures);
+
+        blockOcr = true;
+        var reused = await reader.ReadAsync(Frame(), Area, 2, "probe", target: "生产")
+            .WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("生产", reused.FullText);
+        pending.TrySetResult(Empty);
+    }
+
+    private static CapturedFrame TintedFrame(byte offset)
+    {
+        var frame = Frame();
+        for (int p = 0; p < frame.Bgra.Length; p += 4)
+            for (int channel = 0; channel < 3; channel++) frame.Bgra[p + channel] += offset;
+        return frame;
     }
 
     private static OcrReadout Reading(string text = "生产", float confidence = .97f,
