@@ -136,7 +136,7 @@ public sealed class OcrLearningTests
     public void Visual_comparison_tolerates_small_position_drift_but_rejects_new_stroke()
     {
         var memory = new OcrVisualMemory();
-        memory.Observe("region", Frame(), Area, Reading(), false, .9f);
+        memory.Observe("region", Frame(), Area, Reading(), true, .9f);
         var sample = Assert.Single(memory.Candidates("region"));
         var shifted = Frame(x: 81, y: 41);
         Assert.True(sample.Matches(shifted));

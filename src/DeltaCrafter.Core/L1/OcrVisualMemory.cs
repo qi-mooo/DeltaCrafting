@@ -294,7 +294,7 @@ internal sealed record OcrVisualSample(string Key, int FrameWidth, int FrameHeig
                     for (int c = 0; c < 3; c++)
                     {
                         int difference = Math.Abs(frame.Bgra[source + c] - Pixels[saved + c]);
-                        if (difference >= 96) { hardDifference = true; break; }
+                        if (difference >= 80) { hardDifference = true; break; }
                         delta += difference;
                         count++;
                     }
