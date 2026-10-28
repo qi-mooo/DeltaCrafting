@@ -272,10 +272,12 @@ internal sealed record OcrVisualSample(string Key, int FrameWidth, int FrameHeig
     internal bool Matches(CapturedFrame frame, OcrPixelArea? ignore = null, CancellationToken ct = default)
     {
         if (frame.Width != FrameWidth || frame.Height != FrameHeight) return false;
-        // 游戏 UI 的词框会因缩放取整和动画产生 1～2 像素漂移。尝试相邻位置，
-        // 否则同一按钮每帧都会被逐像素比较判成不同外观，学习无法复用。
-        for (int dy = -2; dy <= 2; dy++)
-        for (int dx = -2; dx <= 2; dx++)
+        // 游戏 UI 的词框会因缩放取整和动画产生小幅漂移。目标文字样本只保存
+        // 词框附近的像素，可以安全地扩大搜索范围；完整区域样本仍只容忍 2px，
+        // 防止相邻内容被当成同一画面。
+        int maxDrift = ImageArea == LearnedArea ? 16 : 2;
+        for (int dy = -maxDrift; dy <= maxDrift; dy++)
+        for (int dx = -maxDrift; dx <= maxDrift; dx++)
         {
             if (ImageArea.X + dx < 0 || ImageArea.Y + dy < 0 ||
                 ImageArea.Right + dx > frame.Width || ImageArea.Bottom + dy > frame.Height)

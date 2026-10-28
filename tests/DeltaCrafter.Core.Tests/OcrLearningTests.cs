@@ -154,6 +154,24 @@ public sealed class OcrLearningTests
     }
 
     [Fact]
+    public void Target_visual_comparison_tolerates_larger_layout_drift()
+    {
+        var memory = new OcrVisualMemory();
+        memory.Observe("target", Frame(), Area, Reading(), true, .9f);
+        var shifted = Frame();
+        var original = shifted.Bgra.ToArray();
+        const int dx = 14, dy = 3;
+        for (int y = dy; y < shifted.Height; y++)
+            for (int x = dx; x < shifted.Width; x++)
+            {
+                int source = ((y - dy) * shifted.Width + x - dx) * 4;
+                int target = (y * shifted.Width + x) * 4;
+                original.AsSpan(source, 4).CopyTo(shifted.Bgra.AsSpan(target, 4));
+            }
+        Assert.True(Assert.Single(memory.Candidates("target")).Matches(shifted));
+    }
+
+    [Fact]
     public void Target_presence_ignores_other_content_but_complete_labels_guard_the_entire_region()
     {
         var memory = new OcrVisualMemory();
