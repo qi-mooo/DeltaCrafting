@@ -138,7 +138,15 @@ public sealed class OcrLearningTests
         var memory = new OcrVisualMemory();
         memory.Observe("region", Frame(), Area, Reading(), true, .9f);
         var sample = Assert.Single(memory.Candidates("region"));
-        var shifted = Frame(x: 81, y: 42);
+        var shifted = Frame();
+        var original = shifted.Bgra.ToArray();
+        for (int y = 2; y < shifted.Height; y++)
+            for (int x = 1; x < shifted.Width; x++)
+            {
+                int source = ((y - 2) * shifted.Width + x - 1) * 4;
+                int target = (y * shifted.Width + x) * 4;
+                original.AsSpan(source, 4).CopyTo(shifted.Bgra.AsSpan(target, 4));
+            }
         Assert.True(sample.Matches(shifted));
         int changed = (50 * shifted.Width + 90) * 4;
         shifted.Bgra[changed] = shifted.Bgra[changed] < 128 ? (byte)255 : (byte)0;
