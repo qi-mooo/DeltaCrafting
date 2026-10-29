@@ -37,7 +37,8 @@ public static class S3ConfigurationClient
                 if (UsableAddress(unicast.Address))
                     result.Add(new(unicast.Address.ToString(), unicast.PrefixLength, adapter.Name, port, gateway));
         }
-        return result.DistinctBy(a => a.Address).OrderByDescending(a => a.HasGateway).ThenBy(a => a.Adapter).ToArray();
+        return result.DistinctBy(a => a.Address)
+            .OrderByDescending(a => a.HasGateway).ThenBy(a => a.Adapter).ToArray();
     }
 
     public static S3ApiAddress? ChooseAddress(IReadOnlyList<S3ApiAddress> addresses, string? deviceIp)

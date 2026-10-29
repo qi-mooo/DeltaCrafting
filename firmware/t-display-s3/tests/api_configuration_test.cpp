@@ -24,6 +24,14 @@ int main()
     assert(saved["wifiSsid"] == "replacement" && saved["wifiPassword"] == "");
     request["baseUrl"] = "http://10.0.0.181:17890/api/v1/status";
     assert(ApiConfiguration::apply(request.as<JsonObjectConst>(), saved.as<JsonObject>()));
+    request["baseUrl"] = "http://10.0.0.181:80";
+    assert(ApiConfiguration::apply(request.as<JsonObjectConst>(), saved.as<JsonObject>()));
+    request["baseUrl"] = "http://10.0.0.181:70000";
+    assert(ApiConfiguration::apply(request.as<JsonObjectConst>(), saved.as<JsonObject>()));
+    request["baseUrl"] = "http://127.0.0.1:17890";
+    assert(ApiConfiguration::apply(request.as<JsonObjectConst>(), saved.as<JsonObject>()));
+    request["baseUrl"] = "http://example.local:17890";
+    assert(ApiConfiguration::apply(request.as<JsonObjectConst>(), saved.as<JsonObject>()));
     request["baseUrl"] = "http://10.0.0.181:17890";
     request.remove("wifiSsid"); request.remove("wifiPassword");
     saved.clear(); saved.to<JsonObject>();

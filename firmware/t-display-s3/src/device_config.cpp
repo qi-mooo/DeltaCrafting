@@ -56,7 +56,12 @@ void processLine(const String &line)
             Serial.println("{\"ok\":false,\"error\":\"storage_unavailable\"}"); return;
         }
         DynamicJsonDocument saved(2048);
-        deserializeJson(saved, p.getString("config", "{}"));
+        DeserializationError savedError = deserializeJson(saved, p.getString("config", "{}"));
+        if (savedError) {
+            p.end();
+            doc.clear(); doc["ok"] = false; doc["error"] = "saved_configuration_invalid";
+            serializeJson(doc, Serial); Serial.println(); return;
+        }
         if (!saved.is<JsonObject>()) saved.to<JsonObject>();
         if (!saved.containsKey("wifiSsid")) saved["wifiSsid"] = wifiSsid;
         if (!saved.containsKey("wifiPassword")) saved["wifiPassword"] = wifiPassword;

@@ -26,10 +26,13 @@ public sealed partial class S3ConfigurationViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(ConnectCommand))]
     private S3ApiAddress? selectedAddress;
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(WifiVisibility))]
+    [NotifyPropertyChangedFor(nameof(WifiVisibility), nameof(WifiPasswordVisibility))]
     private bool changeWifi;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(WifiPasswordVisibility))]
+    private bool openWifi;
     [ObservableProperty] private string wifiSsid = "";
-    [ObservableProperty] private string wifiPassword = "";
+    [ObservableProperty] private string _wifiPassword = "";
     [ObservableProperty] private string status = "用数据线连接 S3,进入此页后自动识别。设备需运行四宫格程序。";
 
     public S3ConfigurationViewModel(AppHost host) => _host = host;
@@ -38,9 +41,19 @@ public sealed partial class S3ConfigurationViewModel : ObservableObject
     private bool NeedsWifi => ChangeWifi || SelectedDevice is { Info.ApiConfigureSupported: false }
         || SelectedDevice is { Info.WifiSsid.Length: 0 };
     public Visibility WifiVisibility => SelectedDevice is not null && NeedsWifi ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility WifiPasswordVisibility => WifiVisibility == Visibility.Visible && !OpenWifi
+        ? Visibility.Visible : Visibility.Collapsed;
     public string ConnectionDescription => SelectedDevice is not { } device ? "选择识别到的 S3 屏幕。"
         : !device.Info.ApiConfigureSupported ? "旧固件需要填写 Wi-Fi;先升级 S3 至 v32 后,改地址可保留原 Wi-Fi。"
         : $"当前接口: {(device.Info.BaseUrl.Length > 0 ? device.Info.BaseUrl : "未配置")} · {(device.Info.ApiOnline ? "已连接" : "未连接")}";
+
+    partial void OnChangeWifiChanged(bool value)
+    {
+        OnPropertyChanged(nameof(WifiVisibility));
+        OnPropertyChanged(nameof(WifiPasswordVisibility));
+    }
+
+    partial void OnOpenWifiChanged(bool value) => OnPropertyChanged(nameof(WifiPasswordVisibility));
 
     partial void OnSelectedDeviceChanged(S3UsbDevice? value)
     {
@@ -104,14 +117,20 @@ public sealed partial class S3ConfigurationViewModel : ObservableObject
         IsBusy = true;
         try
         {
+            string? ssid = NeedsWifi ? WifiSsid : null;
+            if (NeedsWifi && !OpenWifi && string.IsNullOrEmpty(WifiPassword))
+                throw new ArgumentException("为保护设备凭据,请输入 Wi-Fi 密码;无密码网络请勾选开放 Wi-Fi。");
+            string? password = NeedsWifi ? OpenWifi ? "" : WifiPassword : null;
+            _ = S3ConfigurationClient.Configuration(device.Info, address.Url, new string('A', 64), ssid, password);
+            string key = _host.Settings.DeviceApi.ApiKey;
+            _ = S3ConfigurationClient.Configuration(device.Info, address.Url, key, ssid, password);
             // 配对按钮授权启用本机服务;沿用现有密钥,不要求用户复制凭据。
             _host.SettingsVm.DeviceApiEnabled = true;
-            string? ssid = NeedsWifi ? WifiSsid : null;
-            string? password = NeedsWifi ? WifiPassword : null;
             Status = "正在保存连接配置,等待 S3 重启并验证连接…";
             var info = await S3ConfigurationClient.ConfigureAsync(device, address.Url,
-                _host.Settings.DeviceApi.ApiKey, ssid, password, _host.AppStopToken);
+                key, ssid, password, _host.AppStopToken);
             WifiPassword = "";
+            OpenWifi = false;
             if (info is not null)
             {
                 int index = Devices.IndexOf(device);

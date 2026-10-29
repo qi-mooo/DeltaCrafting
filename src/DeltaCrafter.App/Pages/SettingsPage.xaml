@@ -211,10 +211,15 @@
                             <CheckBox Content="同时更换 Wi-Fi"
                                       IsChecked="{x:Bind Vm.S3Configuration.ChangeWifi, Mode=TwoWay}"
                                       IsEnabled="{x:Bind Vm.S3Configuration.IsBusy, Mode=OneWay, Converter={StaticResource InvertBool}}" />
+                            <CheckBox Content="开放 Wi-Fi（无密码）"
+                                      Visibility="{x:Bind Vm.S3Configuration.WifiVisibility, Mode=OneWay}"
+                                      IsChecked="{x:Bind Vm.S3Configuration.OpenWifi, Mode=TwoWay}"
+                                      IsEnabled="{x:Bind Vm.S3Configuration.IsBusy, Mode=OneWay, Converter={StaticResource InvertBool}}" />
                             <StackPanel Spacing="8" Visibility="{x:Bind Vm.S3Configuration.WifiVisibility, Mode=OneWay}">
                                 <TextBox Header="2.4 GHz Wi-Fi 名称" MaxLength="32"
                                          Text="{x:Bind Vm.S3Configuration.WifiSsid, Mode=TwoWay}" />
-                                <PasswordBox Header="Wi-Fi 密码" MaxLength="64"
+                                <PasswordBox Header="重新输入 2.4 GHz Wi-Fi 密码（设备不会读取已保存密码）" MaxLength="64"
+                                             Visibility="{x:Bind Vm.S3Configuration.WifiPasswordVisibility, Mode=OneWay}"
                                              Password="{x:Bind Vm.S3Configuration.WifiPassword, Mode=TwoWay}" />
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="8">
@@ -243,7 +248,7 @@
                         </controls:SettingCard.Slot>
                     </controls:SettingCard>
                     <controls:SettingCard Glyph="&#xE72E;" Header="配对密钥"
-                                          Description="复制到固件配置。重新生成后,旧密钥立即失效。">
+                                          Description="S3 自动连接时由 App 写入设备。重新生成后,旧密钥立即失效。">
                         <controls:SettingCard.Slot>
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Button Command="{x:Bind Vm.CopyDeviceApiKeyCommand}"
