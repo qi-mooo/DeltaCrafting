@@ -12,6 +12,7 @@ public sealed partial class S3ConfigurationViewModel : ObservableObject
     private readonly AppHost _host;
     private string _topology = "";
     private DateTimeOffset _lastScan;
+    private bool _refreshing;
     public ObservableCollection<S3UsbDevice> Devices { get; } = new();
     public ObservableCollection<S3ApiAddress> Addresses { get; } = new();
 
@@ -73,8 +74,9 @@ public sealed partial class S3ConfigurationViewModel : ObservableObject
 
     public async Task RefreshAsync(bool force)
     {
-        if (!CanScan) return;
-        IsBusy = true;
+        if (!CanScan || _refreshing) return;
+        _refreshing = true;
+        bool visible = false;
         try
         {
             var (ports, addresses) = await Task.Run(() => (SerialEspLink.Ports(),
@@ -83,15 +85,19 @@ public sealed partial class S3ConfigurationViewModel : ObservableObject
                 + ";" + string.Join("|", addresses.Select(a => $"{a.Url}/{a.PrefixLength}/{a.HasGateway}"));
             bool retry = Devices.Count == 0 && ports.Any(p => p.IsEspNative)
                 && DateTimeOffset.UtcNow - _lastScan > TimeSpan.FromSeconds(12);
-            if (!force && topology == _topology && !retry) return;
+            // 读取端口期间用户可能已开始连接,交给连接流程,不再抢串口。
+            if (IsBusy || (!force && topology == _topology && !retry)) return;
+            // 定时器每 3 秒轮询;拓扑未变时不切换忙碌和提示,避免整块控件反复禁用闪烁。
+            visible = force || topology != _topology;
+            if (visible) IsBusy = true;
             _topology = topology;
             _lastScan = DateTimeOffset.UtcNow;
             string? previousPort = SelectedDevice?.Port.PortName;
             string? previousAddress = SelectedAddress?.Url;
-            Status = "正在识别 S3 和电脑局域网地址…";
+            if (visible) Status = "正在识别 S3 和电脑局域网地址…";
             var devices = await S3ConfigurationClient.ScanAsync(ports, _host.AppStopToken);
-            Addresses.Clear(); foreach (var address in addresses) Addresses.Add(address);
-            Devices.Clear(); foreach (var device in devices) Devices.Add(device);
+            Replace(Addresses, addresses);
+            Replace(Devices, devices);
             SelectedDevice = devices.FirstOrDefault(d => d.Port.PortName == previousPort)
                 ?? (devices.Count == 1 ? devices[0] : null);
             SelectedAddress = addresses.FirstOrDefault(a => a.Url == previousAddress)
@@ -107,7 +113,15 @@ public sealed partial class S3ConfigurationViewModel : ObservableObject
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException
             or ArgumentException or System.Net.NetworkInformation.NetworkInformationException)
         { _topology = ""; Status = "识别失败,请检查 USB 连接和电脑网络后重试。"; }
-        finally { IsBusy = false; }
+        finally { if (visible) IsBusy = false; _refreshing = false; }
+    }
+
+    /// <summary>内容未变时不重建列表,否则 ComboBox 会清空选中项并重排 Wi-Fi 区域。</summary>
+    private static void Replace<T>(ObservableCollection<T> target, IReadOnlyList<T> items)
+    {
+        if (target.SequenceEqual(items)) return;
+        target.Clear();
+        foreach (var item in items) target.Add(item);
     }
 
     [RelayCommand(CanExecute = nameof(CanConnect))]
