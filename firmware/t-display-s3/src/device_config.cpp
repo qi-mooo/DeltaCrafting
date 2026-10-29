@@ -6,6 +6,7 @@
 #include <WiFi.h>
 #include <DeltaOta.h>
 #include "harp_control.h"
+#include "api_configuration.h"
 
 namespace DeviceConfig {
 namespace {
@@ -49,6 +50,28 @@ void processLine(const String &line)
         return;
     }
     const char *command = doc["command"] | "";
+    if (strcmp(command, "api-configure") == 0) {
+        Preferences p;
+        if (!p.begin("delta-monitor", false)) {
+            Serial.println("{\"ok\":false,\"error\":\"storage_unavailable\"}"); return;
+        }
+        DynamicJsonDocument saved(2048);
+        deserializeJson(saved, p.getString("config", "{}"));
+        if (!saved.is<JsonObject>()) saved.to<JsonObject>();
+        if (!saved.containsKey("wifiSsid")) saved["wifiSsid"] = wifiSsid;
+        if (!saved.containsKey("wifiPassword")) saved["wifiPassword"] = wifiPassword;
+        const char *error = ApiConfiguration::apply(doc.as<JsonObjectConst>(), saved.as<JsonObject>());
+        if (error || saved.overflowed()) {
+            p.end(); doc.clear(); doc["ok"] = false; doc["error"] = error ? error : "configuration_too_large";
+            serializeJson(doc, Serial); Serial.println(); return;
+        }
+        String value; serializeJson(saved, value);
+        bool ok = p.putString("config", value) == value.length();
+        p.end();
+        Serial.println(ok ? "{\"ok\":true,\"restart\":true}" : "{\"ok\":false,\"error\":\"storage_write_failed\"}");
+        if (ok) { Serial.flush(); delay(300); ESP.restart(); }
+        return;
+    }
     if (strcmp(command, "harp-configure") == 0) {
         String error;
         bool ok = HarpControl::configure(doc, error);
@@ -92,6 +115,11 @@ void processLine(const String &line)
         doc.clear();
         doc["ok"] = true;
         doc["firmware"] = DELTA_FIRMWARE_VERSION;
+        doc["board"] = "lilygo-t-display-s3";
+        doc["deviceId"] = WiFi.macAddress();
+        doc["apiConfigureSupported"] = true;
+        doc["baseUrl"] = url;
+        doc["wifiSsid"] = wifiSsid;
         doc["updaterAbi"] = DELTA_UPDATER_ABI;
         doc["otaPending"] = DeltaOta::loadJob().stage != DeltaOta::Stage::None;
         doc["build"] = __DATE__ " " __TIME__;

@@ -49,12 +49,18 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>设备页「USB 安装固件」。</summary>
     public UsbFlashViewModel UsbFlash { get; }
+    public S3ConfigurationViewModel S3Configuration { get; }
 
     public SettingsViewModel(AppHost host, ThemeService theme)
     {
         _host = host;
         _theme = theme;
         UsbFlash = new UsbFlashViewModel(host);
+        S3Configuration = new S3ConfigurationViewModel(host);
+        UsbFlash.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(UsbFlash.IsBusy)) S3Configuration.UsbActivityChanged();
+        };
         gamePath = S.GamePath;
         windowRuleText = DescribeRule();
         try

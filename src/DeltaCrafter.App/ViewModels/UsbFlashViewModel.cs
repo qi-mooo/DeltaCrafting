@@ -94,11 +94,16 @@ public sealed partial class UsbFlashViewModel : ObservableObject
         _host.Log.Information("开始 USB 刷写 {Version} → {Port}", bundle.FirmwareVersion, port.PortName);
         try
         {
-            await Task.Run(() =>
+            await SerialEspLink.OperationLock.WaitAsync(_host.AppStopToken);
+            try
             {
-                using var link = new SerialEspLink(port.PortName);
-                new EspRomFlasher(link).Flash(bundle, progress, _host.AppStopToken);
-            });
+                await Task.Run(() =>
+                {
+                    using var link = new SerialEspLink(port.PortName);
+                    new EspRomFlasher(link).Flash(bundle, progress, _host.AppStopToken);
+                });
+            }
+            finally { SerialEspLink.OperationLock.Release(); }
             Status = $"安装完成:{bundle.FirmwareVersion}。设备已重启;若屏幕未亮,请按一次 RESET。";
             _host.Log.Information("USB 刷写完成 {Version}", bundle.FirmwareVersion);
         }

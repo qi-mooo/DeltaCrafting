@@ -32,6 +32,10 @@ with tempfile.TemporaryDirectory(prefix="s3-ui-test-") as temporary:
          "-I" + str(project / ".pio/libdeps/deltacrafter-monitor/ArduinoJson/src"),
          project / "tests/sound_control_test.cpp", "-o", build / "sound-control"])
     run([build / "sound-control"])
+    run([cxx, "-std=c++17", "-I" + str(project / "include"),
+         "-I" + str(project / ".pio/libdeps/deltacrafter-monitor/ArduinoJson/src"),
+         project / "tests/api_configuration_test.cpp", "-o", build / "api-configuration"])
+    run([build / "api-configuration"])
     run([cxx, "-std=c++17", "-I" + str(project / "tests/stubs"),
          "-I" + str(project / "include"), project / "tests/program_switch_test.cpp",
          "-o", build / "program-switch"])

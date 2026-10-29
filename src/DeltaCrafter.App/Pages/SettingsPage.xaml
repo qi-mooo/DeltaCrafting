@@ -191,6 +191,43 @@
 
                 <StackPanel x:Name="DevicePanel" Spacing="4" Visibility="Collapsed">
                     <TextBlock Text="T-Display-S3 与 Harp" Style="{StaticResource GroupHeaderTextStyle}" Margin="1,8,0,4" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="S3 自动识别与连接" FontWeight="SemiBold" />
+                            <TextBlock Text="连接 USB 数据线后自动识别屏幕与本机接口地址。配对密钥由 App 自动填写。"
+                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                            <ComboBox Header="S3 屏幕" HorizontalAlignment="Stretch"
+                                      AutomationProperties.AutomationId="S3ConfigurationDevice"
+                                      ItemsSource="{x:Bind Vm.S3Configuration.Devices}" DisplayMemberPath="Label"
+                                      SelectedItem="{x:Bind Vm.S3Configuration.SelectedDevice, Mode=TwoWay}"
+                                      IsEnabled="{x:Bind Vm.S3Configuration.IsBusy, Mode=OneWay, Converter={StaticResource InvertBool}}" />
+                            <ComboBox Header="电脑接口地址" HorizontalAlignment="Stretch"
+                                      AutomationProperties.AutomationId="S3ConfigurationAddress"
+                                      ItemsSource="{x:Bind Vm.S3Configuration.Addresses}" DisplayMemberPath="Label"
+                                      SelectedItem="{x:Bind Vm.S3Configuration.SelectedAddress, Mode=TwoWay}"
+                                      IsEnabled="{x:Bind Vm.S3Configuration.IsBusy, Mode=OneWay, Converter={StaticResource InvertBool}}" />
+                            <TextBlock Text="{x:Bind Vm.S3Configuration.ConnectionDescription, Mode=OneWay}"
+                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                            <CheckBox Content="同时更换 Wi-Fi"
+                                      IsChecked="{x:Bind Vm.S3Configuration.ChangeWifi, Mode=TwoWay}"
+                                      IsEnabled="{x:Bind Vm.S3Configuration.IsBusy, Mode=OneWay, Converter={StaticResource InvertBool}}" />
+                            <StackPanel Spacing="8" Visibility="{x:Bind Vm.S3Configuration.WifiVisibility, Mode=OneWay}">
+                                <TextBox Header="2.4 GHz Wi-Fi 名称" MaxLength="32"
+                                         Text="{x:Bind Vm.S3Configuration.WifiSsid, Mode=TwoWay}" />
+                                <PasswordBox Header="Wi-Fi 密码" MaxLength="64"
+                                             Password="{x:Bind Vm.S3Configuration.WifiPassword, Mode=TwoWay}" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="重新识别" Command="{x:Bind Vm.S3Configuration.ScanCommand}" />
+                                <Button Content="连接 / 更新地址" Style="{StaticResource AccentButtonStyle}"
+                                        AutomationProperties.AutomationId="S3ConfigurationConnect"
+                                        Command="{x:Bind Vm.S3Configuration.ConnectCommand}" />
+                            </StackPanel>
+                            <TextBlock Text="{x:Bind Vm.S3Configuration.Status, Mode=OneWay}"
+                                       AutomationProperties.AutomationId="S3ConfigurationStatus"
+                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
                     <controls:SettingCard Glyph="&#xE968;" Header="局域网设备 API"
                                           Description="{x:Bind Vm.DeviceApiStatus, Mode=OneWay}">
                         <controls:SettingCard.Slot>

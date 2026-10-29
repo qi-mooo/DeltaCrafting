@@ -6,6 +6,9 @@ namespace DeltaCrafter.Core.L1;
 /// <summary>基于 System.IO.Ports 的 ESP 下载串口。原生 USB(USB-Serial/JTAG)与转串口芯片通用。</summary>
 public sealed class SerialEspLink : IEspSerialLink
 {
+    /// <summary>USB 配置和刷写共用互斥锁,避免识别过程占用正在刷写的串口。</summary>
+    public static SemaphoreSlim OperationLock { get; } = new(1, 1);
+
     private readonly SerialPort _port;
 
     public SerialEspLink(string portName)

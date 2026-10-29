@@ -8,6 +8,7 @@ namespace DeltaCrafter.App.Pages;
 
 public sealed partial class SettingsPage : Page
 {
+    private readonly DispatcherTimer _deviceTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     public SettingsViewModel Vm { get; } = AppHost.Current.SettingsVm;
 
     public SettingsPage()
@@ -15,6 +16,16 @@ public sealed partial class SettingsPage : Page
         InitializeComponent();
         // USB 刷写前的二次确认由页面提供(需要 XamlRoot 弹 ContentDialog)。
         Vm.UsbFlash.ConfirmAsync = ConfirmUsbFlashAsync;
+        _deviceTimer.Tick += async (_, _) => await Vm.S3Configuration.RefreshAsync(false);
+        Loaded += (_, _) => UpdateDeviceDiscovery();
+        Unloaded += (_, _) => _deviceTimer.Stop();
+    }
+
+    private void UpdateDeviceDiscovery()
+    {
+        if (!IsLoaded || DevicePanel?.Visibility != Visibility.Visible) { _deviceTimer.Stop(); return; }
+        _deviceTimer.Start();
+        _ = Vm.S3Configuration.RefreshAsync(true);
     }
 
     private async Task<bool> ConfirmUsbFlashAsync(string summary)
@@ -38,6 +49,7 @@ public sealed partial class SettingsPage : Page
         // XAML 加载中 IsSelected 也会触发本事件,此时后面的面板字段尚未赋值;初始可见性已由 XAML 给定。
         foreach (var panel in new[] { GamePanel, DataPanel, RunPanel, DevicePanel, AppPanel })
             if (panel is not null) panel.Visibility = panel.Name == selected ? Visibility.Visible : Visibility.Collapsed;
+        UpdateDeviceDiscovery();
     }
 
     /// <summary>
