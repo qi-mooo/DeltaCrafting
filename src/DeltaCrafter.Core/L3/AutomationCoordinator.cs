@@ -322,7 +322,10 @@ public sealed partial class AutomationCoordinator : IDisposable
             {
                 case FacilityPhase.ReadyToCollect:
                     await _collect.CollectAsync(launch.Hwnd, fp.Key, ct);
-                    report.Add($"{name}已领取「{DisplayItem(fp.Key, obs.ItemName)}」");
+                    string collected = DisplayItem(fp.Key, obs.ItemName);
+                    report.Add($"{name}已领取「{collected}」");
+                    _notifier.Notify(NotificationKind.ItemCollected, $"{name}已领取",
+                        collected.Length > 0 ? $"「{collected}」已放入仓库" : "制造物品已放入仓库");
                     await StartCraftForAsync(launch.Hwnd, fp, autoReplenishMaterials, report, blocked, ct);
                     break;
                 case FacilityPhase.Idle:
@@ -359,6 +362,7 @@ public sealed partial class AutomationCoordinator : IDisposable
             _engine.RecordObservation(fp.Key, FacilityPhase.NeedsManual, "", null, "未配置制造物品");
             blocked.Add(fp.Key);
             report.Add($"{name}未配置物品,等待人工设置");
+            _notifier.Notify(NotificationKind.NeedsManual, $"{name}需人工处理", "未配置制造物品,请在计划页设置。");
             return;
         }
         // SearchName = 目录里的 OCR 原文(若从下拉选中),显示与匹配分离,抗识别误差。
@@ -369,12 +373,18 @@ public sealed partial class AutomationCoordinator : IDisposable
             _engine.RecordObservation(fp.Key, FacilityPhase.Crafting, fp.ItemName,
                 _clock.Now + result.Remaining!.Value, null, startedNow: true);
             report.Add($"{name}已开始「{fp.ItemName}」(剩余 {Fmt(result.Remaining!.Value)})");
+            var finish = _clock.Now + result.Remaining!.Value;
+            string finishText = finish.ToString(finish.Date == _clock.Now.Date ? "HH:mm" : "M月d日 HH:mm");
+            _notifier.Notify(NotificationKind.CraftStarted, $"{name}开始制造",
+                $"「{fp.ItemName}」预计 {finishText} 完成(耗时 {Fmt(result.Remaining!.Value)})");
         }
         else
         {
             _engine.RecordObservation(fp.Key, FacilityPhase.NeedsManual, fp.ItemName, null, result.BlockReason);
             blocked.Add(fp.Key);
             report.Add($"{name}受阻:{result.BlockReason},等待人工处理");
+            _notifier.Notify(NotificationKind.NeedsManual, $"{name}需人工处理",
+                $"「{fp.ItemName}」{result.BlockReason}");
         }
     }
 
@@ -422,6 +432,9 @@ public sealed partial class AutomationCoordinator : IDisposable
                 report.Add($"{block.Detail}; 本次未执行,5 分钟后重试");
                 _log.Information("[{Trigger}]暂缓: {Reason};下次检查 {RetryAt:HH:mm:ss}。",
                     trigger, block.Detail, block.RetryAt);
+                // 每次暂缓都上报,推送频率由通知层按用户设置限流。
+                _notifier.Notify(NotificationKind.SteamBlocked, "任务已暂缓",
+                    $"Steam:{block.Detail}。「{trigger}」未执行,{block.RetryAt:HH:mm} 重新检查,游戏退出后自动继续。");
                 Publish(WaitingStatus());
                 return report;
             }
@@ -440,7 +453,7 @@ public sealed partial class AutomationCoordinator : IDisposable
             var next = _engine.ComputeNextRunAt(_plan(), _settings());
             _log.Information("[{Trigger}]完成:{Summary}", trigger, report.Summary());
             if (affectsSchedule)
-                _notifier.Notify("特勤处执行完成",
+                _notifier.Notify(NotificationKind.RoundCompleted, "特勤处执行完成",
                     report.Summary() + (next is { } n ? $"。下次执行 {n:HH:mm}" : ""));
             Publish(new CoordinatorStatus(
                 _settings().AutoLoopEnabled ? EngineMode.WaitingSchedule : EngineMode.Idle,
@@ -460,7 +473,7 @@ public sealed partial class AutomationCoordinator : IDisposable
             _log.Error(ex, "[{Trigger}]因仓库空间不足中止。", trigger);
             if (affectsSchedule && started)
                 _engine.MarkRunFinished(report.Summary(), failed: true, _settings().FailureRetryMinutes);
-            _notifier.Notify("仓库空间不足",
+            _notifier.Notify(NotificationKind.WarehouseFull, "仓库空间不足",
                 "补齐材料或领取制造物品失败，请及时清理游戏仓库后再运行。");
             Publish(new CoordinatorStatus(EngineMode.Faulted, ex.Message,
                 _engine.ComputeNextRunAt(_plan(), _settings())));
@@ -471,7 +484,7 @@ public sealed partial class AutomationCoordinator : IDisposable
             _log.Error(ex, "[{Trigger}]执行失败。", trigger);
             if (affectsSchedule && started)
                 _engine.MarkRunFinished(report.Summary(), failed: true, _settings().FailureRetryMinutes);
-            _notifier.Notify("特勤处执行失败", ex.Message);
+            _notifier.Notify(NotificationKind.RunFailed, "特勤处执行失败", ex.Message);
             // 自动恢复已用尽或不适用：保留最终失败现场供人工检查。
             Publish(new CoordinatorStatus(EngineMode.Faulted, ex.Message,
                 _engine.ComputeNextRunAt(_plan(), _settings())));

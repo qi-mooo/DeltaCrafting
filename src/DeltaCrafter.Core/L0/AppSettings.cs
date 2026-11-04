@@ -92,6 +92,8 @@ public sealed class AppSettings
     /// <summary>开发者模式:显示总览页「单步调试」等排障工具。普通用户默认隐藏。</summary>
     public bool DeveloperMode { get; set; }
 
+    public BarkSettings Bark { get; set; } = new();
+
     public DeviceApiSettings DeviceApi { get; set; } = new();
     public HarpPlayerSettings HarpPlayer { get; set; } = new();
 

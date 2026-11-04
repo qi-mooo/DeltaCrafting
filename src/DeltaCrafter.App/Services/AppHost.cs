@@ -28,7 +28,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
     public GameWindowBrick WindowBrick { get; }
     public AutostartBrick Autostart { get; }
     public SleepGuardBrick SleepGuard { get; }
-    public ToastNotifier Notifier { get; }
+    public AppNotifier Notifier { get; }
     public AutomationCoordinator Coordinator { get; }
     public ScreenProbe Probe { get; }
     public UpdateService Updater { get; }
@@ -106,7 +106,7 @@ public sealed class AppHost : ICatalogSink, ICatalogLookup, IAppWindowGuard
         var process = new GameProcessBrick(Log);
         SleepGuard = new SleepGuardBrick(Log);
         Autostart = new AutostartBrick(Log);
-        Notifier = new ToastNotifier(Log);
+        Notifier = new AppNotifier(new ToastNotifier(Log), () => Settings.Bark, clock, Log);
 
         Probe = new ScreenProbe(WindowBrick, capture, ocr, input, LoadAnchors, Paths.ShotsDir, Log,
             learningPath: Paths.OcrLearningPath);

@@ -6,7 +6,7 @@ namespace DeltaCrafter.Core.L0;
 /// </summary>
 public interface INotifier
 {
-    void Notify(string title, string message);
+    void Notify(NotificationKind kind, string title, string message);
 }
 
 /// <summary>

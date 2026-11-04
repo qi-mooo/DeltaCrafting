@@ -22,6 +22,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private bool _autostartEnabled;
 
     [ObservableProperty] private string steamActivityStatus = "尚未检查";
+    [ObservableProperty] private string barkStatus = "填写地址后可发送测试推送";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasAutostartError))]
@@ -320,6 +321,77 @@ public sealed partial class SettingsViewModel : ObservableObject
         var result = await new SteamActivityClient().CheckAsync(key, id, CancellationToken.None);
         if (key != SteamActivityApiKey || id != SteamActivityId) return;
         SteamActivityStatus = result.Detail;
+    }
+
+    private BarkSettings Bark => S.Bark;
+
+    public bool BarkEnabled { get => Bark.Enabled; set { Bark.Enabled = value; Save(); OnPropertyChanged(); } }
+
+    public string BarkUrl
+    {
+        get => Bark.Url;
+        set
+        {
+            string url = value?.Trim() ?? "";
+            if (url == Bark.Url) return;
+            Bark.Url = url; Save(); OnPropertyChanged();
+            BarkStatus = url.Length == 0 || BarkClient.TryParse(url, out _, out _)
+                ? "填写地址后可发送测试推送" : "地址格式无效,请粘贴 Bark App 中的完整推送地址";
+        }
+    }
+
+    public bool BarkRoundCompleted { get => Bark.RoundCompleted; set { Bark.RoundCompleted = value; Save(); OnPropertyChanged(); } }
+    public bool BarkCraftStarted { get => Bark.CraftStarted; set { Bark.CraftStarted = value; Save(); OnPropertyChanged(); } }
+    public bool BarkItemCollected { get => Bark.ItemCollected; set { Bark.ItemCollected = value; Save(); OnPropertyChanged(); } }
+    public bool BarkNeedsManual { get => Bark.NeedsManual; set { Bark.NeedsManual = value; Save(); OnPropertyChanged(); } }
+    public bool BarkWarehouseFull { get => Bark.WarehouseFull; set { Bark.WarehouseFull = value; Save(); OnPropertyChanged(); } }
+    public bool BarkRunFailed { get => Bark.RunFailed; set { Bark.RunFailed = value; Save(); OnPropertyChanged(); } }
+    public bool BarkSteamBlocked { get => Bark.SteamBlocked; set { Bark.SteamBlocked = value; Save(); OnPropertyChanged(); } }
+    public bool BarkUpdateAvailable { get => Bark.UpdateAvailable; set { Bark.UpdateAvailable = value; Save(); OnPropertyChanged(); } }
+
+    /// <summary>铃声下拉:第 0 项为「Bark 默认」,其后与 BarkClient.Sounds 一一对应。</summary>
+    public IReadOnlyList<string> BarkSoundOptions { get; } = ["Bark 默认", .. BarkClient.Sounds];
+
+    private static int SoundIndex(string sound) => BarkClient.Sounds.ToList().IndexOf(sound) + 1;
+    private static string SoundAt(int index) => index >= 1 && index <= BarkClient.Sounds.Count ? BarkClient.Sounds[index - 1] : "";
+
+    public int BarkSoundIndex
+    {
+        get => SoundIndex(Bark.Sound);
+        set { if (value < 0) return; Bark.Sound = SoundAt(value); Save(); OnPropertyChanged(); }
+    }
+
+    public int BarkUrgentSoundIndex
+    {
+        get => SoundIndex(Bark.UrgentSound);
+        set { if (value < 0) return; Bark.UrgentSound = SoundAt(value); Save(); OnPropertyChanged(); }
+    }
+
+    [RelayCommand]
+    private Task PreviewUrgentSoundAsync() => SendBarkTestAsync(Bark.UrgentSound);
+
+    public double BarkRepeatLimit
+    {
+        get => Bark.RepeatLimit;
+        set { if (!double.IsFinite(value)) return; Bark.RepeatLimit = Math.Clamp((int)value, 1, 100); Save(); OnPropertyChanged(); }
+    }
+
+    public double BarkRepeatWindowMinutes
+    {
+        get => Bark.RepeatWindowMinutes;
+        set { if (!double.IsFinite(value)) return; Bark.RepeatWindowMinutes = Math.Clamp((int)value, 1, 1440); Save(); OnPropertyChanged(); }
+    }
+
+    [RelayCommand]
+    private Task TestBarkAsync() => SendBarkTestAsync(Bark.Sound);
+
+    private async Task SendBarkTestAsync(string sound)
+    {
+        string url = BarkUrl;
+        BarkStatus = "正在发送测试推送…";
+        var result = await _host.Notifier.SendTestAsync(url, sound);
+        if (url != BarkUrl) return;
+        BarkStatus = result.Detail;
     }
 
     [RelayCommand]

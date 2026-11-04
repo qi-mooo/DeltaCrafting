@@ -53,7 +53,7 @@ public sealed class UpdateService
                     if (window.AppWindow.IsVisible)
                         await PromptAndUpdateAsync(info);
                     else
-                        _host.Notifier.Notify($"发现新版本 {info.TagName}",
+                        _host.Notifier.Notify(NotificationKind.UpdateAvailable, $"发现新版本 {info.TagName}",
                             "打开窗口后在「设置 → 关于 → 检查更新」一键更新;制造计划与倒计时不受影响。");
                 }
                 catch (Exception ex)

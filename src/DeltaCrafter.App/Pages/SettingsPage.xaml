@@ -95,7 +95,7 @@
                     </controls:SettingCard>
                     <TextBlock Text="Steam 游戏状态" Style="{StaticResource GroupHeaderTextStyle}" />
                     <controls:SettingCard Glyph="&#xE7FC;" Header="游戏中暂停任务"
-                                          Description="三角洲行动运行中或查询失败时等待 5 分钟再检查，其他游戏不影响任务。">
+                                          Description="Steam 上有任何游戏运行(含三角洲行动)或查询失败时不执行任务,5 分钟后再检查。助手自己启动的游戏不受影响。">
                         <controls:SettingCard.Slot>
                             <ToggleSwitch IsOn="{x:Bind Vm.SteamActivityEnabled, Mode=TwoWay}" />
                         </controls:SettingCard.Slot>
@@ -187,6 +187,81 @@
                             <ToggleSwitch IsOn="{x:Bind Vm.PreventSleep, Mode=TwoWay}" />
                         </controls:SettingCard.Slot>
                     </controls:SettingCard>
+
+                    <TextBlock Text="Bark 推送" Style="{StaticResource GroupHeaderTextStyle}" Margin="1,8,0,4" />
+                    <controls:SettingCard Glyph="&#xEA8F;" Header="Bark 推送"
+                                          Description="把制造进度和异常推送到 iPhone。系统通知不受此开关影响。">
+                        <controls:SettingCard.Slot>
+                            <ToggleSwitch IsOn="{x:Bind Vm.BarkEnabled, Mode=TwoWay}" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE71B;" Header="推送地址"
+                                          Description="{x:Bind Vm.BarkStatus, Mode=OneWay}">
+                        <controls:SettingCard.Slot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <PasswordBox Width="320" PlaceholderText="https://api.day.app/你的设备key"
+                                             Password="{x:Bind Vm.BarkUrl, Mode=TwoWay}"
+                                             AutomationProperties.Name="Bark 推送地址" />
+                                <Button Content="测试" Command="{x:Bind Vm.TestBarkCommand}" />
+                            </StackPanel>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE767;" Header="铃声"
+                                          Description="普通提醒(开始制造、领取、汇总、Steam 暂缓、新版本)的铃声。点「测试」试听。">
+                        <controls:SettingCard.Slot>
+                            <ComboBox MinWidth="200" ItemsSource="{x:Bind Vm.BarkSoundOptions}"
+                                      SelectedIndex="{x:Bind Vm.BarkSoundIndex, Mode=TwoWay}"
+                                      AutomationProperties.Name="Bark 铃声" />
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE7BA;" Header="紧急提醒铃声"
+                                          Description="执行失败、仓库已满、需人工处理的铃声,建议与普通提醒区分。">
+                        <controls:SettingCard.Slot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <ComboBox MinWidth="200" ItemsSource="{x:Bind Vm.BarkSoundOptions}"
+                                          SelectedIndex="{x:Bind Vm.BarkUrgentSoundIndex, Mode=TwoWay}"
+                                          AutomationProperties.Name="Bark 紧急提醒铃声" />
+                                <Button Content="试听" Command="{x:Bind Vm.PreviewUrgentSoundCommand}" />
+                            </StackPanel>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <controls:SettingCard Glyph="&#xE916;" Header="重复提醒上限"
+                                          Description="Steam 暂缓、需人工、执行失败、仓库已满会随重试反复出现;同一条提醒在设定时间内最多推送几次。">
+                        <controls:SettingCard.Slot>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <NumberBox Width="130" SpinButtonPlacementMode="Inline" Minimum="1" Maximum="1440" SmallChange="10"
+                                           Value="{x:Bind Vm.BarkRepeatWindowMinutes, Mode=TwoWay}"
+                                           AutomationProperties.Name="重复提醒时间窗口(分钟)" />
+                                <TextBlock Text="分钟内最多" VerticalAlignment="Center" />
+                                <NumberBox Width="110" SpinButtonPlacementMode="Inline" Minimum="1" Maximum="100"
+                                           Value="{x:Bind Vm.BarkRepeatLimit, Mode=TwoWay}"
+                                           AutomationProperties.Name="重复提醒次数" />
+                                <TextBlock Text="次" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </controls:SettingCard.Slot>
+                    </controls:SettingCard>
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="推送内容" FontWeight="SemiBold" />
+                            <TextBlock Text="失败、仓库满与需人工处理以时效性通知发送,可穿透专注模式。"
+                                       Style="{StaticResource SecondaryTextStyle}" TextWrapping="Wrap" />
+                            <Grid ColumnSpacing="24" Margin="0,4,0,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <CheckBox Content="开始制造(含预计完成时间)" IsChecked="{x:Bind Vm.BarkCraftStarted, Mode=TwoWay}" />
+                                    <CheckBox Content="领取制造物品" IsChecked="{x:Bind Vm.BarkItemCollected, Mode=TwoWay}" />
+                                    <CheckBox Content="每轮执行汇总" IsChecked="{x:Bind Vm.BarkRoundCompleted, Mode=TwoWay}" />
+                                    <CheckBox Content="设施需人工处理(材料不足等)" IsChecked="{x:Bind Vm.BarkNeedsManual, Mode=TwoWay}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <CheckBox Content="执行失败" IsChecked="{x:Bind Vm.BarkRunFailed, Mode=TwoWay}" />
+                                    <CheckBox Content="仓库空间不足" IsChecked="{x:Bind Vm.BarkWarehouseFull, Mode=TwoWay}" />
+                                    <CheckBox Content="Steam 游戏运行中,任务暂缓" IsChecked="{x:Bind Vm.BarkSteamBlocked, Mode=TwoWay}" />
+                                    <CheckBox Content="发现新版本" IsChecked="{x:Bind Vm.BarkUpdateAvailable, Mode=TwoWay}" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <StackPanel x:Name="DevicePanel" Spacing="4" Visibility="Collapsed">

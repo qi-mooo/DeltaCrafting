@@ -28,10 +28,12 @@ public sealed class ToastNotifier : INotifier
         }
     }
 
-    public void Notify(string title, string message)
+    public void Notify(NotificationKind kind, string title, string message)
     {
         _log.Information("[通知] {Title}:{Message}", title, message);
-        if (!_registered) return;
+        // 逐设施事件与 Steam 暂缓只走 Bark,系统 Toast 保持一轮一条。
+        if (!_registered || kind is NotificationKind.CraftStarted or NotificationKind.ItemCollected
+            or NotificationKind.NeedsManual or NotificationKind.SteamBlocked) return;
         try
         {
             var notification = new AppNotificationBuilder()

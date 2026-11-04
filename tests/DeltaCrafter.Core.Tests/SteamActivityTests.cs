@@ -48,11 +48,11 @@ public sealed class SteamActivityTests
     [InlineData("\"gameextrainfo\":\"Non-Steam Game\"")]
     [InlineData("\"gameid\":\"570\",\"gameextrainfo\":\"Delta Force\"")]
     [InlineData("\"gameextrainfo\":\"Delta Force 2\"")]
-    public async Task Other_games_do_not_block_or_show_their_names(string fields)
+    public async Task Other_games_block_without_showing_their_names(string fields)
     {
         var result = await Client(Player(fields)).CheckAsync(Key, Id, default);
-        Assert.Equal(SteamActivityState.NotPlaying, result.State);
-        Assert.Equal("未在游戏中", result.Detail);
+        Assert.Equal(SteamActivityState.Playing, result.State);
+        Assert.Equal("其他游戏运行中", result.Detail);
     }
 
     [Fact]
@@ -142,6 +142,12 @@ public sealed class SteamActivityTests
             Calls++;
             return Task.FromResult(new SteamActivityResult(State, "Steam 游戏中"));
         }
+    }
+
+    private sealed class Notifier : INotifier
+    {
+        public List<(NotificationKind Kind, string Title, string Message)> Sent { get; } = [];
+        public void Notify(NotificationKind kind, string title, string message) => Sent.Add((kind, title, message));
     }
 
     private static SteamActivitySettings Settings() => new() { Enabled = true, ApiKey = Key, SteamId = Id };
@@ -242,10 +248,11 @@ public sealed class SteamActivityTests
             var log = new LoggerConfiguration().CreateLogger();
             var engine = new ScheduleEngine(new JsonStoreBrick(), path, clock, log);
             var before = File.ReadAllText(path);
+            var notifier = new Notifier();
             // Null Windows dependencies make any attempted side effect fail this test.
             using var coordinator = new AutomationCoordinator(null!, null!, null!, null!, null!, null!,
                 null!, null!, null!, null!, engine, null!, null!, null!, () => settings, () => plan,
-                null!, clock, log, new SteamActivityGuard(source, clock));
+                notifier, clock, log, new SteamActivityGuard(source, clock));
             var reports = new[]
             {
                 await coordinator.RunOnceAsync("定时触发", default),
@@ -260,6 +267,9 @@ public sealed class SteamActivityTests
                 Assert.Contains("本次未执行", report.Summary());
             });
             Assert.Equal(1, source.Calls);
+            // Every deferral is reported; the notification layer throttles repeats per user settings.
+            Assert.Equal(reports.Length, notifier.Sent.Count);
+            Assert.All(notifier.Sent, sent => Assert.Equal(NotificationKind.SteamBlocked, sent.Kind));
             Assert.False(coordinator.IsRunning);
             Assert.Equal(clock.Now.AddMinutes(5), coordinator.WaitingStatus().NextRunAt);
             Assert.Contains("Steam", coordinator.WaitingStatus().Detail);

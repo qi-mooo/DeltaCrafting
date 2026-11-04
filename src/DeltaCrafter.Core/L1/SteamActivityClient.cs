@@ -79,8 +79,9 @@ public sealed class SteamActivityClient : ISteamActivitySource
         bool delta = gameId == "2507950" || (!hasId
             && (game.Trim().Equals("Delta Force", StringComparison.OrdinalIgnoreCase) || game.Trim() == "三角洲行动"));
         if (delta) return new(SteamActivityState.Playing, "游戏中");
+        // Steam shows a blocking "another game is running" prompt, so any game must defer tasks.
         if (hasId || !string.IsNullOrWhiteSpace(game))
-            return new(SteamActivityState.NotPlaying, "未在游戏中");
+            return new(SteamActivityState.Playing, "其他游戏运行中");
         if (!player.TryGetProperty("communityvisibilitystate", out var visibility)
             || visibility.ValueKind != JsonValueKind.Number || !visibility.TryGetInt32(out int state) || state != 3)
             return Unavailable("Steam 资料不可见,请将个人资料和游戏详情设为公开");
